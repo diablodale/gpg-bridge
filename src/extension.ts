@@ -12,6 +12,7 @@ let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
 let detectedGpg4winPath: string | null = null;
 let detectedAgentPipe: string | null = null;
+let detectedNpipeRelay: string | null = null;
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -43,7 +44,11 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Detect Gpg4win path and agent pipe on startup (async, will complete in background)
 	detectGpg4winPath().then(() => {
-		detectAgentPipe().catch(() => {
+		detectAgentPipe().then(() => {
+			detectNpipeRelay().catch(() => {
+				// Silently ignore if npiperelay detection fails
+			});
+		}).catch(() => {
 			// Silently ignore if pipe detection fails
 		});
 	}).catch(() => {
@@ -125,6 +130,63 @@ async function detectAgentPipe(): Promise<void> {
 	} catch (error) {
 		// Silently fail - pipe detection is non-critical
 	}
+}
+
+// Detect npiperelay on startup
+async function detectNpipeRelay(): Promise<void> {
+	try {
+		const npipeRelayPath = await checkNpipeRelayAvailability();
+		if (npipeRelayPath) {
+			detectedNpipeRelay = npipeRelayPath;
+		}
+	} catch (error) {
+		// Silently fail - npiperelay detection is non-critical
+	}
+}
+
+// Check if npiperelay is available
+function checkNpipeRelayAvailability(): Promise<string | null> {
+	return new Promise((resolve) => {
+		try {
+			const proc = spawn('npiperelay', ['-v'], {
+				stdio: ['ignore', 'pipe', 'pipe'],
+				timeout: 1000,
+				shell: true
+			});
+
+			let found = false;
+
+			proc.stdout?.on('data', () => {
+				found = true;
+			});
+
+			proc.stderr?.on('data', () => {
+				found = true;
+			});
+
+			proc.on('exit', () => {
+				if (found) {
+					resolve('npiperelay'); // Just return the command name if found in PATH
+				} else {
+					resolve(null);
+				}
+			});
+
+			proc.on('error', () => {
+				resolve(null);
+			});
+
+			// Timeout after 1 second
+			setTimeout(() => {
+				if (!proc.killed) {
+					proc.kill();
+				}
+				resolve(found ? 'npiperelay' : null);
+			}, 1000);
+		} catch (error) {
+			resolve(null);
+		}
+	});
 }
 
 // Query GPG agent socket using gpgconf
@@ -238,6 +300,7 @@ function showStatus() {
 	// Use relay's detected path if relay is running, otherwise use global detected path
 	const gpg4winPath = relay?.getGpg4winPath() || detectedGpg4winPath || '(not detected)';
 	const agentPipe = relay?.getAgentPipe() || detectedAgentPipe || '(not detected)';
+	const npipeRelayPath = relay?.getNpipeRelayPath() || detectedNpipeRelay || '(not detected)';
 
 	const status = [
 		`GPG Agent Relay Status`,
@@ -248,7 +311,8 @@ function showStatus() {
 		`Debug Logging: ${config.get('debugLogging') ? 'Enabled' : 'Disabled'}`,
 		``,
 		`GPG4Win Path: ${gpg4winPath}`,
-		`Agent Pipe: ${agentPipe}`
+		`Agent Pipe: ${agentPipe}`,
+		`npiperelay Path: ${npipeRelayPath}`
 	].join('\n');
 
 	vscode.window.showInformationMessage(status, { modal: true });

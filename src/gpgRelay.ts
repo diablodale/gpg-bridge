@@ -25,6 +25,7 @@ export class GpgRelay {
     private logCallback?: (message: string) => void;
     private detectedGpg4winPath: string | null = null;
     private detectedAgentPipe: string | null = null;
+    private detectedNpipeRelay: string | null = null;
 
     constructor(private config: RelayConfig) {}
 
@@ -47,6 +48,13 @@ export class GpgRelay {
      */
     public getAgentPipe(): string | null {
         return this.detectedAgentPipe;
+    }
+
+    /**
+     * Get the detected npiperelay path
+     */
+    public getNpipeRelayPath(): string | null {
+        return this.detectedNpipeRelay;
     }
 
     private log(message: string): void {
@@ -89,6 +97,16 @@ export class GpgRelay {
         this.detectedAgentPipe = gpgAgentPipe;
         this.log(`Found GPG agent pipe: ${gpgAgentPipe}`);
 
+        // Find npiperelay for the relay bridge
+        this.log('Searching for npiperelay.exe...');
+        const npipeRelayPath = await this.findNpipeRelay();
+        if (!npipeRelayPath) {
+            throw new Error('npiperelay.exe not found. Please install npiperelay. See: https://github.com/jstarks/npiperelay');
+        }
+
+        this.detectedNpipeRelay = npipeRelayPath;
+        this.log(`Found npiperelay at: ${npipeRelayPath}`);
+
         // TODO: Implement the actual relay logic
         // This will require:
         // 1. Installing/checking for npiperelay.exe on Windows
@@ -124,6 +142,72 @@ export class GpgRelay {
      */
     public isRunning(): boolean {
         return this.processes.length > 0 && this.processes.some(p => !p.killed);
+    }
+
+    /**
+     * Find npiperelay.exe installation
+     * Checks PATH, common install locations, and WSL interop
+     */
+    private async findNpipeRelay(): Promise<string | null> {
+        // 1. Check if npiperelay is in PATH
+        this.log('Checking PATH for npiperelay.exe...');
+        const inPath = await this.checkCommandInPath('npiperelay.exe');
+        if (inPath) {
+            this.log('Found npiperelay.exe in PATH');
+            return 'npiperelay.exe';
+        }
+
+        // 2. Check common installation locations
+        const npipeLocations = [
+            path.join(os.homedir(), '.local', 'bin', 'npiperelay.exe'),
+            path.join(os.homedir(), 'scoop', 'apps', 'npiperelay', 'current', 'npiperelay.exe'),
+            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'npiperelay', 'npiperelay.exe'),
+            'C:\\Program Files\\npiperelay\\npiperelay.exe',
+            'C:\\Program Files (x86)\\npiperelay\\npiperelay.exe'
+        ];
+
+        for (const location of npipeLocations) {
+            this.log(`Checking: ${location}`);
+            if (fs.existsSync(location)) {
+                this.log(`Found npiperelay at: ${location}`);
+                return location;
+            }
+        }
+
+        // 3. Try to run from current directory
+        if (fs.existsSync('./npiperelay.exe')) {
+            this.log('Found npiperelay.exe in current directory');
+            return './npiperelay.exe';
+        }
+
+        this.log('npiperelay not found in any standard location');
+        return null;
+    }
+
+    /**
+     * Check if a command exists in PATH
+     */
+    private async checkCommandInPath(command: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            try {
+                const proc = spawn(command, ['--version'], {
+                    stdio: 'ignore',
+                    timeout: 1000
+                });
+
+                proc.on('exit', (code) => {
+                    resolve(code === 0);
+                });
+
+                proc.on('error', () => {
+                    resolve(false);
+                });
+
+                setTimeout(() => resolve(false), 1000);
+            } catch (error) {
+                resolve(false);
+            }
+        });
     }
 
     /**
