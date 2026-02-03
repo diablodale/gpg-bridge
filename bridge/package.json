@@ -1,0 +1,105 @@
+{
+  "name": "gpg-windows-relay-bridge",
+  "displayName": "GPG Windows Relay - Bridge",
+  "description": "Windows bridge component for GPG relay",
+  "version": "0.0.1",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diablodale/gpg-windows-relay"
+  },
+  "engines": {
+    "vscode": "^1.108.1"
+  },
+  "os": [
+    "win32"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:gpg-windows-relay.start",
+    "onCommand:gpg-windows-relay.stop"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gpg-windows-relay.start",
+        "title": "GPG Windows Relay: Start"
+      },
+      {
+        "command": "gpg-windows-relay.stop",
+        "title": "GPG Windows Relay: Stop"
+      },
+      {
+        "command": "gpg-windows-relay.restart",
+        "title": "GPG Windows Relay: Restart"
+      },
+      {
+        "command": "gpg-windows-relay.showStatus",
+        "title": "GPG Windows Relay: Show Status"
+      },
+      {
+        "command": "gpg-windows-relay.getRelayPort",
+        "title": "GPG Windows Relay: Get Relay Port"
+      },
+      {
+        "command": "gpg-windows-relay.ensureBridgeRunning",
+        "title": "GPG Windows Relay: Ensure Bridge Running"
+      }
+    ],
+    "configuration": {
+      "title": "GPG Windows Relay",
+      "properties": {
+        "gpgWinRelay.gpg4winPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to Gpg4win's GnuPG bin directory containing `gpgconf.exe`. Leave empty to auto-detect.",
+          "scope": "resource"
+        },
+        "gpgWinRelay.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start relay when VS Code starts"
+        },
+        "gpgWinRelay.debugLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging for troubleshooting"
+        },
+        "gpgWinRelay.listenPort": {
+          "type": "number",
+          "default": 63331,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "TCP port for the bridge to listen on (must be >= 1024)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.108.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.52.0"
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "name": "gpg-windows-relay-remote",
+  "displayName": "GPG Windows Relay - Remote",
+  "description": "Remote relay component for GPG relay",
+  "version": "0.0.1",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diablodale/gpg-windows-relay"
+  },
+  "engines": {
+    "vscode": "^1.108.1"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:gpg-windows-relay.start",
+    "onCommand:gpg-windows-relay.stop"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gpg-windows-relay.start",
+        "title": "GPG Windows Relay: Start"
+      },
+      {
+        "command": "gpg-windows-relay.stop",
+        "title": "GPG Windows Relay: Stop"
+      },
+      {
+        "command": "gpg-windows-relay.showStatus",
+        "title": "GPG Windows Relay: Show Status"
+      }
+    ],
+    "configuration": {
+      "title": "GPG Windows Relay",
+      "properties": {
+        "gpgWinRelay.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start relay when remote connection is detected"
+        },
+        "gpgWinRelay.debugLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging for troubleshooting"
+        },
+        "gpgWinRelay.listenPort": {
+          "type": "number",
+          "default": 63331,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "TCP port to connect to on the Windows host (must be >= 1024)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.108.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.52.0"
+  }
+}

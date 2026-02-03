@@ -3,3 +3,8 @@ dist
 node_modules
 .vscode-test/
 *.vsix
+bridge/out
+bridge/*.vsix
+remote/out
+remote/*.vsix
+pack/*.vsix

@@ -1,0 +1,21 @@
+{
+  "name": "gpg-windows-relay",
+  "displayName": "GPG Windows Relay",
+  "description": "Relays remote GPG protocols to Windows host running Gpg4win",
+  "version": "0.0.1",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diablodale/gpg-windows-relay"
+  },
+  "engines": {
+    "vscode": "^1.108.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionPack": [
+    "local.gpg-windows-relay-bridge",
+    "local.gpg-windows-relay-remote"
+  ]
+}
