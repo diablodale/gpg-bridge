@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawn } from 'child_process';
 import { GpgRelay } from './gpgRelay';
 
 // Relay state management
@@ -10,6 +11,7 @@ let relay: GpgRelay | null = null;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
 let detectedGpg4winPath: string | null = null;
+let detectedAgentPipe: string | null = null;
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -39,8 +41,14 @@ export function activate(context: vscode.ExtensionContext) {
 	updateStatusBar();
 	statusBarItem.show();
 
-	// Detect Gpg4win path on startup (for quick status display)
-	detectGpg4winPath();
+	// Detect Gpg4win path and agent pipe on startup (async, will complete in background)
+	detectGpg4winPath().then(() => {
+		detectAgentPipe().catch(() => {
+			// Silently ignore if pipe detection fails
+		});
+	}).catch(() => {
+		// Silently ignore if gpg4win detection fails
+	});
 
 	// Check for remote connection and auto-start if configured
 	const config = vscode.workspace.getConfiguration('gpgRelay');
@@ -96,6 +104,67 @@ async function detectGpg4winPath(): Promise<void> {
 			return;
 		}
 	}
+}
+
+// Detect GPG agent pipe on startup
+async function detectAgentPipe(): Promise<void> {
+	if (!detectedGpg4winPath) {
+		return; // Can't detect pipe without gpg4win
+	}
+
+	const gpgconfPath = path.join(detectedGpg4winPath, 'gpgconf.exe');
+	if (!fs.existsSync(gpgconfPath)) {
+		return;
+	}
+
+	try {
+		const pipe = await queryGpgAgentSocket(gpgconfPath);
+		if (pipe) {
+			detectedAgentPipe = pipe;
+		}
+	} catch (error) {
+		// Silently fail - pipe detection is non-critical
+	}
+}
+
+// Query GPG agent socket using gpgconf
+function queryGpgAgentSocket(gpgconfPath: string): Promise<string | null> {
+	return new Promise((resolve) => {
+		try {
+			const proc = spawn(gpgconfPath, ['--list-dir', 'agent-socket'], {
+				stdio: ['ignore', 'pipe', 'pipe'],
+				timeout: 2000
+			});
+
+			let stdout = '';
+
+			proc.stdout?.on('data', (data: Buffer) => {
+				stdout += data.toString();
+			});
+
+			proc.on('exit', (code: number) => {
+				if (code === 0 && stdout) {
+					resolve(stdout.trim());
+				} else {
+					resolve(null);
+				}
+			});
+
+			proc.on('error', () => {
+				resolve(null);
+			});
+
+			// Timeout after 2 seconds
+			setTimeout(() => {
+				if (!proc.killed) {
+					proc.kill();
+				}
+				resolve(null);
+			}, 2000);
+		} catch (error) {
+			resolve(null);
+		}
+	});
 }
 
 // Start the GPG relay
@@ -168,6 +237,7 @@ function showStatus() {
 	const config = vscode.workspace.getConfiguration('gpgRelay');
 	// Use relay's detected path if relay is running, otherwise use global detected path
 	const gpg4winPath = relay?.getGpg4winPath() || detectedGpg4winPath || '(not detected)';
+	const agentPipe = relay?.getAgentPipe() || detectedAgentPipe || '(not detected)';
 
 	const status = [
 		`GPG Agent Relay Status`,
@@ -176,7 +246,9 @@ function showStatus() {
 		`Remote Session: ${remoteName}`,
 		`Auto-start: ${config.get('autoStart') ? 'Enabled' : 'Disabled'}`,
 		`Debug Logging: ${config.get('debugLogging') ? 'Enabled' : 'Disabled'}`,
-		`GPG4Win Path: ${gpg4winPath}`
+		``,
+		`GPG4Win Path: ${gpg4winPath}`,
+		`Agent Pipe: ${agentPipe}`
 	].join('\n');
 
 	vscode.window.showInformationMessage(status, { modal: true });

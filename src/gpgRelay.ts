@@ -24,6 +24,7 @@ export class GpgRelay {
     private processes: ChildProcess[] = [];
     private logCallback?: (message: string) => void;
     private detectedGpg4winPath: string | null = null;
+    private detectedAgentPipe: string | null = null;
 
     constructor(private config: RelayConfig) {}
 
@@ -39,6 +40,13 @@ export class GpgRelay {
      */
     public getGpg4winPath(): string | null {
         return this.detectedGpg4winPath;
+    }
+
+    /**
+     * Get the detected GPG agent pipe
+     */
+    public getAgentPipe(): string | null {
+        return this.detectedAgentPipe;
     }
 
     private log(message: string): void {
@@ -71,13 +79,14 @@ export class GpgRelay {
 
         this.log('gpgconf.exe found - Gpg4win is properly installed');
 
-        // Find the Windows GPG agent socket/pipe
-        this.log('Looking for GPG agent named pipe...');
-        const gpgAgentPipe = await this.findGpgAgentPipe();
+        // Find the Windows GPG agent named pipe using gpgconf
+        this.log('Querying GPG agent socket location using gpgconf...');
+        const gpgAgentPipe = await this.queryGpgAgentSocketWithGpgconf(gpgconfPath);
         if (!gpgAgentPipe) {
-            throw new Error('Could not find GPG agent named pipe. Is gpg-agent running?');
+            throw new Error('Could not find GPG agent socket/pipe using gpgconf. Is gpg-agent running?');
         }
 
+        this.detectedAgentPipe = gpgAgentPipe;
         this.log(`Found GPG agent pipe: ${gpgAgentPipe}`);
 
         // TODO: Implement the actual relay logic
@@ -165,6 +174,55 @@ export class GpgRelay {
 
         this.log('Gpg4win not found in any standard location');
         return null;
+    }
+
+    /**
+     * Query GPG agent socket using gpgconf
+     * Uses: gpgconf --list-dirs agent-socket
+     */
+    private async queryGpgAgentSocketWithGpgconf(gpgconfPath: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            try {
+                this.log(`Running: ${gpgconfPath} --list-dirs agent-socket`);
+                
+                const proc = spawn(gpgconfPath, ['--list-dir', 'agent-socket'], {
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
+
+                let stdout = '';
+                let stderr = '';
+
+                proc.stdout?.on('data', (data) => {
+                    stdout += data.toString();
+                });
+
+                proc.stderr?.on('data', (data) => {
+                    stderr += data.toString();
+                });
+
+                proc.on('exit', (code) => {
+                    if (code === 0 && stdout) {
+                        const socketPath = stdout.trim();
+                        this.log(`gpgconf returned socket: ${socketPath}`);
+                        resolve(socketPath);
+                    } else {
+                        this.log(`gpgconf failed with code ${code}, stderr: ${stderr}`);
+                        // Fallback to standard pipe name if gpgconf fails
+                        resolve('\\\\.\\pipe\\gpg-agent');
+                    }
+                });
+
+                proc.on('error', (err) => {
+                    this.log(`Failed to run gpgconf: ${err}`);
+                    // Fallback to standard pipe name
+                    resolve('\\\\.\\pipe\\gpg-agent');
+                });
+            } catch (error) {
+                this.log(`Exception querying gpgconf: ${error}`);
+                // Fallback to standard pipe name
+                resolve('\\\\.\\pipe\\gpg-agent');
+            }
+        });
     }
 
     /**
