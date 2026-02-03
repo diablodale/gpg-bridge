@@ -1,71 +1,87 @@
-# gpg-agent-relay README
+# GPG Agent Relay for VS Code
 
-This is the README for your extension "gpg-agent-relay". After writing up a brief description, we recommend including the following sections.
+**Windows-only extension** that relays GPG agent protocol between Linux remotes (WSL, Dev Containers, SSH) and Windows host running gpg4win.
 
-## Features
+## 🎯 Purpose
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+When working in a remote Linux environment from VS Code on Windows, GPG operations (signing commits, decrypting files) typically fail because the remote can't access your Windows GPG keys. This extension bridges that gap by forwarding GPG agent requests from the remote to your Windows gpg4win installation.
 
-For example if there is an image subfolder under your extension project workspace:
+## ⚠️ Requirements
 
-\!\[feature X\]\(images/feature-x.png\)
+- **Windows host** (this extension only runs on Windows)
+- **gpg4win** installed on Windows
+- **npiperelay.exe** for pipe/socket bridging (optional, will be auto-installed)
+- Remote environment: WSL, Dev Container, or SSH
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## 📦 Installation
 
-## Requirements
+1. Build the extension:
+   ```powershell
+   npm install
+   npm run compile
+   ```
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+2. Install in VS Code:
+   - Press `F5` to launch Extension Development Host, OR
+   - Package with `npm run package` and install the `.vsix` file
 
-## Extension Settings
+## 🚀 Usage
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+### Commands
 
-For example:
+- **GPG Relay: Start** - Start the relay service
+- **GPG Relay: Stop** - Stop the relay service
+- **GPG Relay: Restart** - Restart the relay
+- **GPG Relay: Show Status** - Display current relay status
 
-This extension contributes the following settings:
+### Configuration
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+Open VS Code settings and configure:
 
-## Known Issues
+```json
+{
+  "gpgRelay.gpg4winPath": "C:\\Program Files (x86)\\GnuPG\\bin",
+  "gpgRelay.autoStart": true,
+  "gpgRelay.debugLogging": false
+}
+```
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+### Typical Workflow
 
-## Release Notes
+1. Open VS Code on Windows
+2. Connect to WSL/Container/SSH remote
+3. Run command **GPG Relay: Start** (or enable auto-start)
+4. GPG operations in the remote will now work with your Windows keys
 
-Users appreciate release notes as you update your extension.
+## 🔧 How It Works
 
-### 1.0.0
+The extension:
+1. Detects when you connect to a remote environment
+2. Locates the gpg-agent named pipe on Windows
+3. Sets up a relay bridge using npiperelay
+4. Forwards GPG protocol requests from remote Unix socket to Windows pipe
 
-Initial release of ...
+## 🛠️ Development
 
-### 1.0.1
+Run the extension in debug mode:
 
-Fixed issue #.
+```powershell
+# Press F5 in VS Code, or:
+npm run watch
+```
 
-### 1.1.0
+Then press `F5` to launch the Extension Development Host.
 
-Added features X, Y, and Z.
+## 📝 Status
 
----
+**Current implementation status:**
+- ✅ Extension scaffold and commands
+- ✅ Remote detection
+- ✅ Configuration management
+- ⏳ Relay implementation (in progress)
+- ⏳ npiperelay integration
+- ⏳ Auto-installation of dependencies
 
-## Following extension guidelines
+## 📄 License
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+See LICENSE file.
