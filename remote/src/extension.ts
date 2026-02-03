@@ -11,7 +11,7 @@ import { startRemoteRelay } from './services/remoteRelay';
 let relayInstance: Awaited<ReturnType<typeof startRemoteRelay>> | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
-    const outputChannel = vscode.window.createOutputChannel('GPG Windows Relay');
+    const outputChannel = vscode.window.createOutputChannel('GPG Windows Relay (Remote)');
 
     try {
         outputChannel.appendLine(`🔐 Remote context (${vscode.env.remoteName}) activated`);

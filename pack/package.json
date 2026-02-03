@@ -20,5 +20,8 @@
   ],
   "scripts": {
     "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.7.1"
   }
 }

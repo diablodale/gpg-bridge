@@ -13,7 +13,7 @@ let detectedAgentSocket: string | null = null;
 
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
-	outputChannel = vscode.window.createOutputChannel('GPG Windows Relay');
+	outputChannel = vscode.window.createOutputChannel('GPG Windows Relay (Local)');
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 
 	outputChannel.appendLine('🔐 GPG Windows Relay Bridge activated');
