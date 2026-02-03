@@ -14,7 +14,7 @@
     "package:bridge": "cd bridge && npm run package",
     "package:remote": "cd remote && npm run package",
     "package:pack": "cd pack && npm run package",
-    "clean": "rimraf bridge/out remote/out bridge/*.vsix remote/*.vsix pack/*.vsix"
+    "clean": "rimraf -g \"bridge/out\" \"remote/out\" \"bridge/gpg-windows-relay-bridge-*.vsix\" \"remote/gpg-windows-relay-remote-*.vsix\" \"pack/gpg-windows-relay-*.vsix\""
   },
   "devDependencies": {
     "rimraf": "^5.0.0"
