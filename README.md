@@ -1,6 +1,6 @@
-# GPG Agent Relay for VS Code
+# GPG Windows Relay for VS Code
 
-**Windows-only extension** that relays GPG agent protocol between Linux remotes (WSL, Dev Containers, SSH) and Windows host running Gpg4win.
+**Windows-only extension** that relays GPG agent protocols between Linux remotes (WSL, Dev Containers, SSH) and Windows host running Gpg4win.
 
 ## 🎯 Purpose
 
@@ -29,10 +29,10 @@ When working in a remote Linux environment from VS Code on Windows, GPG operatio
 
 ### Commands
 
-- **GPG Relay: Start** - Start the relay service
-- **GPG Relay: Stop** - Stop the relay service
-- **GPG Relay: Restart** - Restart the relay
-- **GPG Relay: Show Status** - Display current relay status
+- **GPG Windows Relay: Start** - Start the relay service
+- **GPG Windows Relay: Stop** - Stop the relay service
+- **GPG Windows Relay: Restart** - Restart the relay
+- **GPG Windows Relay: Show Status** - Display current relay status
 
 ### Configuration
 
@@ -40,9 +40,10 @@ Open VS Code settings and configure:
 
 ```json
 {
-  "gpgRelay.gpg4winPath": "C:\\Program Files (x86)\\GnuPG\\bin",
-  "gpgRelay.autoStart": true,
-  "gpgRelay.debugLogging": false
+  "gpgWinRelay.gpg4winPath": "C:\\Program Files (x86)\\GnuPG\\bin",
+  "gpgWinRelay.npiperelayPath": "npiperelay.exe",
+  "gpgWinRelay.autoStart": true,
+  "gpgWinRelay.debugLogging": false
 }
 ```
 
@@ -50,7 +51,7 @@ Open VS Code settings and configure:
 
 1. Open VS Code on Windows
 2. Connect to WSL/Container/SSH remote
-3. Run command **GPG Relay: Start** (or enable auto-start)
+3. Run command **GPG Windows Relay: Start** (or enable auto-start)
 4. GPG operations in the remote will now work with your Windows keys
 
 ## 🔧 How It Works

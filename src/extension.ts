@@ -17,23 +17,23 @@ let detectedNpipeRelay: string | null = null;
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	outputChannel = vscode.window.createOutputChannel('GPG Agent Relay');
+	outputChannel = vscode.window.createOutputChannel('GPG Windows Relay');
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 
-	outputChannel.appendLine('🔐 GPG Agent Relay extension activated');
+	outputChannel.appendLine('🔐 GPG Windows Relay extension activated');
 
 	// Check if running on Windows
 	if (process.platform !== 'win32') {
-		vscode.window.showErrorMessage('GPG Agent Relay only works on Windows hosts');
+		vscode.window.showErrorMessage('GPG Windows Relay only works on Windows hosts');
 		return;
 	}
 
 	// Register commands
 	context.subscriptions.push(
-		vscode.commands.registerCommand('gpg-agent-relay.start', startRelay),
-		vscode.commands.registerCommand('gpg-agent-relay.stop', stopRelay),
-		vscode.commands.registerCommand('gpg-agent-relay.restart', restartRelay),
-		vscode.commands.registerCommand('gpg-agent-relay.showStatus', showStatus),
+		vscode.commands.registerCommand('gpg-windows-relay.start', startRelay),
+		vscode.commands.registerCommand('gpg-windows-relay.stop', stopRelay),
+		vscode.commands.registerCommand('gpg-windows-relay.restart', restartRelay),
+		vscode.commands.registerCommand('gpg-windows-relay.showStatus', showStatus),
 		outputChannel,
 		statusBarItem
 	);
@@ -56,7 +56,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Check for remote connection and auto-start if configured
-	const config = vscode.workspace.getConfiguration('gpgRelay');
+	const config = vscode.workspace.getConfiguration('gpgWinRelay');
 	if (config.get('autoStart') && isRemoteSession()) {
 		outputChannel.appendLine('🔌 Remote session detected, auto-starting relay...');
 		startRelay();
@@ -70,8 +70,8 @@ function isRemoteSession(): boolean {
 
 // Detect Gpg4win installation path
 async function detectGpg4winPath(): Promise<void> {
-	const config = vscode.workspace.getConfiguration('gpgRelay');
-	const configPath = config.get<string>('gpgRelay.gpg4winPath') || '';
+	const config = vscode.workspace.getConfiguration('gpgWinRelay');
+	const configPath = config.get<string>('gpgWinRelay.gpg4winPath') || '';
 
 	// Check configured path first
 	if (configPath) {
@@ -220,20 +220,20 @@ function queryGpgAgentSocket(gpgconfPath: string): Promise<string | null> {
 	});
 }
 
-// Start the GPG relay
+// Start the GPG Windows Relay
 async function startRelay() {
 	if (relay?.isRunning()) {
-		vscode.window.showWarningMessage('GPG relay is already running');
+		vscode.window.showWarningMessage('GPG Windows Relay is already running');
 		return;
 	}
 
 	try {
-		const config = vscode.workspace.getConfiguration('gpgRelay');
+		const config = vscode.workspace.getConfiguration('gpgWinRelay');
 		const gpg4winPath = config.get<string>('gpg4winPath') || '';
 		const npiperelayPath = config.get<string>('npiperelayPath') || '';
 		const debugLogging = config.get<boolean>('debugLogging') || false;
 
-		outputChannel.appendLine('🚀 Starting GPG agent relay...');
+		outputChannel.appendLine('🚀 Starting GPG Windows Relay...');
 
 		if (debugLogging) {
 			outputChannel.appendLine(`Config Gpg4win path: ${gpg4winPath || '(auto-detect)'}`);
@@ -254,33 +254,33 @@ async function startRelay() {
 		await relay.start();
 
 		updateStatusBar(true);
-		vscode.window.showInformationMessage('GPG relay started');
+		vscode.window.showInformationMessage('GPG Windows Relay started');
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		outputChannel.appendLine(`❌ Error starting relay: ${errorMessage}`);
 		outputChannel.show(true); // Show the output panel
-		vscode.window.showErrorMessage(`Failed to start GPG relay: ${errorMessage}`);
+		vscode.window.showErrorMessage(`Failed to start GPG Windows Relay: ${errorMessage}`);
 		relay = null;
 	}
 }
 
-// Stop the GPG relay
+// Stop the GPG Windows Relay
 async function stopRelay() {
 	if (!relay?.isRunning()) {
-		vscode.window.showInformationMessage('GPG relay is not running');
+		vscode.window.showInformationMessage('GPG Windows Relay is not running');
 		return;
 	}
 
-	outputChannel.appendLine('🛑 Stopping GPG agent relay...');
+	outputChannel.appendLine('🛑 Stopping GPG Windows Relay...');
 
 	relay.stop();
 	relay = null;
 
 	updateStatusBar(false);
-	vscode.window.showInformationMessage('GPG relay stopped');
+	vscode.window.showInformationMessage('GPG Windows Relay stopped');
 }
 
-// Restart the GPG relay
+// Restart the GPG Windows Relay
 async function restartRelay() {
 	await stopRelay();
 	setTimeout(() => startRelay(), 500);
@@ -290,14 +290,14 @@ async function restartRelay() {
 function showStatus() {
 	const isRunning = relay?.isRunning() || false;
 	const remoteName = vscode.env.remoteName || 'none';
-	const config = vscode.workspace.getConfiguration('gpgRelay');
+	const config = vscode.workspace.getConfiguration('gpgWinRelay');
 	// Use relay's detected path if relay is running, otherwise use global detected path
 	const gpg4winPath = relay?.getGpg4winPath() || detectedGpg4winPath || '(not detected)';
 	const agentPipe = relay?.getAgentPipe() || detectedAgentPipe || '(not detected)';
 	const npipeRelayPath = relay?.getNpipeRelayPath() || detectedNpipeRelay || '(not detected)';
 
 	const status = [
-		`GPG Agent Relay Status`,
+		`GPG Windows Relay Status`,
 		``,
 		`Relay Status: ${isRunning ? '✅ Running' : '🛑 Stopped'}`,
 		`Remote Session: ${remoteName}`,
@@ -318,16 +318,16 @@ function updateStatusBar(running?: boolean) {
 	const isRunning = running ?? (relay?.isRunning() || false);
 
 	if (isRunning) {
-		statusBarItem.text = '$(key) GPG Relay: Active';
+		statusBarItem.text = '$(key) GPG Windows Relay: Active';
 		statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
-		statusBarItem.tooltip = 'GPG Agent Relay is running';
+		statusBarItem.tooltip = 'GPG Windows Relay is running';
 	} else {
-		statusBarItem.text = '$(key) GPG Relay: Inactive';
+		statusBarItem.text = '$(key) GPG Windows Relay: Inactive';
 		statusBarItem.backgroundColor = undefined;
-		statusBarItem.tooltip = 'GPG Agent Relay is not running';
+		statusBarItem.tooltip = 'GPG Windows Relay is not running';
 	}
 
-	statusBarItem.command = 'gpg-agent-relay.showStatus';
+	statusBarItem.command = 'gpg-windows-relay.showStatus';
 }
 
 // This method is called when your extension is deactivated

@@ -1,5 +1,5 @@
 /**
- * GPG Agent Relay Implementation
+ * GPG Windows Relay Implementation
  *
  * This module handles the actual relay between Linux remote (WSL/container) GPG agent
  * and Windows host Gpg4win named pipes.
@@ -68,13 +68,13 @@ export class GpgRelay {
      * Start the GPG agent relay
      */
     public async start(): Promise<void> {
-        this.log('Starting GPG relay...');
+        this.log('Starting GPG Windows Relay...');
 
         // Find Gpg4win installation
         this.log('Searching for Gpg4win installation...');
         const gpg4winPath = await this.findGpg4WinPath();
         if (!gpg4winPath) {
-            throw new Error('Gpg4win not found. Please install Gpg4win or configure gpgRelay.gpg4winPath');
+            throw new Error('Gpg4win not found. Please install Gpg4win or configure gpgWinRelay.gpg4winPath');
         }
         this.detectedGpg4winPath = gpg4winPath;        this.log(`Found Gpg4win at: ${gpg4winPath}`);
 
@@ -126,7 +126,7 @@ export class GpgRelay {
      * Stop the GPG agent relay
      */
     public stop(): void {
-        this.log('Stopping GPG relay...');
+        this.log('Stopping GPG Windows Relay...');
 
         for (const proc of this.processes) {
             if (!proc.killed) {
@@ -135,7 +135,7 @@ export class GpgRelay {
         }
 
         this.processes = [];
-        this.log('Relay stopped');
+        this.log('GPG Windows Relay stopped');
     }
 
     /**

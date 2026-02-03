@@ -1,7 +1,7 @@
 {
-  "name": "gpg-agent-relay",
-  "displayName": "GPG Agent Relay",
-  "description": "Relays GPG agent protocol to Windows host running Gpg4win",
+  "name": "gpg-windows-relay",
+  "displayName": "GPG Windows Relay",
+  "description": "Relays remote GPG protocols to Windows host running Gpg4win",
   "version": "0.0.1",
   "publisher": "local",
   "engines": {
@@ -23,43 +23,43 @@
   "contributes": {
     "commands": [
       {
-        "command": "gpg-agent-relay.start",
-        "title": "GPG Relay: Start"
+        "command": "gpg-windows-relay.start",
+        "title": "GPG Windows Relay: Start"
       },
       {
-        "command": "gpg-agent-relay.stop",
-        "title": "GPG Relay: Stop"
+        "command": "gpg-windows-relay.stop",
+        "title": "GPG Windows Relay: Stop"
       },
       {
-        "command": "gpg-agent-relay.restart",
-        "title": "GPG Relay: Restart"
+        "command": "gpg-windows-relay.restart",
+        "title": "GPG Windows Relay: Restart"
       },
       {
-        "command": "gpg-agent-relay.showStatus",
-        "title": "GPG Relay: Show Status"
+        "command": "gpg-windows-relay.showStatus",
+        "title": "GPG Windows Relay: Show Status"
       }
     ],
     "configuration": {
-      "title": "GPG Agent Relay",
+      "title": "GPG Windows Relay",
       "properties": {
-        "gpgRelay.gpg4winPath": {
+        "gpgWinRelay.gpg4winPath": {
           "type": "string",
           "default": "",
           "markdownDescription": "Path to Gpg4win's GnuPG bin directory containing `gpgconf.exe`. Leave empty to auto-detect.",
           "scope": "resource"
         },
-        "gpgRelay.npiperelayPath": {
+        "gpgWinRelay.npiperelayPath": {
           "type": "string",
           "default": "",
           "markdownDescription": "Path to `npiperelay.exe` (albertony fork with Assuan support). Leave empty to auto-detect.",
           "scope": "resource"
         },
-        "gpgRelay.autoStart": {
+        "gpgWinRelay.autoStart": {
           "type": "boolean",
           "default": false,
           "description": "Automatically start relay when remote connection is detected"
         },
-        "gpgRelay.debugLogging": {
+        "gpgWinRelay.debugLogging": {
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for troubleshooting"
