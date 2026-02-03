@@ -1,102 +1,22 @@
 {
-  "name": "gpg-windows-relay",
-  "displayName": "GPG Windows Relay",
-  "description": "Relays remote GPG protocols to Windows host running Gpg4win",
+  "name": "gpg-windows-relay-monorepo",
+  "description": "GPG Windows Relay - Three extension pack for relaying GPG to Windows from remotes",
   "version": "0.0.1",
-  "publisher": "local",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/diablodale/gpg-windows-relay"
-  },
-  "engines": {
-    "vscode": "^1.108.1"
-  },
-  "categories": [
-    "Other"
-  ],
-  "extensionKind": [
-    "ui",
-    "workspace"
-  ],
-  "activationEvents": [
-    "onStartupFinished",
-    "onCommand:gpg-windows-relay.start",
-    "onCommand:gpg-windows-relay.stop"
-  ],
-  "main": "./out/extension.js",
-  "browser": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "gpg-windows-relay.start",
-        "title": "GPG Windows Relay: Start"
-      },
-      {
-        "command": "gpg-windows-relay.stop",
-        "title": "GPG Windows Relay: Stop"
-      },
-      {
-        "command": "gpg-windows-relay.restart",
-        "title": "GPG Windows Relay: Restart"
-      },
-      {
-        "command": "gpg-windows-relay.showStatus",
-        "title": "GPG Windows Relay: Show Status"
-      }
-    ],
-    "configuration": {
-      "title": "GPG Windows Relay",
-      "properties": {
-        "gpgWinRelay.gpg4winPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Path to Gpg4win's GnuPG bin directory containing `gpgconf.exe`. Leave empty to auto-detect.",
-          "scope": "resource"
-        },
-        "gpgWinRelay.npiperelayPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Path to `npiperelay.exe` (albertony fork with Assuan support). Leave empty to auto-detect.",
-          "scope": "resource"
-        },
-        "gpgWinRelay.autoStart": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically start relay when remote connection is detected"
-        },
-        "gpgWinRelay.debugLogging": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable debug logging for troubleshooting"
-        },
-        "gpgWinRelay.listenPort": {
-          "type": "number",
-          "default": 63331,
-          "minimum": 1024,
-          "maximum": 65535,
-          "description": "TCP port for the local bridge to listen on (must be >= 1024)"
-        }
-      }
-    }
-  },
+  "private": true,
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test",
-    "package": "vsce package"
+    "build": "npm run build:bridge && npm run build:remote",
+    "build:bridge": "cd bridge && npm run compile",
+    "build:remote": "cd remote && npm run compile",
+    "watch": "npm run watch:bridge & npm run watch:remote",
+    "watch:bridge": "cd bridge && npm run watch",
+    "watch:remote": "cd remote && npm run watch",
+    "package": "npm run package:bridge && npm run package:remote && npm run package:pack",
+    "package:bridge": "cd bridge && npm run package",
+    "package:remote": "cd remote && npm run package",
+    "package:pack": "cd pack && npm run package",
+    "clean": "rimraf bridge/out remote/out bridge/*.vsix remote/*.vsix pack/*.vsix"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.108.1",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.7.1",
-    "eslint": "^9.39.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.52.0"
+    "rimraf": "^5.0.0"
   }
 }
