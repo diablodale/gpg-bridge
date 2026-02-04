@@ -46,7 +46,7 @@ export class AgentProxy {
     /**
      * Connect to GPG agent and return a sessionId
      * On Windows, reads the socket file to extract port and nonce, then connects via TCP
-     * Waits for nonce to be sent before returning
+     * Waits for nonce to be sent and greeting to be received before returning
      */
     public async connectAgent(): Promise<string> {
         const sessionId = uuidv4();
@@ -85,7 +85,7 @@ export class AgentProxy {
                 port: port
             });
 
-            // Wait for connection and nonce to be sent
+            // Wait for connection, send nonce, and read greeting
             await new Promise<void>((resolve, reject) => {
                 const errorHandler = (error: Error) => {
                     this.log(`Session ${sessionId} socket error: ${error.message}`);
@@ -94,23 +94,42 @@ export class AgentProxy {
                 };
 
                 const closeHandler = () => {
-                    this.log(`Session ${sessionId} socket closed during connection`);
+                    this.log(`Session ${sessionId} socket closed during initialization`);
                     this.sessions.delete(sessionId);
-                    reject(new Error('Socket closed before nonce was sent'));
+                    reject(new Error('Socket closed before initialization completed'));
                 };
 
                 const connectHandler = () => {
-                    // Remove temporary handlers and resolve
-                    socket.off('error', errorHandler);
-                    socket.off('close', closeHandler);
                     this.log(`Session ${sessionId} connected, sending nonce`);
                     socket.write(nonce);
+                };
+
+                const dataHandler = (chunk: Buffer) => {
+                    const greetingLine = chunk.toString('utf-8').trim();
+                    this.log(`Session ${sessionId} received greeting: ${greetingLine}`);
+
+                    // Verify greeting starts with OK
+                    if (!greetingLine.startsWith('OK ')) {
+                        socket.off('error', errorHandler);
+                        socket.off('close', closeHandler);
+                        socket.off('data', dataHandler);
+                        socket.destroy();
+                        this.sessions.delete(sessionId);
+                        reject(new Error(`Invalid greeting from agent: ${greetingLine}`));
+                        return;
+                    }
+
+                    // Greeting received successfully, prepare for commands
+                    socket.off('error', errorHandler);
+                    socket.off('close', closeHandler);
+                    socket.off('data', dataHandler);
                     resolve();
                 };
 
                 socket.once('error', errorHandler);
                 socket.once('close', closeHandler);
                 socket.once('connect', connectHandler);
+                socket.once('data', dataHandler);
             });
 
             this.sessions.set(sessionId, {
@@ -156,7 +175,9 @@ export class AgentProxy {
             const isInquireBlock = commandBlock.startsWith('D ');
 
             const dataHandler = (chunk: Buffer) => {
-                responseData += chunk.toString('utf-8');
+                const chunkStr = chunk.toString('utf-8');
+                responseData += chunkStr;
+                this.log(`Session ${sessionId} data chunk: ${chunkStr.replace(/\n/g, '\\n')}`);
 
                 // Check if we have a complete response
                 if (this.isCompleteResponse(responseData, isInquireBlock)) {
@@ -164,8 +185,10 @@ export class AgentProxy {
                     session.socket.removeListener('error', errorHandler);
                     session.socket.removeListener('close', closeHandler);
 
-                    this.log(`Session ${sessionId} received: ${responseData.replace(/\n/g, '\\n')}`);
+                    this.log(`Session ${sessionId} response complete: ${responseData.replace(/\n/g, '\\n')}`);
                     resolve({ response: responseData });
+                } else {
+                    this.log(`Session ${sessionId} waiting for more data... (buffer: ${responseData.replace(/\n/g, '\\n')})`);
                 }
             };
 

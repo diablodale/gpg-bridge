@@ -14,7 +14,7 @@ let detectedAgentSocket: string | null = null;
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	outputChannel = vscode.window.createOutputChannel('GPG Agent Proxy');
-	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	statusBarItem = vscode.window.createStatusBarItem('gpg-agent-proxy', vscode.StatusBarAlignment.Right, 100);
 
 	outputChannel.appendLine('GPG Agent Proxy activated');
 
@@ -46,9 +46,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		await detectGpg4winPath();
 		await startAgentProxy();
 
-		// Run sanity probe after activation (fire-and-forget)
+		// Run sanity probe in background (fire-and-forget)
+		// It will update status bar to Ready after successful probe
 		probeGpgAgent().catch((err) => {
-			outputChannel.appendLine(`Sanity probe warning: ${err instanceof Error ? err.message : String(err)}`);
+			outputChannel.appendLine(`Sanity probe failed: ${err instanceof Error ? err.message : String(err)}`);
 		});
 	} catch (error: unknown) {
 		outputChannel.appendLine(`Start failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -238,8 +239,6 @@ async function startAgentProxy(): Promise<void> {
 		agentProxyService.setLogCallback((message: string) => outputChannel.appendLine(message));
 		outputChannel.appendLine(`GPG agent socket: ${detectedAgentSocket}`);
 		outputChannel.appendLine('Agent proxy service initialized and ready.');
-
-		updateStatusBar(true);
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		outputChannel.appendLine(`Error starting agent proxy: ${errorMessage}`);
@@ -316,7 +315,7 @@ function updateStatusBar(running?: boolean): void {
 			: 'GPG agent proxy is ready for incoming requests';
 	}
 
-	statusBarItem.text = `$(key) GPG: ${state}`;
+	statusBarItem.text = `GPG: ${state}`;
 	statusBarItem.tooltip = tooltip;
 	statusBarItem.command = 'gpg-agent-proxy.showStatus';
 }
@@ -324,6 +323,7 @@ function updateStatusBar(running?: boolean): void {
 /**
  * Sanity probe: Send GETINFO version to verify agent is responsive
  * Runs async after activation, doesn't block startup
+ * Updates status bar to Ready on success
  */
 async function probeGpgAgent(): Promise<void> {
 	if (!agentProxyService) {
@@ -336,6 +336,8 @@ async function probeGpgAgent(): Promise<void> {
 		await agentProxyService.disconnectAgent(sessionId);
 
 		outputChannel.appendLine(`✓ GPG agent sanity probe passed: ${result.response.split('\n')[0]}`);
+		// Update status bar to Ready after successful probe
+		updateStatusBar();
 	} catch (error: unknown) {
 		const msg = error instanceof Error ? error.message : String(error);
 		outputChannel.appendLine(`✗ GPG agent sanity probe failed: ${msg}`);
