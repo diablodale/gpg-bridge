@@ -1,39 +1,36 @@
 ﻿/**
  * Agent Proxy Service
  *
- * Creates a TCP server that proxies to the Assuan socket provided by gpg4win.
- * Reads the Assuan socket file to get the TCP port and nonce, then:
- * 1. Creates a local proxy socket on TCP port
- * 2. On connection: authenticates with the nonce and pipes to gpg-agent
+ * Manages connections to gpg-agent Assuan socket.
+ * Exposes three commands to the request-proxy extension:
+ * - connectAgent(): Creates new socket, returns sessionId
+ * - sendCommands(sessionId, commandBlock): Sends command block, returns response
+ * - disconnectAgent(sessionId): Closes socket and cleans up
  */
 
 import * as net from 'net';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface AgentProxyConfig {
-    gpgAgentSocketPath: string; // Path to Assuan socket file, e.g. C:\Users\dale\AppData\Local\gnupg\d.123123123\S.gpg-agent
-    proxyPort: number;          // TCP port for proxy (default: 63331)
+    gpgAgentSocketPath: string; // Path to Assuan socket file
     debugLogging: boolean;
 }
 
-export interface ParsedAssuan {
-    port: number;
-    nonce: Buffer;
+interface SessionSocket {
+    socket: net.Socket;
+    responseBuffer: string;
 }
 
 export class AgentProxy {
-    private server: net.Server | null = null;
+    private sessions: Map<string, SessionSocket> = new Map();
     private logCallback?: (message: string) => void;
-    private assuanPort: number;
-    private nonce: Buffer;
 
     constructor(private config: AgentProxyConfig) {
-        // Parse the Assuan socket file immediately on instantiation
-        const parsed = this.parseAssuanSocket();
-        this.assuanPort = parsed.port;
-        this.nonce = parsed.nonce;
+        // Validate socket path exists
+        if (!fs.existsSync(config.gpgAgentSocketPath)) {
+            throw new Error(`GPG agent socket not found: ${config.gpgAgentSocketPath}`);
+        }
     }
 
     public setLogCallback(callback: (message: string) => void): void {
@@ -47,153 +44,150 @@ export class AgentProxy {
     }
 
     /**
-     * Parse the Assuan socket file
-     *
-     * Format:
-     * Line 1: TCP port number
-     * Line 2: 16-byte nonce
+     * Connect to GPG agent and return a sessionId
      */
-    private parseAssuanSocket(): ParsedAssuan {
-        this.log(`Reading Assuan socket file: ${this.config.gpgAgentSocketPath}`);
+    public connectAgent(): string {
+        const sessionId = uuidv4();
+        this.log(`Creating session: ${sessionId}`);
 
-        const contents = fs.readFileSync(this.config.gpgAgentSocketPath, 'binary');
+        try {
+            const socket = net.createConnection(this.config.gpgAgentSocketPath);
 
-        // Find the first newline to get the port
-        const newlineIndex = contents.indexOf('\n');
-        if (newlineIndex === -1) {
-            throw new Error('Invalid Assuan socket file: no newline found');
+            socket.on('error', (error) => {
+                this.log(`Session ${sessionId} socket error: ${error.message}`);
+                this.sessions.delete(sessionId);
+            });
+
+            socket.on('close', () => {
+                this.log(`Session ${sessionId} socket closed`);
+                this.sessions.delete(sessionId);
+            });
+
+            this.sessions.set(sessionId, {
+                socket: socket,
+                responseBuffer: ''
+            });
+
+            this.log(`Session ${sessionId} connected successfully`);
+            return sessionId;
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to connect to GPG agent: ${msg}`);
         }
-
-        const portStr = contents.substring(0, newlineIndex).trim();
-        const port = parseInt(portStr, 10);
-
-        if (isNaN(port) || port < 1 || port > 65535) {
-            throw new Error(`Invalid port in Assuan socket file: ${portStr}`);
-        }
-
-        // Extract the nonce (16 bytes after the newline)
-        const nonceStart = newlineIndex + 1;
-        const nonce = Buffer.from(contents.substring(nonceStart, nonceStart + 16), 'binary');
-
-        if (nonce.length !== 16) {
-            throw new Error(`Invalid nonce length: expected 16, got ${nonce.length}`);
-        }
-
-        this.log(`Parsed Assuan socket: port=${port}, nonce=${nonce.toString('hex')}`);
-
-        this.assuanPort = port;
-        return { port, nonce };
-    }
-
-    public getAssuanPort(): number {
-        return this.assuanPort;
     }
 
     /**
-     * Start the Agent Proxy
+     * Send command block to GPG agent and return response
+     *
+     * Command block is a complete request (e.g., "GETINFO version\n" or "D data\nEND\n")
+     * Response is all lines returned by agent until complete (buffered internally)
      */
-    public async start(): Promise<void> {
-        this.log(`Starting Agent proxy on localhost:${this.config.proxyPort}`);
+    public sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }> {
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+            return Promise.reject(new Error(`Invalid session: ${sessionId}`));
+        }
 
-        this.server = net.createServer((clientSocket) => {
-            this.log('Incoming connection from request proxy');
-
-            // Connect to gpg-agent's Assuan socket
-            const gpgSocket = net.createConnection({
-                host: 'localhost',
-                port: this.assuanPort,
-                family: 4  // IPv4
-            });
-
-            gpgSocket.on('connect', () => {
-                this.log('Connected to gpg-agent Assuan socket');
-
-                // Send nonce for authentication
-                gpgSocket.write(this.nonce);
-
-                // Manual bidirectional piping with -ep and -ei semantics:
-                // -ep: terminate on EOF from gpg-agent (the "pipe"), even if client has more data
-                // -ei: terminate on EOF from client (stdin), even if gpg-agent has more data
-                // This means: terminate the connection if EITHER side closes
-
-                // Forward from client to gpg-agent
-                clientSocket.on('data', (data) => {
-                    gpgSocket.write(data);
-                });
-
-                // Forward from gpg-agent to client
-                gpgSocket.on('data', (data) => {
-                    clientSocket.write(data);
-                });
-            });
-
-            gpgSocket.on('error', (err) => {
-                this.log(`Error connecting to gpg-agent: ${err.message}`);
-                clientSocket.destroy();
-            });
-
-            gpgSocket.on('end', () => {
-                this.log('gpg-agent connection closed (terminating)');
-                clientSocket.destroy();  // Immediately terminate, don't wait for client to finish
-            });
-
-            clientSocket.on('error', (err) => {
-                this.log(`Error on client connection: ${err.message}`);
-                gpgSocket.destroy();
-            });
-
-            clientSocket.on('end', () => {
-                this.log('Remote relay disconnected (terminating)');
-                gpgSocket.destroy();  // Immediately terminate, don't wait for gpg-agent to finish
-            });
-        });
-
-        this.server.on('error', (err) => {
-            this.log(`Agent proxy server error: ${err.message}`);
-        });
+        this.log(`Session ${sessionId} sending: ${commandBlock.replace(/\n/g, '\\n')}`);
 
         return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.log('ERROR: Agent proxy timeout (5s)');
-                reject(new Error('Agent proxy timeout - port may be in use'));
-            }, 5000);
+            let responseData = '';
+            const isInquireBlock = commandBlock.startsWith('D ');
 
-            this.server!.listen(this.config.proxyPort, 'localhost', () => {
-                clearTimeout(timeout);
-                this.log(`Agent proxy ready on localhost:${this.config.proxyPort}`);
-                resolve();
-            });
+            const dataHandler = (chunk: Buffer) => {
+                responseData += chunk.toString('utf-8');
 
-            this.server!.on('error', (err) => {
-                clearTimeout(timeout);
-                this.log(`Agent proxy error: ${err.message}`);
-                reject(err);
-            });
-        });
-    }
+                // Check if we have a complete response
+                if (this.isCompleteResponse(responseData, isInquireBlock)) {
+                    session.socket.removeListener('data', dataHandler);
+                    session.socket.removeListener('error', errorHandler);
+                    session.socket.removeListener('close', closeHandler);
 
-    /**
-     * Stop the Agent Proxy
-     */
-    public async stop(): Promise<void> {
-        return new Promise((resolve) => {
-            if (this.server) {
-                this.server.close(() => {
-                    this.log('Agent Proxy stopped');
-                    this.server = null;
-                    resolve();
-                });
-            } else {
-                resolve();
+                    this.log(`Session ${sessionId} received: ${responseData.replace(/\n/g, '\\n')}`);
+                    resolve({ response: responseData });
+                }
+            };
+
+            const errorHandler = (error: Error) => {
+                session.socket.removeListener('data', dataHandler);
+                session.socket.removeListener('close', closeHandler);
+                reject(new Error(`Socket error: ${error.message}`));
+            };
+
+            const closeHandler = () => {
+                session.socket.removeListener('data', dataHandler);
+                session.socket.removeListener('error', errorHandler);
+                reject(new Error('Socket closed unexpectedly'));
+            };
+
+            // Set up listeners
+            session.socket.on('data', dataHandler);
+            session.socket.once('error', errorHandler);
+            session.socket.once('close', closeHandler);
+
+            // Send the command block
+            try {
+                session.socket.write(commandBlock);
+            } catch (error) {
+                session.socket.removeListener('data', dataHandler);
+                session.socket.removeListener('error', errorHandler);
+                session.socket.removeListener('close', closeHandler);
+                const msg = error instanceof Error ? error.message : String(error);
+                reject(new Error(`Failed to write to socket: ${msg}`));
             }
         });
     }
 
     /**
-     * Check if agent proxy is running
+     * Check if response is complete
+     *
+     * Complete responses end with:
+     * - OK (for normal commands)
+     * - ERR (for errors)
+     * - INQUIRE (for inquiries, client will respond with D/END)
+     *
+     * Response format is ASCII lines ending with \n
      */
+    private isCompleteResponse(response: string, isInquireResponse: boolean): boolean {
+        // Split into lines
+        const lines = response.split('\n');
+
+        // Check last non-empty line for terminal condition
+        for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            // Terminal conditions
+            if (line.startsWith('OK ') || line === 'OK') return true;
+            if (line.startsWith('ERR ')) return true;
+            if (line.startsWith('INQUIRE ')) return true;
+
+            // For D/END blocks, we need END
+            if (isInquireResponse && line === 'END') return true;
+
+            // Found a non-terminal line, need more data
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Disconnect a session and clean up
+     */
+    public disconnectAgent(sessionId: string): void {
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+            throw new Error(`Invalid session: ${sessionId}`);
+        }
+
+        this.log(`Closing session: ${sessionId}`);
+        session.socket.destroy();
+        this.sessions.delete(sessionId);
+    }
+
     public isRunning(): boolean {
-        return this.server !== null;
+        return this.sessions.size > 0;
     }
 }
 

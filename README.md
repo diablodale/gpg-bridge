@@ -46,14 +46,12 @@ from the remote to the GPG agent running on your VS Code UI host.
 
 ### Configuration
 
-Often the default configuration works. You can override them with
+Often the default configuration works. You can override it with
 VS Code settings for "GPG Agent Proxy" having prefix `gpgAgentProxy`:
 
 ```json
 {
   "gpgAgentProxy.gpg4winPath": "C:\\Program Files\\GnuPG\\bin",
-  "gpgAgentProxy.autoStart": true,
-  "gpgAgentProxy.proxyPort": 63331,
   "gpgAgentProxy.debugLogging": false
 }
 ```

@@ -3,6 +3,10 @@
  *
  * This code runs on the remote (WSL/container/SSH).
  * It activates automatically when VS Code connects to any remote.
+ *
+ * Creates a Unix socket server on the GPG agent socket path and implements
+ * a state machine to forward protocol operations to the agent-proxy extension
+ * via VS Code commands.
  */
 
 import * as vscode from 'vscode';
@@ -17,15 +21,15 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Remote context (${vscode.env.remoteName}) activated`);
 
         // Register commands
-        const startCommand = vscode.commands.registerCommand('gpg-request-proxy.start', async () => {
-            await startRequestProxyHandler(outputChannel);
-        });
-
-        const stopCommand = vscode.commands.registerCommand('gpg-request-proxy.stop', async () => {
-            await stopRequestProxyHandler(outputChannel);
-        });
-
-        context.subscriptions.push(startCommand, stopCommand, outputChannel);
+        context.subscriptions.push(
+            vscode.commands.registerCommand('gpg-request-proxy.start', async () => {
+                await startRequestProxyHandler(outputChannel);
+            }),
+            vscode.commands.registerCommand('gpg-request-proxy.stop', async () => {
+                await stopRequestProxyHandler(outputChannel);
+            }),
+            outputChannel
+        );
 
         // Auto-start request proxy on remote
         outputChannel.appendLine('Auto-starting request proxy...');
@@ -50,23 +54,19 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel) {
 
     try {
         outputChannel.appendLine('Starting request proxy...');
+        outputChannel.appendLine('Creating Unix socket server and state machine');
 
-        // Get the configured port from workspace settings (defaults to 63331)
-        const config = vscode.workspace.getConfiguration('gpgAgentProxy');
-        const agentProxyPort = config.get<number>('proxyPort') || 63331;
-
-        // Start the request proxy
+        // Start the request proxy (implements state machine via VS Code commands)
         requestProxyInstance = await startRequestProxy({
-            agentProxyHost: 'localhost',
-            agentProxyPort: agentProxyPort,
-            logCallback: (msg) => outputChannel.appendLine(`      ${msg}`)
+            logCallback: (msg) => outputChannel.appendLine(`  ${msg}`)
         });
 
-        outputChannel.appendLine(`Request proxy established to agent proxy on ${agentProxyPort})`);
+        outputChannel.appendLine('Request proxy started successfully');
+        outputChannel.appendLine('Ready to handle GPG Assuan protocol operations');
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Failed to start request proxy: ${message}`);
-        outputChannel.appendLine('Make sure agent proxy is running: F1 > "GPG Agent Proxy: Start"');
+        outputChannel.appendLine('Ensure gpg-agent is running and agent-proxy extension is started');
         outputChannel.show(true);
         throw error;
     }

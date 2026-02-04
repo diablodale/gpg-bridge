@@ -30,31 +30,15 @@
       {
         "command": "gpg-request-proxy.stop",
         "title": "GPG Request Proxy: Stop"
-      },
-      {
-        "command": "gpg-request-proxy.showStatus",
-        "title": "GPG Request Proxy: Show Status"
       }
     ],
     "configuration": {
       "title": "GPG Agent Proxy",
       "properties": {
-        "gpgAgentProxy.autoStart": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically start request proxy when remote connection is detected"
-        },
         "gpgAgentProxy.debugLogging": {
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for troubleshooting"
-        },
-        "gpgAgentProxy.proxyPort": {
-          "type": "number",
-          "default": 63331,
-          "minimum": 1024,
-          "maximum": 65535,
-          "description": "TCP port to connect to on the Windows host (must be >= 1024)"
         }
       }
     }
