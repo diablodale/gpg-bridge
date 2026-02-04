@@ -43,7 +43,7 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
     if (!socketPath) {
         throw new Error(
             'Could not determine local GPG socket path. ' +
-            'Is gpg-agent running? Try: gpgconf --list-dir agent-extra-socket'
+            'Is gpg installed? Try: gpgconf --list-dirs'
         );
     }
 
@@ -129,7 +129,7 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
 async function connectToAgent(config: RequestProxyConfig, session: ClientSession): Promise<void> {
     try {
         // Call connectAgent command
-        const result = await vscode.commands.executeCommand('gpg-agent-proxy.connectAgent') as { sessionId: string };
+        const result = await vscode.commands.executeCommand('_gpg-agent-proxy.connectAgent') as { sessionId: string };
         session.sessionId = result.sessionId;
         session.state = 'SEND_COMMAND';
         log(config, `[${session.sessionId}] Connected to agent-proxy`);
@@ -174,7 +174,7 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
         session.state = 'WAIT_RESPONSE';
         try {
             const result = await vscode.commands.executeCommand(
-                'gpg-agent-proxy.sendCommands',
+                '_gpg-agent-proxy.sendCommands',
                 session.sessionId,
                 command
             ) as { response: string };
@@ -225,7 +225,7 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
         session.state = 'WAIT_RESPONSE';
         try {
             const result = await vscode.commands.executeCommand(
-                'gpg-agent-proxy.sendCommands',
+                '_gpg-agent-proxy.sendCommands',
                 session.sessionId,
                 dataBlock
             ) as { response: string };
@@ -274,7 +274,7 @@ async function cleanupSession(config: RequestProxyConfig, session: ClientSession
 
     try {
         // Call disconnectAgent to clean up server-side session
-        await vscode.commands.executeCommand('gpg-agent-proxy.disconnectAgent', sessionId);
+        await vscode.commands.executeCommand('_gpg-agent-proxy.disconnectAgent', sessionId);
         log(config, `[${sessionId}] Session cleaned up`);
     } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);

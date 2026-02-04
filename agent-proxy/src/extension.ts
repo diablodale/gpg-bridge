@@ -20,10 +20,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Register three command handlers for inter-extension communication
 	context.subscriptions.push(
-		vscode.commands.registerCommand('gpg-agent-proxy.connectAgent', connectAgent),
-		vscode.commands.registerCommand('gpg-agent-proxy.sendCommands', sendCommands),
-		vscode.commands.registerCommand('gpg-agent-proxy.disconnectAgent', disconnectAgent),
-		// UI commands
+		// Internal commands called by request-proxy extension, hidden from user with underscore prefix
+		vscode.commands.registerCommand('_gpg-agent-proxy.connectAgent', connectAgent),
+		vscode.commands.registerCommand('_gpg-agent-proxy.sendCommands', sendCommands),
+		vscode.commands.registerCommand('_gpg-agent-proxy.disconnectAgent', disconnectAgent),
+		// UI commands visible to user
 		vscode.commands.registerCommand('gpg-agent-proxy.start', startAgentProxy),
 		vscode.commands.registerCommand('gpg-agent-proxy.stop', stopAgentProxy),
 		vscode.commands.registerCommand('gpg-agent-proxy.restart', restartAgentProxy),
@@ -54,7 +55,7 @@ export async function activate(context: vscode.ExtensionContext) {
 // ==============================================================================
 
 /**
- * Command: gpg-agent-proxy.connectAgent
+ * Command: _gpg-agent-proxy.connectAgent
  *
  * Called by request-proxy to establish a connection to gpg-agent.
  * Returns a sessionId that must be used for subsequent sendCommands calls.
@@ -76,7 +77,7 @@ async function connectAgent(): Promise<{ sessionId: string }> {
 }
 
 /**
- * Command: gpg-agent-proxy.sendCommands
+ * Command: _gpg-agent-proxy.sendCommands
  *
  * Called by request-proxy to send a command block to gpg-agent.
  * commandBlock: complete command (e.g., "GETINFO version\n" or "D data\nEND\n")
@@ -99,7 +100,7 @@ async function sendCommands(sessionId: string, commandBlock: string): Promise<{ 
 }
 
 /**
- * Command: gpg-agent-proxy.disconnectAgent
+ * Command: _gpg-agent-proxy.disconnectAgent
  *
  * Called by request-proxy to close a session.
  * sessionId: the session to disconnect
@@ -187,14 +188,14 @@ function detectAgentSocket(): void {
 	}
 
 	try {
-		const result = spawnSync(gpgconfPath, ['--list-dir', 'agent-extra-socket'], {
+		const result = spawnSync(gpgconfPath, ['--list-dirs', 'agent-extra-socket'], {
 			encoding: 'utf8',
 			timeout: 2000
 		});
 
 		if (result.status === 0 && result.stdout) {
 			detectedAgentSocket = result.stdout.trim();
-			outputChannel.appendLine(`Detected GPG agent socket: ${detectedAgentSocket}`);
+			outputChannel.appendLine(`Detected GPG agent extra socket: ${detectedAgentSocket}`);
 		}
 	} catch (error) {
 		// Silently fail
