@@ -87,29 +87,42 @@ export class AgentProxy {
 
             // Wait for connection, send nonce, and read greeting
             await new Promise<void>((resolve, reject) => {
+                const rejectWith = (error: unknown, fallbackMessage: string) => {
+                    const msg = error instanceof Error ? error.message : String(error || '');
+                    reject(new Error(msg || fallbackMessage));
+                };
+
                 const connectionTimeout = setTimeout(() => {
                     socket.destroy();
                     this.sessions.delete(sessionId);
-                    reject(new Error('Connection timeout: greeting not received within 5 seconds'));
+                    rejectWith(undefined, 'Connection timeout: greeting not received within 5 seconds');
                 }, 5000);
 
                 const errorHandler = (error: Error) => {
                     clearTimeout(connectionTimeout);
                     this.log(`Session ${sessionId} socket error: ${error.message}`);
                     this.sessions.delete(sessionId);
-                    reject(error);
+                    rejectWith(error, 'Socket error during initialization');
                 };
 
                 const closeHandler = () => {
                     clearTimeout(connectionTimeout);
                     this.log(`Session ${sessionId} socket closed during initialization`);
                     this.sessions.delete(sessionId);
-                    reject(new Error('Socket closed before initialization completed'));
+                    rejectWith(undefined, 'Socket closed before initialization completed');
                 };
 
                 const connectHandler = () => {
                     this.log(`Session ${sessionId} connected, sending nonce`);
-                    socket.write(nonce);
+                    try {
+                        socket.write(nonce, (error) => {
+                            if (error) {
+                                rejectWith(error, 'Failed to send nonce');
+                            }
+                        });
+                    } catch (error) {
+                        rejectWith(error, 'Failed to send nonce');
+                    }
                 };
 
                 const dataHandler = (chunk: Buffer) => {
@@ -124,7 +137,7 @@ export class AgentProxy {
                         socket.off('data', dataHandler);
                         socket.destroy();
                         this.sessions.delete(sessionId);
-                        reject(new Error(`Invalid greeting from agent: ${greetingLine}`));
+                        rejectWith(undefined, `Invalid greeting from agent: ${greetingLine}`);
                         return;
                     }
 

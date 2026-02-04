@@ -228,7 +228,7 @@ async function startAgentProxy(): Promise<void> {
 		outputChannel.appendLine('Starting agent proxy...');
 
 		const config = vscode.workspace.getConfiguration('gpgAgentProxy');
-		const debugLogging = config.get<boolean>('debugLogging') || false;
+		const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
 
 		agentProxyService = new AgentProxy({
 			gpgAgentSocketPath: detectedAgentSocket,
@@ -333,10 +333,10 @@ async function probeGpgAgent(): Promise<void> {
 
 	try {
 		const sessionId = await agentProxyService.connectAgent();
-		const result = await agentProxyService.sendCommands(sessionId, 'GETINFO version\n');
+		await agentProxyService.sendCommands(sessionId, 'GETINFO version\n');
 		await agentProxyService.disconnectAgent(sessionId);
 
-		outputChannel.appendLine(`GPG agent sanity probe passed: ${result.response.split('\n')[0]}`);
+		outputChannel.appendLine('GPG agent sanity probe successful');
 		// Update status bar to Ready after successful probe
 		updateStatusBar();
 	} catch (error: unknown) {
