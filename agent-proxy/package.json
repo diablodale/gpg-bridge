@@ -41,18 +41,6 @@
       {
         "command": "gpg-agent-proxy.showStatus",
         "title": "GPG Agent Proxy: Show Status"
-      },
-      {
-        "command": "_gpg-agent-proxy.connectAgent",
-        "title": "GPG Agent Proxy: Connect Agent (Internal)"
-      },
-      {
-        "command": "_gpg-agent-proxy.sendCommands",
-        "title": "GPG Agent Proxy: Send Commands (Internal)"
-      },
-      {
-        "command": "_gpg-agent-proxy.disconnectAgent",
-        "title": "GPG Agent Proxy: Disconnect Agent (Internal)"
       }
     ],
     "configuration": {

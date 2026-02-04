@@ -20,9 +20,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Register three command handlers for inter-extension communication
 	context.subscriptions.push(
-		vscode.commands.registerCommand('_gpg-agent-proxy.connectAgent', connectAgent),
-		vscode.commands.registerCommand('_gpg-agent-proxy.sendCommands', sendCommands),
-		vscode.commands.registerCommand('_gpg-agent-proxy.disconnectAgent', disconnectAgent),
+		vscode.commands.registerCommand('gpg-agent-proxy.connectAgent', connectAgent),
+		vscode.commands.registerCommand('gpg-agent-proxy.sendCommands', sendCommands),
+		vscode.commands.registerCommand('gpg-agent-proxy.disconnectAgent', disconnectAgent),
 		// UI commands
 		vscode.commands.registerCommand('gpg-agent-proxy.start', startAgentProxy),
 		vscode.commands.registerCommand('gpg-agent-proxy.stop', stopAgentProxy),
@@ -232,11 +232,7 @@ async function startAgentProxy(): Promise<void> {
 
 		agentProxyService.setLogCallback((message: string) => outputChannel.appendLine(message));
 		outputChannel.appendLine(`GPG agent socket: ${detectedAgentSocket}`);
-
-		outputChannel.appendLine('Agent proxy service initialized. Commands available:');
-		outputChannel.appendLine('  - gpg-agent-proxy.connectAgent');
-		outputChannel.appendLine('  - gpg-agent-proxy.sendCommands');
-		outputChannel.appendLine('  - gpg-agent-proxy.disconnectAgent');
+		outputChannel.appendLine('Agent proxy service initialized and ready.');
 
 		updateStatusBar(true);
 		vscode.window.showInformationMessage('Agent proxy started (ready to handle connections)');

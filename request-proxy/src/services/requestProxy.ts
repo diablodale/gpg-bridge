@@ -179,7 +179,7 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
         session.state = 'WAIT_RESPONSE';
         try {
             const result = await vscode.commands.executeCommand(
-                '_gpg-agent-proxy.sendCommands',
+                'gpg-agent-proxy.sendCommands',
                 session.sessionId,
                 command
             ) as { response: string };
@@ -224,7 +224,7 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
         session.state = 'WAIT_RESPONSE';
         try {
             const result = await vscode.commands.executeCommand(
-                '_gpg-agent-proxy.sendCommands',
+                'gpg-agent-proxy.sendCommands',
                 session.sessionId,
                 dataBlock
             ) as { response: string };

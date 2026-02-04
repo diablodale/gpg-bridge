@@ -362,18 +362,3 @@ OK
 | Wait for `OK`/`ERR` before next command | Maintain strict request/response order |
 | Support multiple sequential inquiries | Some operations require them |
 | Never pipeline commands | GPG agent does not support pipelining |
-
----
-
-
-
-# Example
-
-| Request proxy                        | Agent proxy           | gpg-agent         |
-|--------------------------------------|-----------------------|-------------------|
-| gpg-agent-proxy.connectAgent()       |                       |                   |
-
-
-
-
-
