@@ -1,7 +1,7 @@
 {
-  "name": "gpg-windows-relay-remote",
-  "displayName": "GPG Windows Relay - Remote",
-  "description": "Remote relay component for GPG relay",
+  "name": "gpg-request-proxy",
+  "displayName": "GPG Request Proxy",
+  "description": "Remote request proxy component for GPG relay",
   "version": "0.0.1",
   "publisher": "local",
   "repository": {
@@ -18,40 +18,38 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:gpg-windows-relay.start",
-    "onCommand:gpg-windows-relay.stop"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "gpg-windows-relay.start",
-        "title": "GPG Windows Relay: Start"
+        "command": "gpg-request-proxy.start",
+        "title": "GPG Request Proxy: Start"
       },
       {
-        "command": "gpg-windows-relay.stop",
-        "title": "GPG Windows Relay: Stop"
+        "command": "gpg-request-proxy.stop",
+        "title": "GPG Request Proxy: Stop"
       },
       {
-        "command": "gpg-windows-relay.showStatus",
-        "title": "GPG Windows Relay: Show Status"
+        "command": "gpg-request-proxy.showStatus",
+        "title": "GPG Request Proxy: Show Status"
       }
     ],
     "configuration": {
-      "title": "GPG Windows Relay",
+      "title": "GPG Agent Proxy",
       "properties": {
-        "gpgWinRelay.autoStart": {
+        "gpgAgentProxy.autoStart": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically start relay when remote connection is detected"
+          "description": "Automatically start request proxy when remote connection is detected"
         },
-        "gpgWinRelay.debugLogging": {
+        "gpgAgentProxy.debugLogging": {
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for troubleshooting"
         },
-        "gpgWinRelay.listenPort": {
+        "gpgAgentProxy.proxyPort": {
           "type": "number",
           "default": 63331,
           "minimum": 1024,

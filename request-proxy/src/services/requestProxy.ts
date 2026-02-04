@@ -1,8 +1,8 @@
-/**
- * Remote Relay Service
+﻿/**
+ * Request Proxy Service
  *
  * Unified implementation for all remote types (WSL, Dev Container, SSH).
- * Creates a Unix socket listener on the GPG socket path and forwards to Windows bridge.
+ * Creates a Unix socket listener on the GPG socket path and forwards to agent proxy.
  * Identical code for all three remote types - no platform-specific logic needed.
  */
 
@@ -11,20 +11,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 
-export interface RemoteRelayConfig {
-    windowsHost: string;  // Usually 'localhost', tunneled by VS Code
-    windowsPort: number;  // Port of Windows bridge
+export interface RequestProxyConfig {
+    agentProxyHost: string;  // Usually 'localhost', tunneled by VS Code
+    agentProxyPort: number;  // Port of Windows agent proxy
     logCallback?: (message: string) => void;
 }
 
-export interface RemoteRelayInstance {
+export interface RequestProxyInstance {
     stop(): Promise<void>;
 }
 
 /**
- * Start the remote relay
+ * Start the Request Proxy
  */
-export async function startRemoteRelay(config: RemoteRelayConfig): Promise<RemoteRelayInstance> {
+export async function startRequestProxy(config: RequestProxyConfig): Promise<RequestProxyInstance> {
     const socketPath = await getLocalGpgSocketPath();
     if (!socketPath) {
         throw new Error(
@@ -33,13 +33,13 @@ export async function startRemoteRelay(config: RemoteRelayConfig): Promise<Remot
         );
     }
 
-    log(config, `📂 Socket: ${socketPath}`);
+    log(config, `Socket: ${socketPath}`);
 
     // Remove stale socket if it exists
     if (fs.existsSync(socketPath)) {
         try {
             fs.unlinkSync(socketPath);
-            log(config, '✅ Removed stale socket file');
+            log(config, 'Removed stale socket file');
         } catch (err) {
             log(config, `Warning: could not remove stale socket: ${err}`);
         }
@@ -53,17 +53,17 @@ export async function startRemoteRelay(config: RemoteRelayConfig): Promise<Remot
 
     // Create the Unix socket server
     const server = net.createServer((localSocket) => {
-        log(config, '📥 Incoming connection from client');
+        log(config, 'Incoming connection from client');
 
-        // Connect to Windows bridge
+        // Connect to Windows agent proxy
         const remoteSocket = net.createConnection({
-            host: config.windowsHost,
-            port: config.windowsPort,
+            host: config.agentProxyHost,
+            port: config.agentProxyPort,
             family: 4  // IPv4
         });
 
         remoteSocket.on('connect', () => {
-            log(config, '🔗 Connected to host');
+            log(config, 'Connected to host');
 
             // Manual bidirectional forwarding with immediate termination on either side closing
             // (matches npiperelay -ep -ei behavior)
@@ -78,22 +78,22 @@ export async function startRemoteRelay(config: RemoteRelayConfig): Promise<Remot
         });
 
         remoteSocket.on('error', (err: Error) => {
-            log(config, `❌ Host error: ${err.message}`);
+            log(config, `Host error: ${err.message}`);
             localSocket.destroy();
         });
 
         remoteSocket.on('end', () => {
-            log(config, '🔌 Host disconnected');
+            log(config, 'Host disconnected');
             localSocket.destroy();
         });
 
         localSocket.on('error', (err: Error) => {
-            log(config, `❌ Client error: ${err.message}`);
+            log(config, `Client error: ${err.message}`);
             remoteSocket.destroy();
         });
 
         localSocket.on('end', () => {
-            log(config, '🔌 Client disconnected');
+            log(config, 'Client disconnected');
             remoteSocket.destroy();
         });
     });
@@ -111,7 +111,7 @@ export async function startRemoteRelay(config: RemoteRelayConfig): Promise<Remot
                 log(config, `Warning: could not chmod socket: ${err}`);
             }
 
-            log(config, `✅ Listening on ${socketPath}`);
+            log(config, `Socket listen on ${socketPath}`);
 
             resolve({
                 stop: async () => {
@@ -122,7 +122,7 @@ export async function startRemoteRelay(config: RemoteRelayConfig): Promise<Remot
                             } catch (err) {
                                 // Ignore
                             }
-                            log(config, '✅ Stopped');
+                            log(config, 'Stopped');
                             stopResolve();
                         });
                     });
@@ -166,8 +166,9 @@ async function getLocalGpgSocketPath(): Promise<string | null> {
 /**
  * Log helper
  */
-function log(config: RemoteRelayConfig, message: string): void {
+function log(config: RequestProxyConfig, message: string): void {
     if (config.logCallback) {
         config.logCallback(message);
     }
 }
+

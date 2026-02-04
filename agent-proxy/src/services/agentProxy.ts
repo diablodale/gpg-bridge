@@ -1,9 +1,9 @@
-/**
- * Windows Assuan Bridge Service
+﻿/**
+ * Agent Proxy Service
  *
- * Creates a TCP server that bridges to the Assuan socket provided by gpg4win.
+ * Creates a TCP server that proxies to the Assuan socket provided by gpg4win.
  * Reads the Assuan socket file to get the TCP port and nonce, then:
- * 1. Listens on a local TCP port
+ * 1. Creates a local proxy socket on TCP port
  * 2. On connection: authenticates with the nonce and pipes to gpg-agent
  */
 
@@ -12,9 +12,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-export interface AssuanBridgeConfig {
-    gpgAgentSocketPath: string;  // Path to Assuan socket file, e.g. C:\Users\dale\AppData\Local\gnupg\d.123123123\S.gpg-agent
-    listenPort: number;          // TCP port to listen on (default: 63331)
+export interface AgentProxyConfig {
+    gpgAgentSocketPath: string; // Path to Assuan socket file, e.g. C:\Users\dale\AppData\Local\gnupg\d.123123123\S.gpg-agent
+    proxyPort: number;          // TCP port for proxy (default: 63331)
     debugLogging: boolean;
 }
 
@@ -23,13 +23,13 @@ export interface ParsedAssuan {
     nonce: Buffer;
 }
 
-export class AssuanBridge {
+export class AgentProxy {
     private server: net.Server | null = null;
     private logCallback?: (message: string) => void;
     private assuanPort: number;
     private nonce: Buffer;
 
-    constructor(private config: AssuanBridgeConfig) {
+    constructor(private config: AgentProxyConfig) {
         // Parse the Assuan socket file immediately on instantiation
         const parsed = this.parseAssuanSocket();
         this.assuanPort = parsed.port;
@@ -90,13 +90,13 @@ export class AssuanBridge {
     }
 
     /**
-     * Start the Assuan bridge
+     * Start the Agent Proxy
      */
     public async start(): Promise<void> {
-        this.log(`Starting Assuan bridge on localhost:${this.config.listenPort}`);
+        this.log(`Starting Agent proxy on localhost:${this.config.proxyPort}`);
 
         this.server = net.createServer((clientSocket) => {
-            this.log('Incoming connection from remote relay');
+            this.log('Incoming connection from request proxy');
 
             // Connect to gpg-agent's Assuan socket
             const gpgSocket = net.createConnection({
@@ -149,37 +149,37 @@ export class AssuanBridge {
         });
 
         this.server.on('error', (err) => {
-            this.log(`Bridge server error: ${err.message}`);
+            this.log(`Agent proxy server error: ${err.message}`);
         });
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-                this.log('ERROR: Bridge listen timeout (5s)');
-                reject(new Error('Bridge listen timeout - port may be in use'));
+                this.log('ERROR: Agent proxy timeout (5s)');
+                reject(new Error('Agent proxy timeout - port may be in use'));
             }, 5000);
 
-            this.server!.listen(this.config.listenPort, 'localhost', () => {
+            this.server!.listen(this.config.proxyPort, 'localhost', () => {
                 clearTimeout(timeout);
-                this.log(`Assuan bridge listening on localhost:${this.config.listenPort}`);
+                this.log(`Agent proxy ready on localhost:${this.config.proxyPort}`);
                 resolve();
             });
 
             this.server!.on('error', (err) => {
                 clearTimeout(timeout);
-                this.log(`Bridge listen error: ${err.message}`);
+                this.log(`Agent proxy error: ${err.message}`);
                 reject(err);
             });
         });
     }
 
     /**
-     * Stop the Assuan bridge
+     * Stop the Agent Proxy
      */
     public async stop(): Promise<void> {
         return new Promise((resolve) => {
             if (this.server) {
                 this.server.close(() => {
-                    this.log('Assuan bridge stopped');
+                    this.log('Agent Proxy stopped');
                     this.server = null;
                     resolve();
                 });
@@ -190,9 +190,10 @@ export class AssuanBridge {
     }
 
     /**
-     * Check if bridge is running
+     * Check if agent proxy is running
      */
     public isRunning(): boolean {
         return this.server !== null;
     }
 }
+

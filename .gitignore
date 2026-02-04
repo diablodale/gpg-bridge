@@ -3,8 +3,8 @@ dist
 node_modules
 .vscode-test/
 *.vsix
-bridge/out
-bridge/*.vsix
-remote/out
-remote/*.vsix
+agent-proxy/out
+agent-proxy/*.vsix
+request-proxy/out
+request-proxy/*.vsix
 pack/*.vsix

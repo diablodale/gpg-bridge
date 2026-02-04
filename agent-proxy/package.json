@@ -1,7 +1,7 @@
 {
-  "name": "gpg-windows-relay-bridge",
-  "displayName": "GPG Windows Relay - Bridge",
-  "description": "Windows bridge component for GPG relay",
+  "name": "gpg-agent-proxy",
+  "displayName": "GPG Agent Proxy",
+  "description": "Windows agent proxy component for GPG relay",
   "version": "0.0.1",
   "publisher": "local",
   "repository": {
@@ -21,63 +21,61 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:gpg-windows-relay.start",
-    "onCommand:gpg-windows-relay.stop"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "gpg-windows-relay.start",
-        "title": "GPG Windows Relay: Start"
+        "command": "gpg-agent-proxy.start",
+        "title": "GPG Agent Proxy: Start"
       },
       {
-        "command": "gpg-windows-relay.stop",
-        "title": "GPG Windows Relay: Stop"
+        "command": "gpg-agent-proxy.stop",
+        "title": "GPG Agent Proxy: Stop"
       },
       {
-        "command": "gpg-windows-relay.restart",
-        "title": "GPG Windows Relay: Restart"
+        "command": "gpg-agent-proxy.restart",
+        "title": "GPG Agent Proxy: Restart"
       },
       {
-        "command": "gpg-windows-relay.showStatus",
-        "title": "GPG Windows Relay: Show Status"
+        "command": "gpg-agent-proxy.showStatus",
+        "title": "GPG Agent Proxy: Show Status"
       },
       {
-        "command": "gpg-windows-relay.getRelayPort",
-        "title": "GPG Windows Relay: Get Relay Port"
+        "command": "gpg-agent-proxy.getProxyPort",
+        "title": "GPG Agent Proxy: Get Proxy Port"
       },
       {
-        "command": "gpg-windows-relay.ensureBridgeRunning",
-        "title": "GPG Windows Relay: Ensure Bridge Running"
+        "command": "gpg-agent-proxy.ensureAgentProxyRunning",
+        "title": "GPG Agent Proxy: Ensure Agent Running"
       }
     ],
     "configuration": {
-      "title": "GPG Windows Relay",
+      "title": "GPG Agent Proxy",
       "properties": {
-        "gpgWinRelay.gpg4winPath": {
+        "gpgAgentProxy.gpg4winPath": {
           "type": "string",
           "default": "",
           "markdownDescription": "Path to Gpg4win's GnuPG bin directory containing `gpgconf.exe`. Leave empty to auto-detect.",
           "scope": "resource"
         },
-        "gpgWinRelay.autoStart": {
+        "gpgAgentProxy.autoStart": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically start relay when VS Code starts"
+          "description": "Automatically start agent proxy when VS Code starts"
         },
-        "gpgWinRelay.debugLogging": {
+        "gpgAgentProxy.debugLogging": {
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for troubleshooting"
         },
-        "gpgWinRelay.listenPort": {
+        "gpgAgentProxy.proxyPort": {
           "type": "number",
           "default": 63331,
           "minimum": 1024,
           "maximum": 65535,
-          "description": "TCP port for the bridge to listen on (must be >= 1024)"
+          "description": "TCP port for the agent proxy (must be >= 1024)"
         }
       }
     }

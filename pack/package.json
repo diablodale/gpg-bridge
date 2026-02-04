@@ -15,8 +15,8 @@
     "Other"
   ],
   "extensionPack": [
-    "local.gpg-windows-relay-bridge",
-    "local.gpg-windows-relay-remote"
+    "local.gpg-agent-proxy",
+    "local.gpg-request-proxy"
   ],
   "scripts": {
     "package": "vsce package"
