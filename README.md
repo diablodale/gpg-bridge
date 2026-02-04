@@ -139,19 +139,21 @@ Windows Host
  Gpg4win agent (Assuan socket on localhost)
   
  Agent Proxy Extension (gpg-agent-proxy)
-   Reads: C:\Users\<user>\AppData\Local\gnupg\<unique>\S.gpg-agent
+   Reads: C:\Users\<user>\AppData\Local\gnupg\<unique>\S.gpg-agent.extra
    Extracts: TCP port xxxx + 16-byte nonce
    Connects to localhost:xxxx
    Proxies data to localhost:63331
   
 Remote Environment (WSL/Container/SSH)
  Request Proxy Extension (gpg-request-proxy)
-   Creates Unix socket: /run/user/1000/gnupg/S.gpg-agent
+   Creates Unix socket: /run/user/1000/gnupg/S.gpg-agent.extra
    Connects to: localhost:63331 (via VS Code tunnel)
    Pipes bidirectionally
   
  Local GPG client (gpg --sign, etc.)
 ```
+
+The agent "extra" socket is used for its [restricted abilities](https://www.gnupg.org/documentation/manuals/gnupg/Agent-Options.html#index-extra_002dsocket).
 
 ### Assuan Socket Protocol
 

@@ -28,8 +28,8 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
     const socketPath = await getLocalGpgSocketPath();
     if (!socketPath) {
         throw new Error(
-            'Could not determine local GPG socket path. ' +
-            'Is gpg-agent running? Try: gpgconf --list-dir agent-socket'
+            'Could not determine local GPG extra socket path. ' +
+            'Is gpg-agent running? Try: gpgconf --list-dir agent-extra-socket'
         );
     }
 
@@ -135,12 +135,14 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
 }
 
 /**
- * Get the local GPG socket path by querying gpgconf
+ * Get the local GPG extra socket path by querying gpgconf
+ * The extra socket is used for agent communication as it disallows
+ * direct private key access and administration commands.
  */
 async function getLocalGpgSocketPath(): Promise<string | null> {
     return new Promise((resolve) => {
         try {
-            const result = spawnSync('gpgconf', ['--list-dir', 'agent-socket'], {
+            const result = spawnSync('gpgconf', ['--list-dir', 'agent-extra-socket'], {
                 encoding: 'utf-8',
                 timeout: 5000
             });
