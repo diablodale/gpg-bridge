@@ -56,7 +56,7 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
     }
 
     // Create the Unix socket server
-    const server = net.createServer((clientSocket) => {
+    const server = net.createServer({ pauseOnConnect: true }, (clientSocket) => {
         const clientSession: ClientSession = {
             socket: clientSocket,
             sessionId: null,
@@ -66,14 +66,7 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
         };
 
         log(config, `Client connected, initiating connection to agent-proxy`);
-
-        // Start by connecting to agent-proxy
-        connectToAgent(config, clientSession);
-
-        // Handle incoming data from client
-        clientSocket.on('data', (chunk: Buffer) => {
-            handleClientData(config, clientSession, chunk);
-        });
+        log(config, `Client socket paused on connect`);
 
         // Handle client disconnect
         clientSocket.on('end', () => {
@@ -84,6 +77,42 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
         clientSocket.on('error', (err: Error) => {
             log(config, `Client socket error: ${err.message}`);
             cleanupSession(config, clientSession);
+        });
+
+        // Log when socket becomes readable/writable
+        clientSocket.on('readable', () => {
+            log(config, `[${clientSession.sessionId}] Client socket readable`);
+            let chunk: Buffer | null;
+            while ((chunk = clientSocket.read()) !== null) {
+                log(config, `[${clientSession.sessionId}] Readable chunk size: ${chunk.length}`);
+                handleClientData(config, clientSession, chunk).catch((err) => {
+                    log(config, `[${clientSession.sessionId}] Error handling client data: ${err instanceof Error ? err.message : String(err)}`);
+                    cleanupSession(config, clientSession).catch(() => {});
+                    try {
+                        clientSession.socket.destroy();
+                    } catch (destroyErr) {
+                        // Ignore
+                    }
+                });
+            }
+        });
+
+        clientSocket.on('writable', () => {
+            log(config, `[${clientSession.sessionId}] Client socket writable`);
+        });
+
+        // Start by connecting to agent-proxy
+        connectToAgent(config, clientSession).then(() => {
+            // Resume after greeting is sent
+            log(config, `[${clientSession.sessionId}] Ready for data, resuming socket`);
+            clientSocket.resume();
+        }).catch((err) => {
+            log(config, `[${clientSession.sessionId}] Async connect error: ${err instanceof Error ? err.message : String(err)}`);
+            try {
+                clientSession.socket.destroy();
+            } catch (destroyErr) {
+                // Ignore
+            }
         });
     });
 
@@ -129,10 +158,27 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
 async function connectToAgent(config: RequestProxyConfig, session: ClientSession): Promise<void> {
     try {
         // Call connectAgent command
-        const result = await vscode.commands.executeCommand('_gpg-agent-proxy.connectAgent') as { sessionId: string };
+        const result = await vscode.commands.executeCommand('_gpg-agent-proxy.connectAgent') as { sessionId: string; greeting: string };
+        log(config, `[${session.sessionId}] Result from connectAgent: ${JSON.stringify(result)}`);
         session.sessionId = result.sessionId;
         session.state = 'SEND_COMMAND';
         log(config, `[${session.sessionId}] Connected to agent-proxy`);
+        log(config, `[${session.sessionId}] Greeting value: ${JSON.stringify(result.greeting)}`);
+
+        // Send greeting from agent to client unchanged
+        if (result.greeting) {
+            log(config, `[${session.sessionId}] About to write greeting, socket writable: ${session.socket.writable}`);
+            session.socket.write(result.greeting, (err) => {
+                if (err) {
+                    log(config, `[${session.sessionId}] Error writing greeting: ${err.message}`);
+                } else {
+                    log(config, `[${session.sessionId}] Greeting write confirmed`);
+                }
+            });
+            log(config, `[${session.sessionId}] Sent greeting to client`);
+        } else {
+            log(config, `[${session.sessionId}] Warning: greeting is undefined`);
+        }
     } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         log(config, `Failed to connect to agent-proxy: ${msg}`);
@@ -154,7 +200,10 @@ async function connectToAgent(config: RequestProxyConfig, session: ClientSession
  * INQUIRE_DATA: Read D lines until END
  */
 async function handleClientData(config: RequestProxyConfig, session: ClientSession, chunk: Buffer): Promise<void> {
-    session.buffer += chunk.toString('utf-8');
+    const chunkStr = chunk.toString('utf-8');
+    log(config, `[${session.sessionId}] Received ${chunk.length} bytes in state ${session.state}: ${chunkStr.replace(/\n/g, '\\n')}`);
+
+    session.buffer += chunkStr;
 
     if (session.state === 'SEND_COMMAND') {
         // Look for complete command line (ends with \n)
@@ -182,8 +231,8 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
             const response = result.response;
             log(config, `[${session.sessionId}] Response: ${response.replace(/\n/g, '\\n')}`);
 
-            // Send response to client
-            session.socket.write(response);
+            // Send response to client (latin1 preserves raw bytes)
+            session.socket.write(Buffer.from(response, 'latin1'));
 
             // Check if response contains INQUIRE
             if (response.includes('INQUIRE')) {
@@ -199,9 +248,12 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
             }
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
-            log(config, `[${session.sessionId}] Error sending command: ${msg}`);
-            // Cleanup session (disconnects agent) before destroying socket
-            await cleanupSession(config, session);
+            // Only log and cleanup if session is still valid
+            if (session.sessionId) {
+                log(config, `[${session.sessionId}] Error sending command: ${msg}`);
+                // Cleanup session (disconnects agent) before destroying socket
+                await cleanupSession(config, session);
+            }
             try {
                 session.socket.destroy();
             } catch (destroyErr) {
@@ -233,8 +285,8 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
             const response = result.response;
             log(config, `[${session.sessionId}] Response: ${response.replace(/\n/g, '\\n')}`);
 
-            // Send response to client
-            session.socket.write(response);
+            // Send response to client (latin1 preserves raw bytes)
+            session.socket.write(Buffer.from(response, 'latin1'));
 
             // Check if response contains another INQUIRE
             if (response.includes('INQUIRE')) {

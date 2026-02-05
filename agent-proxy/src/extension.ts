@@ -63,17 +63,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
  * Command: _gpg-agent-proxy.connectAgent
  *
  * Called by request-proxy to establish a connection to gpg-agent.
- * Returns a sessionId that must be used for subsequent sendCommands calls.
+ * Returns a sessionId and greeting that must be relayed to the client.
  */
-async function connectAgent(): Promise<{ sessionId: string }> {
+async function connectAgent(): Promise<{ sessionId: string; greeting: string }> {
 	if (!agentProxyService) {
 		throw new Error('Agent proxy service not initialized. Please start the extension.');
 	}
 
 	try {
-		const sessionId = await agentProxyService.connectAgent();
-		outputChannel.appendLine(`[connectAgent] Session created: ${sessionId}`);
-		return { sessionId };
+		const result = await agentProxyService.connectAgent();
+		outputChannel.appendLine(`[connectAgent] Session created: ${result.sessionId}`);
+		outputChannel.appendLine(`[connectAgent] Greeting: ${JSON.stringify(result.greeting)}`);
+		outputChannel.appendLine(`[connectAgent] Returning: ${JSON.stringify(result)}`);
+		return result;
 	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error);
 		outputChannel.appendLine(`[connectAgent] Error: ${msg}`);
@@ -332,14 +334,14 @@ async function probeGpgAgent(): Promise<void> {
 	}
 
 	try {
-		const sessionId = await agentProxyService.connectAgent();
-		await agentProxyService.sendCommands(sessionId, 'GETINFO version\n');
-		await agentProxyService.disconnectAgent(sessionId);
+		const result = await agentProxyService.connectAgent();
+		await agentProxyService.sendCommands(result.sessionId, 'GETINFO version\n');
+		await agentProxyService.disconnectAgent(result.sessionId);
 
 		outputChannel.appendLine('GPG agent sanity probe successful');
 		// Update status bar to Ready after successful probe
 		updateStatusBar();
-	} catch (error: unknown) {
+	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error);
 		outputChannel.appendLine(`GPG agent sanity probe failed: ${msg}`);
 	}

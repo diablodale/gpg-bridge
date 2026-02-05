@@ -44,11 +44,11 @@ export class AgentProxy {
     }
 
     /**
-     * Connect to GPG agent and return a sessionId
+     * Connect to GPG agent and return a sessionId and greeting
      * On Windows, reads the socket file to extract port and nonce, then connects via TCP
      * Waits for nonce to be sent and greeting to be received before returning
      */
-    public async connectAgent(): Promise<string> {
+    public async connectAgent(): Promise<{ sessionId: string; greeting: string }> {
         const sessionId = uuidv4();
         this.log(`Creating session: ${sessionId}`);
 
@@ -86,7 +86,7 @@ export class AgentProxy {
             });
 
             // Wait for connection, send nonce, and read greeting
-            await new Promise<void>((resolve, reject) => {
+            const greeting = await new Promise<string>((resolve, reject) => {
                 const rejectWith = (error: unknown, fallbackMessage: string) => {
                     const msg = error instanceof Error ? error.message : String(error || '');
                     reject(new Error(msg || fallbackMessage));
@@ -145,7 +145,7 @@ export class AgentProxy {
                     socket.off('error', errorHandler);
                     socket.off('close', closeHandler);
                     socket.off('data', dataHandler);
-                    resolve();
+                    resolve(greetingLine + '\n');
                 };
 
                 socket.once('error', errorHandler);
@@ -171,7 +171,7 @@ export class AgentProxy {
             });
 
             this.log(`Session ${sessionId} connected successfully`);
-            return sessionId;
+            return { sessionId, greeting };
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
             const fullMsg = msg || 'Unknown error during connection';
@@ -199,7 +199,8 @@ export class AgentProxy {
             const isInquireBlock = commandBlock.startsWith('D ');
 
             const dataHandler = (chunk: Buffer) => {
-                const chunkStr = chunk.toString('utf-8');
+                // Use latin1 to preserve raw bytes without UTF-8 mangling
+                const chunkStr = chunk.toString('latin1');
                 responseData += chunkStr;
                 this.log(`Session ${sessionId} data chunk: ${chunkStr.replace(/\n/g, '\\n')}`);
 
@@ -266,6 +267,11 @@ export class AgentProxy {
      * Response format is ASCII lines ending with \n
      */
     private isCompleteResponse(response: string, isInquireResponse: boolean): boolean {
+        // Responses must be line-terminated
+        if (!response.endsWith('\n')) {
+            return false;
+        }
+
         // Split into lines
         const lines = response.split('\n');
 
