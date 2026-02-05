@@ -33,9 +33,9 @@
       }
     ],
     "configuration": {
-      "title": "GPG Agent Proxy",
+      "title": "GPG Request Proxy",
       "properties": {
-        "gpgAgentProxy.debugLogging": {
+        "gpgRequestProxy.debugLogging": {
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for troubleshooting"

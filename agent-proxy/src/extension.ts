@@ -14,7 +14,7 @@ let detectedAgentSocket: string | null = null;
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	outputChannel = vscode.window.createOutputChannel('GPG Agent Proxy');
-	statusBarItem = vscode.window.createStatusBarItem('gpg-agent-proxy', vscode.StatusBarAlignment.Right, 100);
+	statusBarItem = vscode.window.createStatusBarItem(context.extension.id, vscode.StatusBarAlignment.Right, 100);
 
 	outputChannel.appendLine('GPG Agent Proxy activated');
 
@@ -36,6 +36,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	outputChannel.appendLine('Commands registered');
 
 	// Update status bar
+	statusBarItem.name = 'GPG Agent Proxy';
+	statusBarItem.command = 'gpg-agent-proxy.showStatus';
 	updateStatusBar();
 	statusBarItem.show();
 
@@ -236,7 +238,8 @@ async function startAgentProxy(): Promise<void> {
 
 		agentProxyService = new AgentProxy({
 			gpgAgentSocketPath: detectedAgentSocket,
-			logCallback: logCallback
+			logCallback: logCallback,
+			statusBarCallback: () => updateStatusBar()
 		});
 
 		outputChannel.appendLine('Agent proxy service initialized. Probe of gpg-agent in process. Status will be READY when complete.');
@@ -261,7 +264,7 @@ async function stopAgentProxy(): Promise<void> {
 	outputChannel.appendLine('Stopping agent proxy...');
 	agentProxyService = null;
 
-	updateStatusBar(false);
+	updateStatusBar();
 	outputChannel.appendLine('Agent proxy stopped');
 	vscode.window.showInformationMessage('Agent proxy stopped');
 }
@@ -304,9 +307,9 @@ function showStatus(): void {
 /**
  * Update the status bar item
  */
-function updateStatusBar(running?: boolean): void {
+function updateStatusBar(): void {
 	let icon = '$(circle-slash)';
-	let tooltip = 'GPG agent proxy is not running';
+	let tooltip = 'GPG agent proxy is not ready';
 
 	if (agentProxyService) {
 		const sessionCount = agentProxyService.getSessionCount();
@@ -315,13 +318,15 @@ function updateStatusBar(running?: boolean): void {
 			tooltip = `GPG agent proxy is active with ${sessionCount} session${sessionCount > 1 ? 's' : ''}`;
 		} else {
 			icon = '$(check)';
-			tooltip = 'GPG agent proxy is ready for incoming requests';
+			tooltip = 'GPG agent proxy is ready';
 		}
 	}
 
-	statusBarItem.text = `GPG ${icon}`;
+	statusBarItem.text = `${icon} GPG`;
 	statusBarItem.tooltip = tooltip;
-	statusBarItem.command = 'gpg-agent-proxy.showStatus';
+	statusBarItem.accessibilityInformation = {
+		label: tooltip
+	};
 }
 
 /**

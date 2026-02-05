@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 export interface AgentProxyConfig {
     gpgAgentSocketPath: string; // Path to Assuan socket file
     logCallback?: (message: string) => void;
+    statusBarCallback?: () => void;
 }
 
 interface SessionSocket {
@@ -150,6 +151,7 @@ export class AgentProxy {
             }
 
             log(this.config, `[${sessionId}] Connected successfully to gpg-agent`);
+            this.config.statusBarCallback?.();
             return { sessionId, greeting };
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
@@ -317,6 +319,7 @@ export class AgentProxy {
             // Always destroy socket and cleanup
             session.socket.destroy();
             this.sessions.delete(sessionId);
+            this.config.statusBarCallback?.();
         }
     }
 

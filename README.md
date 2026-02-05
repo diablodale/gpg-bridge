@@ -52,7 +52,8 @@ VS Code settings for "GPG Agent Proxy" having prefix `gpgAgentProxy`:
 ```json
 {
   "gpgAgentProxy.gpg4winPath": "C:\\Program Files\\GnuPG\\bin",
-  "gpgAgentProxy.debugLogging": false
+  "gpgAgentProxy.debugLogging": false,
+  "gpgRequestProxy.debugLogging": false
 }
 ```
 
@@ -285,7 +286,8 @@ Enable in VS Code settings:
 
 ```json
 {
-  "gpgAgentProxy.debugLogging": true
+  "gpgAgentProxy.debugLogging": true,
+  "gpgRequestProxy.debugLogging": true
 }
 ```
 

@@ -32,7 +32,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
 
         // Start request proxy on remote
-        outputChannel.appendLine('Starting request proxy...');
         try {
             await startRequestProxyHandler(outputChannel);
         } catch (err) {
@@ -56,12 +55,11 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
         outputChannel.appendLine('Starting request proxy...');
 
         // Create a log callback that respects the debugLogging setting
-		const config = vscode.workspace.getConfiguration('gpgAgentProxy');
+		const config = vscode.workspace.getConfiguration('gpgRequestProxy');
 		const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
 		const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
 
         // Start the request proxy (implements state machine via VS Code commands)
-        outputChannel.appendLine('Creating Unix socket server and state machine');
         requestProxyInstance = await startRequestProxy({
             logCallback: logCallback
         });
