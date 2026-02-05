@@ -309,16 +309,16 @@ function showStatus(): void {
  */
 function updateStatusBar(): void {
 	let icon = '$(circle-slash)';
-	let tooltip = 'GPG agent proxy is not ready';
+	let tooltip = 'GPG Agent Proxy is not ready';
 
 	if (agentProxyService) {
 		const sessionCount = agentProxyService.getSessionCount();
 		if (sessionCount > 0) {
 			icon = '$(sync~spin)';
-			tooltip = `GPG agent proxy is active with ${sessionCount} session${sessionCount > 1 ? 's' : ''}`;
+			tooltip = `GPG Agent Proxy is active with ${sessionCount} session${sessionCount > 1 ? 's' : ''}`;
 		} else {
 			icon = '$(check)';
-			tooltip = 'GPG agent proxy is ready';
+			tooltip = 'GPG Agent Proxy is ready';
 		}
 	}
 
@@ -344,11 +344,11 @@ async function probeGpgAgent(): Promise<void> {
 		await agentProxyService.sendCommands(result.sessionId, 'GETINFO version\n');
 		await agentProxyService.disconnectAgent(result.sessionId);
 
-		outputChannel.appendLine('GPG agent sanity probe successful');
+		outputChannel.appendLine('gpg-agent sanity probe successful');
 		// Update status bar to Ready after successful probe
 		updateStatusBar();
 	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error);
-		outputChannel.appendLine(`GPG agent sanity probe failed: ${msg}`);
+		outputChannel.appendLine(`gpg-agent sanity probe failed: ${msg}`);
 	}
 }

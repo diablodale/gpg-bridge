@@ -20,7 +20,6 @@ export interface AgentProxyConfig {
 
 interface SessionSocket {
     socket: net.Socket;
-    responseBuffer: string;
 }
 
 export class AgentProxy {
@@ -38,14 +37,27 @@ export class AgentProxy {
      * These handlers log and clean up the session if the socket fails outside of active operations
      */
     private setupPersistentHandlers(sessionId: string, socket: net.Socket): void {
-        socket.on('error', (error) => {
-            log(this.config, `[${sessionId}] Socket error: ${error.message}`);
-            this.sessions.delete(sessionId);
+        // 'error' fires when the OS reports a failure (ECONNRESET, EPIPE, etc.)
+        // or when the err arg of destroy() is used
+        // node does not automatically destroy the socket on 'error' event
+        // event sequences:
+        // - OS error: 'error' -> 'close'
+        // - local destroy with arg `socket.destroy(err)`: 'error' -> 'close'
+        socket.on('error', (err) => {
+            log(this.config, `[${sessionId}] Socket error: ${err.message}`);
         });
 
+        // 'close' fires when the socket is fully closed and resources are released
+        // hadError arg indicates if it closed because of an error
+        // event sequences:
+        // - OS error: 'error' -> 'close'
+        // - graceful remote shutdown: 'end' -> 'close'
+        // - local shutdown: socket.end() -> 'close'
+        // - local destroy without arg: socket.destroy() -> 'close'
         socket.on('close', () => {
             log(this.config, `[${sessionId}] Socket closed`);
             this.sessions.delete(sessionId);
+            this.config.statusBarCallback?.();
         });
     }
 
@@ -56,6 +68,7 @@ export class AgentProxy {
      */
     public async connectAgent(): Promise<{ sessionId: string; greeting: string }> {
         const sessionId = uuidv4();
+        let socket!: net.Socket;
         log(this.config, `[${sessionId}] Create session to gpg-agent...`);
 
         try {
@@ -85,8 +98,6 @@ export class AgentProxy {
 
             log(this.config, `[${sessionId}] Found config suggesting gpg-agent at localhost:${port} and expects nonce`);
 
-            let socket!: net.Socket;
-
             // Wait for connection and send nonce
             await new Promise<void>((resolve, reject) => {
                 const rejectWith = (error: unknown, fallbackMessage: string) => {
@@ -112,8 +123,7 @@ export class AgentProxy {
                 };
 
                 const connectionTimeout = setTimeout(() => {
-                    socket.destroy();
-                    rejectWith(undefined, 'Connection timeout: nonce not sent within 5 seconds');
+                    rejectWith(undefined, 'Timeout: No connection and nonce sent within 5 seconds');
                 }, 5000);
 
                 // Pass connectHandler as callback to createConnection - no race condition
@@ -122,43 +132,32 @@ export class AgentProxy {
                     port: port
                 }, connectHandler);
 
-                // Set persistent handlers and add to sessions map
-                this.setupPersistentHandlers(sessionId, socket);
+                // Add to sessions map, set persistent handlers
                 this.sessions.set(sessionId, {
-                    socket: socket,
-                    responseBuffer: ''
+                    socket: socket
                 });
+                this.setupPersistentHandlers(sessionId, socket);
             });
 
             // Wait for greeting with timeout, then verify it
-            let greeting: string;
-            try {
-                greeting = await this.waitForResponse(sessionId, false, 5000);
-                const greetingLine = greeting.trim();
+            const greeting: string = await this.waitForResponse(sessionId, false, 5000);
+            const greetingLine: string = greeting.trim();
 
-                // Verify greeting starts with OK
-                if (!greetingLine.startsWith('OK ')) {
-                    socket.destroy();
-                    this.sessions.delete(sessionId);
-                    throw new Error(`Invalid greeting from agent: ${greetingLine}`);
-                }
-
-                log(this.config, `[${sessionId}] Received greeting from gpg-agent: ${greetingLine}`);
-            } catch (error) {
-                socket.destroy();
-                this.sessions.delete(sessionId);
-                throw error;
+            // Verify greeting starts with OK
+            if (!greetingLine.startsWith('OK ')) {
+                throw new Error(`Invalid greeting from agent: ${greetingLine}`);
             }
+            log(this.config, `[${sessionId}] Received greeting from gpg-agent: ${greetingLine}`);
 
+            // Successful connection and greeting
             log(this.config, `[${sessionId}] Connected successfully to gpg-agent`);
             this.config.statusBarCallback?.();
             return { sessionId, greeting };
         } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            const fullMsg = msg || 'Unknown error during connection';
-            log(this.config, `[${sessionId}] Connection to gpg-agent failed: ${fullMsg}`);
-            this.sessions.delete(sessionId);
-            throw new Error(`Connection to gpg-agent failed: ${fullMsg}`);
+            const msg = (error instanceof Error ? error.message : String(error)) || 'Unknown error during connection';
+            log(this.config, `[${sessionId}] Connection to gpg-agent failed: ${msg}`);
+            socket?.destroy();
+            throw new Error(`Connection to gpg-agent failed: ${msg}`);
         }
     }
 
@@ -242,11 +241,19 @@ export class AgentProxy {
         log(this.config, `[${sessionId}] Send to gpg-agent: ${commandBlock.replace(/\n/g, '\\n')}`);
 
         try {
-            session.socket.write(commandBlock);
+            session.socket.write(commandBlock, (error) => {
+                if (error) {
+                    // Write failed asynchronously - destroy socket
+                    // This will trigger 'error' and 'close' events, causing waitForResponse to reject
+                    const msg = (error instanceof Error ? error.message : String(error)) || 'Unknown error during write';
+                    log(this.config, `[${sessionId}] Send to gpg-agent failed: ${msg}`);
+                    session.socket.destroy(error);
+                }
+            });
         } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            log(this.config, `[${sessionId}] Send to gpg-agent failed: ${msg}`);
-            this.sessions.delete(sessionId);
+            const msg = (error instanceof Error ? error.message : String(error)) || 'Unknown error during write';
+            log(this.config, `[${sessionId}] Send to gpg-agent failed (sync): ${msg}`);
+            session.socket.destroy();
             throw new Error(`Send to gpg-agent failed: ${msg}`);
         }
 
@@ -316,10 +323,8 @@ export class AgentProxy {
             log(this.config, `[${sessionId}] Disconnect gracefully failed: ${msg}`);
             log(this.config, `[${sessionId}] Destroying session and force closing socket to gpg-agent`);
         } finally {
-            // Always destroy socket and cleanup
+            // Always destroy socket which fires 'close' event
             session.socket.destroy();
-            this.sessions.delete(sessionId);
-            this.config.statusBarCallback?.();
         }
     }
 
