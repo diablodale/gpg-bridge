@@ -10,6 +10,7 @@ let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
 let detectedGpg4winPath: string | null = null;
 let detectedAgentSocket: string | null = null;
+let probeSuccessful = false;
 
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -49,9 +50,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		// Run sanity probe in background (fire-and-forget)
 		// It will update status bar to Ready after successful probe
-		probeGpgAgent().catch((err) => {
-			outputChannel.appendLine(`Sanity probe failed: ${err instanceof Error ? err.message : String(err)}`);
-		});
+		probeGpgAgent();
 	} catch (error: unknown) {
 		outputChannel.appendLine(`Start failed: ${error instanceof Error ? error.message : String(error)}`);
 	}
@@ -69,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
  */
 async function connectAgent(): Promise<{ sessionId: string; greeting: string }> {
 	if (!agentProxyService) {
-		throw new Error('Agent proxy service not initialized. Please start the extension.');
+		throw new Error('Agent proxy not initialized. Please start the extension.');
 	}
 
 	try {
@@ -94,7 +93,7 @@ async function connectAgent(): Promise<{ sessionId: string; greeting: string }> 
  */
 async function sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }> {
 	if (!agentProxyService) {
-		throw new Error('Agent proxy service not initialized. Please start the extension.');
+		throw new Error('Agent proxy not initialized. Please start the extension.');
 	}
 
 	try {
@@ -116,7 +115,7 @@ async function sendCommands(sessionId: string, commandBlock: string): Promise<{ 
  */
 async function disconnectAgent(sessionId: string): Promise<void> {
 	if (!agentProxyService) {
-		throw new Error('Agent proxy service not initialized.');
+		throw new Error('Agent proxy not initialized.');
 	}
 
 	try {
@@ -242,7 +241,7 @@ async function startAgentProxy(): Promise<void> {
 			statusBarCallback: () => updateStatusBar()
 		});
 
-		outputChannel.appendLine('Agent proxy service initialized. Probe of gpg-agent in process. Status will be READY when complete.');
+		outputChannel.appendLine('Agent proxy initialized. Probe of gpg-agent in process. Status will be READY when complete.');
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		outputChannel.appendLine(`Error starting agent proxy: ${errorMessage}`);
@@ -263,6 +262,7 @@ async function stopAgentProxy(): Promise<void> {
 
 	outputChannel.appendLine('Stopping agent proxy...');
 	agentProxyService = null;
+	probeSuccessful = false;
 
 	updateStatusBar();
 	outputChannel.appendLine('Agent proxy stopped');
@@ -311,7 +311,7 @@ function updateStatusBar(): void {
 	let icon = '$(circle-slash)';
 	let tooltip = 'GPG Agent Proxy is not ready';
 
-	if (agentProxyService) {
+	if (agentProxyService && probeSuccessful) {
 		const sessionCount = agentProxyService.getSessionCount();
 		if (sessionCount > 0) {
 			icon = '$(sync~spin)';
@@ -332,7 +332,7 @@ function updateStatusBar(): void {
 /**
  * Sanity probe: Send GETINFO version to verify agent is responsive
  * Runs async after activation, doesn't block startup
- * Updates status bar to Ready on success
+ * Sets probeSuccessful flag and updates status bar
  */
 async function probeGpgAgent(): Promise<void> {
 	if (!agentProxyService) {
@@ -343,12 +343,11 @@ async function probeGpgAgent(): Promise<void> {
 		const result = await agentProxyService.connectAgent();
 		await agentProxyService.sendCommands(result.sessionId, 'GETINFO version\n');
 		await agentProxyService.disconnectAgent(result.sessionId);
-
-		outputChannel.appendLine('gpg-agent sanity probe successful');
-		// Update status bar to Ready after successful probe
+		outputChannel.appendLine('Probe of gpg-agent succeeded. Agent proxy is READY.');
+		probeSuccessful = true;
 		updateStatusBar();
 	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error);
-		outputChannel.appendLine(`gpg-agent sanity probe failed: ${msg}`);
+		outputChannel.appendLine(`Probe of gpg-agent failed. Agent proxy is NOT READY: ${msg}`);
 	}
 }

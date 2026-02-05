@@ -147,7 +147,6 @@ export class AgentProxy {
             if (!greetingLine.startsWith('OK ')) {
                 throw new Error(`Invalid greeting from agent: ${greetingLine}`);
             }
-            log(this.config, `[${sessionId}] Received greeting from gpg-agent: ${greetingLine}`);
 
             // Successful connection and greeting
             log(this.config, `[${sessionId}] Connected successfully to gpg-agent`);
