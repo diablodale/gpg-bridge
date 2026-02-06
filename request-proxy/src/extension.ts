@@ -64,7 +64,7 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
             logCallback: logCallback
         });
 
-        outputChannel.appendLine('Request proxy started successfully');
+        outputChannel.appendLine('Request proxy is READY');
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Failed to start request proxy: ${message}`);

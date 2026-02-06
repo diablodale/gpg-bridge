@@ -32,7 +32,16 @@ interface ClientSession {
     sessionId: string | null;
     state: ClientState;
     buffer: string;
-    commandBlock: string;
+}
+
+/**
+ * Sanitize string for safe display in log output
+ * Shows first command word and byte count to avoid overwhelming logs
+ */
+function sanitizeForLog(str: string): string {
+    const firstWord = str.split(/[\s\n]/, 1)[0];
+    const remainingBytes = str.length - firstWord.length -1; // -1 for the space/newline after first word
+    return `${firstWord} and ${remainingBytes} more bytes`;
 }
 
 /**
@@ -41,15 +50,11 @@ interface ClientSession {
 export async function startRequestProxy(config: RequestProxyConfig): Promise<RequestProxyInstance> {
     const socketPath = await getLocalGpgSocketPath();
     if (!socketPath) {
-        throw new Error(
-            'Could not determine local GPG socket path. ' +
-            'Is gpg installed? Try: gpgconf --list-dirs'
-        );
+        throw new Error('Could not determine local GPG socket path. Is gpg installed? Try: gpgconf --list-dirs');
     }
 
-    log(config, `Creating Unix socket server at: ${socketPath}`);
-
     // Ensure parent directory exists
+    log(config, `Creating socket server at ${socketPath}`);
     const socketDir = path.dirname(socketPath);
     if (!fs.existsSync(socketDir)) {
         fs.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
@@ -62,62 +67,63 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
             sessionId: null,
             state: 'DISCONNECTED',
             buffer: '',
-            commandBlock: ''
         };
 
-        log(config, `Client connected, initiating connection to agent-proxy`);
-        log(config, `Client socket paused on connect`);
-
-        // Handle client disconnect
-        clientSocket.on('end', () => {
-            log(config, `Client disconnected, closing session`);
-            cleanupSession(config, clientSession);
+        // 'close' fires when the socket is fully closed and resources are released
+        // hadError arg indicates if it closed because of an error
+        // event sequences:
+        // - OS error: 'error' -> 'close'
+        // - graceful remote shutdown: 'end' -> 'close'
+        // - local shutdown: socket.end() -> 'close'
+        // - local destroy without arg: socket.destroy() -> 'close'
+        clientSocket.on('close', () => {
+            log(config, `[${clientSession.sessionId ?? 'pending'}] Client socket closed`);
+            disconnectAgent(config, clientSession);
         });
 
+        // 'error' fires when the OS reports a failure (ECONNRESET, EPIPE, etc.)
+        // or when the err arg of destroy() is used
+        // node does not automatically destroy the socket on 'error' event
+        // event sequences:
+        // - OS error: 'error' -> 'close'
+        // - local destroy with arg `socket.destroy(err)`: 'error' -> 'close'
         clientSocket.on('error', (err: Error) => {
-            log(config, `Client socket error: ${err.message}`);
-            cleanupSession(config, clientSession);
+            log(config, `[${clientSession.sessionId ?? 'pending'}] Client socket error: ${err.message}`);
         });
 
         // Log when socket becomes readable/writable
         clientSocket.on('readable', () => {
-            log(config, `[${clientSession.sessionId}] Client socket readable`);
             let chunk: Buffer | null;
             while ((chunk = clientSocket.read()) !== null) {
-                log(config, `[${clientSession.sessionId}] Readable chunk size: ${chunk.length}`);
                 handleClientData(config, clientSession, chunk).catch((err) => {
-                    log(config, `[${clientSession.sessionId}] Error handling client data: ${err instanceof Error ? err.message : String(err)}`);
-                    cleanupSession(config, clientSession).catch(() => {});
+                    const msg = err instanceof Error ? err.message : String(err);
+                    log(config, `[${clientSession.sessionId ?? 'pending'}] Error proxying client <-> agent: ${msg}`);
                     try {
                         clientSession.socket.destroy();
-                    } catch (destroyErr) {
+                    } catch (err) {
                         // Ignore
                     }
                 });
             }
         });
 
-        clientSocket.on('writable', () => {
-            log(config, `[${clientSession.sessionId}] Client socket writable`);
-        });
-
-        // Start by connecting to agent-proxy
+        // Connect to gpg-agent-proxy, this runs async with no await so that we can handle client socket events while waiting for connection
+        log(config, 'Client connected to socket. Socket is paused while initiating connection to GPG Agent Proxy');
         connectToAgent(config, clientSession).then(() => {
-            // Resume after greeting is sent
-            log(config, `[${clientSession.sessionId}] Ready for data, resuming socket`);
+            // Resume after greeting is sent, could be a race condition since Socket::write() completes asynchronously
             clientSocket.resume();
-        }).catch((err) => {
-            log(config, `[${clientSession.sessionId}] Async connect error: ${err instanceof Error ? err.message : String(err)}`);
+        }).catch(() => {
             try {
-                clientSession.socket.destroy();
-            } catch (destroyErr) {
+                clientSocket.destroy();
+            } catch (err) {
                 // Ignore
             }
         });
     });
 
+    // Handle server errors, only logging for now
     server.on('error', (err: Error) => {
-        log(config, `Server error: ${err.message}`);
+        log(config, `Socket server error: ${err.message}`);
     });
 
     return new Promise((resolve, reject) => {
@@ -129,7 +135,7 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
                 log(config, `Warning: could not chmod socket: ${err}`);
             }
 
-            log(config, `Request proxy listening on ${socketPath}`);
+            log(config, 'Request proxy listening');
 
             resolve({
                 stop: async () => {
@@ -152,42 +158,41 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
     });
 }
 
+function writeToClient(config: RequestProxyConfig, session: ClientSession, data: string, successMessage: string): boolean {
+    // latin1 preserves raw bytes
+    const buffer = Buffer.from(data, 'latin1');
+    return session.socket.write(buffer, (err) => {
+        if (err) {
+            // BUGBUG should I cleanup session (disconnects agent) and destroying socket?
+            log(config, `[${session.sessionId}] Error writing to client socket: ${err.message}`);
+        } else {
+            log(config, `[${session.sessionId}] ${successMessage}`);
+        }
+    });
+}
+
 /**
  * Connect to agent-proxy via VS Code command
  */
 async function connectToAgent(config: RequestProxyConfig, session: ClientSession): Promise<void> {
+    log(config, `[${session.sessionId ?? 'pending'}] Connecting to GPG Agent Proxy via command...`);
     try {
         // Call connectAgent command
         const result = await vscode.commands.executeCommand('_gpg-agent-proxy.connectAgent') as { sessionId: string; greeting: string };
-        log(config, `[${session.sessionId}] Result from connectAgent: ${JSON.stringify(result)}`);
         session.sessionId = result.sessionId;
         session.state = 'SEND_COMMAND';
-        log(config, `[${session.sessionId}] Connected to agent-proxy`);
-        log(config, `[${session.sessionId}] Greeting value: ${JSON.stringify(result.greeting)}`);
+        log(config, `[${session.sessionId}] Connected to GPG Agent Proxy`);
 
         // Send greeting from agent to client unchanged
         if (result.greeting) {
-            log(config, `[${session.sessionId}] About to write greeting, socket writable: ${session.socket.writable}`);
-            session.socket.write(result.greeting, (err) => {
-                if (err) {
-                    log(config, `[${session.sessionId}] Error writing greeting: ${err.message}`);
-                } else {
-                    log(config, `[${session.sessionId}] Greeting write confirmed`);
-                }
-            });
-            log(config, `[${session.sessionId}] Sent greeting to client`);
+            writeToClient(config, session, result.greeting, 'Ready for client data');
         } else {
             log(config, `[${session.sessionId}] Warning: greeting is undefined`);
         }
-    } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        log(config, `Failed to connect to agent-proxy: ${msg}`);
-        // Close client socket immediately
-        try {
-            session.socket.destroy();
-        } catch (destroyErr) {
-            // Ignore
-        }
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(config, `Failed connect to GPG Agent Proxy: ${msg}`);
+        throw err;
     }
 }
 
@@ -200,66 +205,23 @@ async function connectToAgent(config: RequestProxyConfig, session: ClientSession
  * INQUIRE_DATA: Read D lines until END
  */
 async function handleClientData(config: RequestProxyConfig, session: ClientSession, chunk: Buffer): Promise<void> {
-    const chunkStr = chunk.toString('utf-8');
-    log(config, `[${session.sessionId}] Received ${chunk.length} bytes in state ${session.state}: ${chunkStr.replace(/\n/g, '\\n')}`);
+    log(config, `[${session.sessionId}] Received ${chunk.length} bytes from client`);
 
-    session.buffer += chunkStr;
+    // Use latin1 to preserve raw bytes, add to buffer
+    session.buffer += chunk.toString('latin1');
 
+    // Process buffer based on state
+    let data: string | null = null;
     if (session.state === 'SEND_COMMAND') {
-        // Look for complete command line (ends with \n)
+        // Look for newline to delimit one complete command
         const newlineIndex = session.buffer.indexOf('\n');
         if (newlineIndex === -1) {
             return; // Wait for more data
         }
 
-        // Extract command
-        const command = session.buffer.substring(0, newlineIndex + 1);
+        // Extract one command and newline, keep the rest in buffer
+        data = session.buffer.substring(0, newlineIndex + 1);
         session.buffer = session.buffer.substring(newlineIndex + 1);
-        session.commandBlock = command;
-
-        log(config, `[${session.sessionId}] Command: ${command.trim()}`);
-
-        // Send command to agent-proxy
-        session.state = 'WAIT_RESPONSE';
-        try {
-            const result = await vscode.commands.executeCommand(
-                '_gpg-agent-proxy.sendCommands',
-                session.sessionId,
-                command
-            ) as { response: string };
-
-            const response = result.response;
-            log(config, `[${session.sessionId}] Response: ${response.replace(/\n/g, '\\n')}`);
-
-            // Send response to client (latin1 preserves raw bytes)
-            session.socket.write(Buffer.from(response, 'latin1'));
-
-            // Check if response contains INQUIRE
-            if (response.includes('INQUIRE')) {
-                session.state = 'INQUIRE_DATA';
-                log(config, `[${session.sessionId}] Entering INQUIRE_DATA state`);
-            } else {
-                // Back to SEND_COMMAND for next command
-                session.state = 'SEND_COMMAND';
-                // Process any buffered data
-                if (session.buffer.length > 0) {
-                    handleClientData(config, session, Buffer.from(session.buffer));
-                }
-            }
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            // Only log and cleanup if session is still valid
-            if (session.sessionId) {
-                log(config, `[${session.sessionId}] Error sending command: ${msg}`);
-                // Cleanup session (disconnects agent) before destroying socket
-                await cleanupSession(config, session);
-            }
-            try {
-                session.socket.destroy();
-            } catch (destroyErr) {
-                // Ignore
-            }
-        }
     } else if (session.state === 'INQUIRE_DATA') {
         // Look for D lines followed by END
         const endIndex = session.buffer.indexOf('END\n');
@@ -267,76 +229,68 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
             return; // Wait for more data
         }
 
-        // Extract D block (including END\n)
-        const dataBlock = session.buffer.substring(0, endIndex + 4);
+        // Extract D block (including END\n), keep the rest in buffer
+        data = session.buffer.substring(0, endIndex + 4);
         session.buffer = session.buffer.substring(endIndex + 4);
+    }
+    else {
+        // invalid state
+        throw new Error(`Invalid state ${session.state} when receiving client data`);
+    }
 
-        log(config, `[${session.sessionId}] Data block: ${dataBlock.replace(/\n/g, '\\n')}`);
+    // Send command to gpg-agent-proxy and wait for response
+    await waitResponse(config, session, data);
+}
 
-        // Send D block to agent-proxy
-        session.state = 'WAIT_RESPONSE';
-        try {
-            const result = await vscode.commands.executeCommand(
-                '_gpg-agent-proxy.sendCommands',
-                session.sessionId,
-                dataBlock
-            ) as { response: string };
+async function waitResponse(config: RequestProxyConfig, session: ClientSession, data: string): Promise<void> {
+    log(config, `[${session.sessionId}] Proxying client -> agent: ${sanitizeForLog(data)}`);
+    session.state = 'WAIT_RESPONSE';
+    const result = await vscode.commands.executeCommand(
+        '_gpg-agent-proxy.sendCommands',
+        session.sessionId,
+        data,
+    ) as { response: string };
 
-            const response = result.response;
-            log(config, `[${session.sessionId}] Response: ${response.replace(/\n/g, '\\n')}`);
+    const response = result.response;
+    writeToClient(config, session, response, `Proxying client <- agent: ${sanitizeForLog(response)}`);
 
-            // Send response to client (latin1 preserves raw bytes)
-            session.socket.write(Buffer.from(response, 'latin1'));
-
-            // Check if response contains another INQUIRE
-            if (response.includes('INQUIRE')) {
-                session.state = 'INQUIRE_DATA';
-                log(config, `[${session.sessionId}] Continuing in INQUIRE_DATA state`);
-            } else {
-                // Back to SEND_COMMAND for next command
-                session.state = 'SEND_COMMAND';
-                // Process any buffered data
-                if (session.buffer.length > 0) {
-                    handleClientData(config, session, Buffer.from(session.buffer));
-                }
-            }
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            log(config, `[${session.sessionId}] Error sending data block: ${msg}`);
-            // Cleanup session (disconnects agent) before destroying socket
-            await cleanupSession(config, session);
-            try {
-                session.socket.destroy();
-            } catch (destroyErr) {
-                // Ignore
-            }
+    // Check if response contains another INQUIRE (must be at start of line per Assuan protocol)
+    if (/(^|\n)INQUIRE/.test(response)) {
+        session.state = 'INQUIRE_DATA';
+        log(config, `[${session.sessionId}] Entering INQUIRE_DATA state`);
+    } else {
+        // Back to SEND_COMMAND for next command
+        session.state = 'SEND_COMMAND';
+        // Process any buffered data
+        if (session.buffer.length > 0) {
+            handleClientData(config, session, Buffer.from(session.buffer));
         }
     }
 }
 
 /**
- * Clean up session
+ * Disconnect the agent using command and remove session id+state
  */
-async function cleanupSession(config: RequestProxyConfig, session: ClientSession): Promise<void> {
+async function disconnectAgent(config: RequestProxyConfig, session: ClientSession): Promise<void> {
     if (!session.sessionId) {
         return;
     }
 
     const sessionId = session.sessionId;
-
+    log(config, `[${sessionId}] Disconnecting from GPG Agent Proxy...`);
     try {
         // Call disconnectAgent to clean up server-side session
         await vscode.commands.executeCommand('_gpg-agent-proxy.disconnectAgent', sessionId);
-        log(config, `[${sessionId}] Session cleaned up`);
-    } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        log(config, `[${sessionId}] Error cleaning up: ${msg}`);
-        // Continue even if cleanup fails - session will be cleaned on error handlers
+        log(config, `[${sessionId}] Disconnected from GPG Agent Proxy`);
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(config, `[${sessionId}] Disconnect from GPG Agent Proxy failed: ${msg}`);
     }
 
-    // Clear session reference
+    // Clear session members except socket which is destroyed elsewhere
     session.sessionId = null;
     session.state = 'DISCONNECTED';
+    session.buffer = '';
 }
 
 /**
