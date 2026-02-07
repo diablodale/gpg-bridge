@@ -67,8 +67,14 @@ export function log(config: LogConfig, message: string): void {
  * @returns Error message string
  */
 export function extractErrorMessage(error: unknown, fallback = 'Unknown error'): string {
+    if (error == null) {
+        return fallback;
+    }
     if (error instanceof Error) {
         return error.message || fallback;
+    }
+    if (typeof error === 'object' && 'message' in error) {
+        return String(error.message) || fallback;
     }
     const message = String(error);
     return message || fallback;

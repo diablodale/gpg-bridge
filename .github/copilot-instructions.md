@@ -11,6 +11,18 @@ This workspace contains two cooperating VS Code extensions written in TypeScript
 - Linting / formatting: follow existing patterns in `eslint.config.mjs` and existing code (no extra formatting rules enforced here).
 - Logging: use the module-level `log(config, message)` helper pattern (see `agent-proxy/src/services/agentProxy.ts` and `request-proxy/src/services/requestProxy.ts`). Do not log raw binary data.
 
+## Source Control
+
+- Use Git for all version control operations.
+- Commit changes as logically complete units of work (e.g., a new feature, a bug fix, or a refactor).
+- Follow the *Conventional Commits v1* specification for commit messages
+  (e.g., `feat: add proxy command`, `fix: handle socket errors`, `docs: update architecture docs`).
+- When working from a todo list or plan:
+  1. Complete an item
+  2. Update the todo/plan to reflect the change
+  3. Then commit all work, including todo/plan/docs, to Git.
+     This keeps the commit history aligned with the plan and makes the evolution of the project easier to understand.
+
 ## Architecture
 
 - Two small extensions communicate over VS Code commands: `_gpg-agent-proxy.connectAgent`, `_gpg-agent-proxy.sendCommands`, and `_gpg-agent-proxy.disconnectAgent` (see `agent-proxy/src/extension.ts`).

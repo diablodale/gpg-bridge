@@ -6,7 +6,7 @@
 		"lib": [
 			"ES2022"
 		],
-		"types": ["node"],
+		"types": ["node", "mocha"],
 		"sourceMap": true,
 		"rootDir": "shared",
 		"skipLibCheck": true,

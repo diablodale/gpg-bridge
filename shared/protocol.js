@@ -70,8 +70,14 @@ function log(config, message) {
  * @returns Error message string
  */
 function extractErrorMessage(error, fallback = 'Unknown error') {
+    if (error == null) {
+        return fallback;
+    }
     if (error instanceof Error) {
         return error.message || fallback;
+    }
+    if (typeof error === 'object' && 'message' in error) {
+        return String(error.message) || fallback;
     }
     const message = String(error);
     return message || fallback;

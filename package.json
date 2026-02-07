@@ -14,10 +14,14 @@
     "package:agent": "cd agent-proxy && npm run package",
     "package:request": "cd request-proxy && npm run package",
     "package:pack": "cd pack && npm run package",
-    "clean": "rimraf -g \"agent-proxy/out\" \"request-proxy/out\" \"agent-proxy/gpg-agent-proxy-*.vsix\" \"request-proxy/gpg-request-proxy-*.vsix\" \"pack/gpg-windows-relay-*.vsix\""
+    "test": "mocha --ui bdd shared/**/__tests__/**/*.test.js",
+    "test:watch": "mocha --ui bdd shared/**/__tests__/**/*.test.js --watch",
+    "clean": "rimraf -g \"agent-proxy/out\" \"request-proxy/out\" \"agent-proxy/gpg-agent-proxy-*.vsix\" \"request-proxy/gpg-request-proxy-*.vsix\" \"pack/gpg-windows-relay-*.vsix\" \"shared/out\" \"shared/**/*.d.ts\" \"shared/**/*.d.ts.map\""
   },
   "devDependencies": {
-    "rimraf": "^5.0.0"
+    "rimraf": "^5.0.0",
+    "mocha": "^10.5.0",
+    "@types/mocha": "^10.0.10"
   },
   "dependencies": {
     "@types/node": "^25.2.1",
