@@ -17,11 +17,12 @@ This workspace contains two cooperating VS Code extensions written in TypeScript
 - Commit changes as logically complete units of work (e.g., a new feature, a bug fix, or a refactor).
 - Follow the *Conventional Commits v1* specification for commit messages
   (e.g., `feat: add proxy command`, `fix: handle socket errors`, `docs: update architecture docs`).
-- When working from a todo list or plan:
-  1. Complete an item
-  2. Update the todo/plan to reflect the change
+- **VERY IMPORTANT** When working from a todo list or plan:
+  1. Complete an item or phase of work.
+  2. Update the todo/plan to reflect the change.
   3. Then commit all work, including todo/plan/docs, to Git.
      This keeps the commit history aligned with the plan and makes the evolution of the project easier to understand.
+  4. Only after committing to git, can you proceed to the next phase of work.
 
 ## Architecture
 
