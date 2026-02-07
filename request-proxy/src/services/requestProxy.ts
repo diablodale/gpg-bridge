@@ -15,9 +15,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { spawnSync } from 'child_process';
+import { log, encodeProtocolData, decodeProtocolData, sanitizeForLog, extractErrorMessage, extractNextCommand, determineNextState } from '../../../shared/protocol';
+import type { LogConfig, ICommandExecutor } from '../../../shared/types';
 
-export interface RequestProxyConfig {
-    logCallback?: (message: string) => void;
+export interface RequestProxyConfig extends LogConfig {
+}
+
+export interface RequestProxyDeps {
+    commandExecutor: ICommandExecutor;
 }
 
 export interface RequestProxyInstance {
@@ -32,16 +37,6 @@ interface ClientSession {
     sessionId: string | null;
     state: ClientState;
     buffer: string;
-}
-
-/**
- * Sanitize string for safe display in log output
- * Shows first command word and byte count to avoid overwhelming logs
- */
-function sanitizeForLog(str: string): string {
-    const firstWord = str.split(/[\s\n]/, 1)[0];
-    const remainingBytes = str.length - firstWord.length -1; // -1 for the space/newline after first word
-    return `${firstWord} and ${remainingBytes} more bytes`;
 }
 
 /**
@@ -160,7 +155,7 @@ export async function startRequestProxy(config: RequestProxyConfig): Promise<Req
 
 function writeToClient(config: RequestProxyConfig, session: ClientSession, data: string, successMessage: string): boolean {
     // latin1 preserves raw bytes
-    const buffer = Buffer.from(data, 'latin1');
+    const buffer = encodeProtocolData(data);
     return session.socket.write(buffer, (err) => {
         if (err) {
             // BUGBUG should I cleanup session (disconnects agent) and destroying socket?
@@ -208,7 +203,7 @@ async function handleClientData(config: RequestProxyConfig, session: ClientSessi
     log(config, `[${session.sessionId}] Received ${chunk.length} bytes from client`);
 
     // Use latin1 to preserve raw bytes, add to buffer
-    session.buffer += chunk.toString('latin1');
+    session.buffer += decodeProtocolData(chunk);
 
     // Process buffer based on state
     let data: string | null = null;
@@ -333,13 +328,4 @@ async function getLocalGpgSocketPath(): Promise<string | null> {
             resolve(null);
         }
     });
-}
-
-/**
- * Log helper
- */
-function log(config: RequestProxyConfig, message: string): void {
-    if (config.logCallback) {
-        config.logCallback(message);
-    }
 }

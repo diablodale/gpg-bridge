@@ -11,11 +11,20 @@
 import * as net from 'net';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { log, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog } from '../../../shared/protocol';
+import type { LogConfig, IFileSystem, ISocketFactory } from '../../../shared/types';
 
-export interface AgentProxyConfig {
+export interface AgentProxyConfig extends LogConfig {
     gpgAgentSocketPath: string; // Path to Assuan socket file
-    logCallback?: (message: string) => void;
     statusBarCallback?: () => void;
+}
+
+/**
+ * Optional dependencies for AgentProxy (all defaults provided)
+ */
+interface AgentProxyDeps {
+    socketFactory: ISocketFactory;
+    fileSystem: IFileSystem;
 }
 
 interface SessionSocket {
@@ -24,10 +33,19 @@ interface SessionSocket {
 
 export class AgentProxy {
     private sessions: Map<string, SessionSocket> = new Map();
+    private socketFactory: ISocketFactory;
+    private fileSystem: IFileSystem;
 
-    constructor(private config: AgentProxyConfig) {
+    constructor(private config: AgentProxyConfig, deps?: Partial<AgentProxyDeps>) {
+        // Initialize with defaults or provided dependencies
+        this.socketFactory = deps?.socketFactory ?? { createConnection: (options) => net.createConnection(options) };
+        this.fileSystem = deps?.fileSystem ?? ({
+            existsSync: fs.existsSync,
+            readFileSync: fs.readFileSync
+        } as unknown as IFileSystem);
+
         // Validate socket path exists
-        if (!fs.existsSync(config.gpgAgentSocketPath)) {
+        if (!this.fileSystem.existsSync(config.gpgAgentSocketPath)) {
             throw new Error(`GPG agent socket not found: ${config.gpgAgentSocketPath}`);
         }
     }
@@ -72,29 +90,9 @@ export class AgentProxy {
         log(this.config, `[${sessionId}] Create session to gpg-agent...`);
 
         try {
-            // Read the socket file to get port and nonce (Windows Assuan format)
-            const socketData = fs.readFileSync(this.config.gpgAgentSocketPath);
-
-            // Parse: first line is port (ASCII), then raw 16-byte nonce
-            const newlineIndex = socketData.indexOf('\n');
-            if (newlineIndex === -1) {
-                throw new Error('Invalid socket file format: no newline found');
-            }
-
-            const portStr = socketData.toString('utf-8', 0, newlineIndex);
-            const port = parseInt(portStr, 10);
-
-            if (isNaN(port)) {
-                throw new Error(`Invalid port in socket file: ${portStr}`);
-            }
-
-            // Extract raw 16-byte nonce after the newline
-            const nonceStart = newlineIndex + 1;
-            const nonce = socketData.subarray(nonceStart, nonceStart + 16);
-
-            if (nonce.length !== 16) {
-                throw new Error(`Invalid nonce length: expected 16 bytes, got ${nonce.length}`);
-            }
+            // Read and parse the socket file to get port and nonce (Windows Assuan format)
+            const socketData = this.fileSystem.readFileSync(this.config.gpgAgentSocketPath);
+            const { port, nonce } = parseSocketFile(socketData);
 
             log(this.config, `[${sessionId}] Found config suggesting gpg-agent at localhost:${port} and expects nonce`);
 
@@ -127,7 +125,7 @@ export class AgentProxy {
                 }, 5000);
 
                 // Pass connectHandler as callback to createConnection - no race condition
-                socket = net.createConnection({
+                socket = this.socketFactory.createConnection({
                     host: 'localhost',
                     port: port
                 }, connectHandler);
@@ -190,7 +188,7 @@ export class AgentProxy {
 
             const dataHandler = (chunk: Buffer) => {
                 // Use latin1 to preserve raw bytes without UTF-8 mangling
-                const chunkStr = chunk.toString('latin1');
+                const chunkStr = decodeProtocolData(chunk);
                 responseData += chunkStr;
                 log(this.config, `[${sessionId}] Received ${chunk.length} bytes from gpg-agent`);
 
@@ -333,24 +331,5 @@ export class AgentProxy {
 
     public getSessionCount(): number {
         return this.sessions.size;
-    }
-}
-
-/**
- * Sanitize string for safe display in log output
- * Shows first command word and byte count to avoid overwhelming logs
- */
-function sanitizeForLog(str: string): string {
-    const firstWord = str.split(/[\s\n]/, 1)[0];
-    const remainingBytes = str.length - firstWord.length -1; // -1 for the space/newline after first word
-    return `${firstWord} and ${remainingBytes} more bytes`;
-}
-
-/**
- * Log helper
- */
-function log(config: AgentProxyConfig, message: string): void {
-    if (config.logCallback) {
-        config.logCallback(message);
     }
 }

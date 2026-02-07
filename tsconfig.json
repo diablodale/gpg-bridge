@@ -2,14 +2,16 @@
 	"compilerOptions": {
 		"module": "Node16",
 		"target": "ES2022",
-		"outDir": "out",
+		"outDir": "shared",
 		"lib": [
 			"ES2022"
 		],
+		"types": ["node"],
 		"sourceMap": true,
+		"rootDir": "shared",
 		"skipLibCheck": true,
 		"strict": true
 	},
-	"include": ["src/**/*"],
-	"exclude": ["node_modules", "out"]
+	"include": ["shared/**/*"],
+	"exclude": ["node_modules", "agent-proxy", "request-proxy"]
 }
