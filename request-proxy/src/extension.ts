@@ -11,6 +11,8 @@
 
 import * as vscode from 'vscode';
 import { startRequestProxy } from './services/requestProxy';
+import { extractErrorMessage } from '../../shared/protocol';
+import { VSCodeCommandExecutor } from './services/commandExecutor';
 
 let requestProxyInstance: Awaited<ReturnType<typeof startRequestProxy>> | null = null;
 
@@ -39,7 +41,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             outputChannel.show();
         }
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = extractErrorMessage(error);
         outputChannel.appendLine(`Error: ${message}`);
         outputChannel.show(true);
     }
@@ -59,14 +61,16 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
 		const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
 		const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
 
-        // Start the request proxy (implements state machine via VS Code commands)
+        // Start the request proxy with explicit commandExecutor (or let it use default)
         requestProxyInstance = await startRequestProxy({
             logCallback: logCallback
+        }, {
+            commandExecutor: new VSCodeCommandExecutor()
         });
 
         outputChannel.appendLine('Request proxy is READY');
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = extractErrorMessage(error);
         outputChannel.appendLine(`Failed to start request proxy: ${message}`);
         outputChannel.show(true);
         vscode.window.showErrorMessage(`Failed to start request proxy: ${message}`);
@@ -86,7 +90,7 @@ async function stopRequestProxyHandler(outputChannel: vscode.OutputChannel): Pro
         requestProxyInstance = null;
         outputChannel.appendLine('Request proxy stopped');
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = extractErrorMessage(error);
         outputChannel.appendLine(`Error stopping request proxy: ${message}`);
         outputChannel.show(true);
     }

@@ -160,11 +160,11 @@ Extract ~200 lines of duplicate code into shared utilities and enable 80-90% uni
 
 - [x] Import shared utilities (`sanitizeForLog`, `log`, `extractErrorMessage`, `extractNextCommand`, `determineNextState`, `encodeProtocolData`, `decodeProtocolData`)
 - [x] Import shared types (`LogConfig`, `IFileSystem`, `IServerFactory`, `ICommandExecutor`)
-- [ ] Import `VSCodeCommandExecutor` from local commandExecutor.ts
-- [x] Define `RequestProxyDeps` interface
+- [x] Import `VSCodeCommandExecutor` from local commandExecutor.ts
+- [x] Define `RequestProxyDeps` interface with optional fields
 - [x] Update `RequestProxyConfig` to extend `LogConfig`
-- [ ] Update `startRequestProxy()` signature to accept optional `deps` parameter
-- [ ] Initialize dependencies with defaults (backward compatible):
+- [x] Update `startRequestProxy()` signature to accept optional `deps` parameter
+- [x] Initialize dependencies with defaults (backward compatible):
   - `commandExecutor` defaults to `new VSCodeCommandExecutor()`
   - `serverFactory` defaults to `{ createServer: net.createServer }`
   - `fileSystem` defaults to `{ existsSync: fs.existsSync, mkdirSync: fs.mkdirSync, chmodSync: fs.chmodSync, unlinkSync: fs.unlinkSync }`
@@ -175,23 +175,23 @@ Extract ~200 lines of duplicate code into shared utilities and enable 80-90% uni
 - [x] Remove local `log()` function (lines ~338-342)
 - [x] Replace all `sanitizeForLog()` calls with imported version
 - [x] Replace all `log()` calls with imported version
-- [ ] Replace error extraction patterns with `extractErrorMessage()`:
-  - [ ] Line ~99 in readable handler catch
-  - [ ] Line ~168 in writeToClient
-  - [ ] Line ~286 in disconnectAgent catch
-  - [ ] Any other occurrences
+- [x] Replace error extraction patterns with `extractErrorMessage()`:
+  - [x] Line ~94 in readable handler catch
+  - [x] Line ~188 in waitResponse
+  - [x] Line ~281 in disconnectAgent catch
+  - [x] All 3 occurrences replaced
 
 ### 4.3 Use Injected Dependencies
 
-- [ ] Replace `net.createServer()` with `serverFactory.createServer()` (line ~75)
-- [ ] Replace all `fs.existsSync()` with `fileSystem.existsSync()`
-- [ ] Replace all `fs.mkdirSync()` with `fileSystem.mkdirSync()`
-- [ ] Replace all `fs.chmodSync()` with `fileSystem.chmodSync()`
-- [ ] Replace all `fs.unlinkSync()` with `fileSystem.unlinkSync()`
-- [ ] Replace `vscode.commands.executeCommand()` calls with `commandExecutor` methods:
-  - [ ] Line ~200 connectToAgent(): use `commandExecutor.connectAgent()`
-  - [ ] Lines ~260-264 waitResponse(): use `commandExecutor.sendCommands()`
-  - [ ] Line ~295 disconnectAgent(): use `commandExecutor.disconnectAgent()`
+- [x] Replace `net.createServer()` with `serverFactory.createServer()` (line ~62)
+- [x] Replace all `fs.existsSync()` with `fileSystem.existsSync()`
+- [x] Replace all `fs.mkdirSync()` with `fileSystem.mkdirSync()`
+- [x] Replace all `fs.chmodSync()` with `fileSystem.chmodSync()`
+- [x] Replace all `fs.unlinkSync()` with `fileSystem.unlinkSync()`
+- [x] Replace `vscode.commands.executeCommand()` calls with `commandExecutor` methods:
+  - [x] connectToAgent(): uses `commandExecutor.connectAgent()`
+  - [x] waitResponse(): uses `commandExecutor.sendCommands()`
+  - [x] disconnectAgent(): uses `commandExecutor.disconnectAgent()`
 
 ### 4.4 Extract Pure Protocol Functions
 
@@ -227,23 +227,28 @@ Extract ~200 lines of duplicate code into shared utilities and enable 80-90% uni
 
 ### 5.1 Update Agent-Proxy Extension
 
-**File**: `agent-proxy/src/extension.ts`
+**File**: `agent-proxy/src/services/agentProxy.ts`
 
-**Verification Only** - Verified that AgentProxy instantiation uses defaults (no deps parameter) and configuration passes logCallback correctly. No code changes required.
+- [x] Replace error message extraction (line ~102) with `extractErrorMessage(error)`
+- [x] Replace error message extraction (line ~154) with `extractErrorMessage(error, fallback)`
+- [x] Replace error message extraction (line ~245) with `extractErrorMessage(error, fallback)`
+- [x] Replace error message extraction (line ~251) with `extractErrorMessage(error, fallback)`
+- [x] Replace error message extraction (line ~319) with `extractErrorMessage(error)`
+- [x] All 5 patterns replaced
 
-- [x] Verify AgentProxy instantiation uses defaults (no deps parameter)
-- [x] Confirm configuration passes logCallback correctly
-
-**Verification**: ✅ Extension activates without errors
+**Verification**: ✅ TypeScript compilation succeeds
 
 ### 5.2 Update Request-Proxy Extension
 
 **File**: `request-proxy/src/extension.ts`
 
-**Verification Only** - Verified that RequestProxy already passes config correctly and RequestProxyConfig properly extends LogConfig. No code changes required.
+- [x] Import `extractErrorMessage` from shared/protocol
+- [x] Import `VSCodeCommandExecutor` for explicit dependency clarity
+- [x] Replace error patterns (3 occurrences) with `extractErrorMessage(error)`
+- [x] Update `startRequestProxy()` call to explicitly pass `new VSCodeCommandExecutor()` in deps
+- [x] Update RequestProxyConfig verification - already extends LogConfig correctly
 
-- [x] Confirm `startRequestProxy()` receives config with logCallback
-- [x] Verify RequestProxyConfig extends LogConfig properly
+**Verification**: ✅ TypeScript compilation succeeds
 
 ---
 
@@ -589,9 +594,10 @@ Extract ~200 lines of duplicate code into shared utilities and enable 80-90% uni
 | 5 | Build & Watch Scripts | ✅ Complete | 1-2h |
 | 6 | Unit Tests | ✅ Complete | 3-4h |
 | 7 | Configuration & Build | ✅ Complete | 2-3h |
+| **Session 4 Completed** | **Phases 4-5: DI Implementation** | ✅ Complete | 3-4h |
 | 8 | Verification & Cleanup | ⏳ Pending | 2-3h |
-| 9 | DI & Integration Tests | ❌ Deferred | 3-4h |
-| **Total Completed** | | | **19-26h** |
+| 9 | Integration Tests | ❌ Deferred | 3-4h |
+| **Total Completed** | | | **22-30h** |
 | **Remaining** | | | **5-7h** |
 
 ### Overall Progress
@@ -636,25 +642,29 @@ If critical issues are found:
 
 ## Notes
 
-### Current Status Update (Session 3)
+### Current Status Update (Session 4)
 
-**Completed**:
+**Completed in Session 4**:
+- Phase 4.1: RequestProxy deps parameter and initialization ✅
+- Phase 4.2: Error extraction patterns in request-proxy ✅
+- Phase 4.3: Dependency injection wiring in request-proxy ✅
+- Phase 5.1: Agent-proxy error extraction patterns ✅
+- Phase 5.2: Request-proxy extension error patterns ✅
+
+**Previously Completed (Sessions 1-3)**:
 - Phase 1: Function migration & extraction ✅
 - Phase 2: Shared type definitions ✅
 - Phase 3: Logging utilities ✅
-- Phase 4: Protocol function extraction ✅
-- Phase 5: Build scripts & watch mode ✅
+- Phase 4 (initial): Protocol function extraction ✅
+- Phase 5 (initial): Build scripts & watch mode ✅
 - Phase 6: Unit tests (23 tests, 100% shared/protocol.ts) ✅
 - Phase 7: TypeScript config & build improvements ✅
 
-**Deferred for Phase 9**:
-- Dependency injection implementation
-- Integration tests with mocks
-- Repository documentation updates
-
-**Pending**:
-- Phase 8: Build verification and runtime testing (manual)
-- Phase 9: Dependency injection & integration tests (scheduled)
+**Pending Phases**:
+- Phase 6.2: Create test mock helpers
+- Phase 6.4, 6.5: Integration tests
+- Phase 7.3: Update repository documentation
+- Phase 8: Build verification and runtime testing
 
 ### Key Accomplishments
 
@@ -663,8 +673,11 @@ If critical issues are found:
 3. ✅ Established shared utilities library
 4. ✅ Wrote 23 unit tests with 100% coverage of shared/protocol.ts
 5. ✅ Fixed TypeScript configuration (rootDir issues resolved)
-6. ✅ Both extensions build and compile successfully
-7. ✅ No behavioral changes - fully backward compatible
+6. ✅ Implemented optional dependency injection in request-proxy (commands, fs, server factory)
+7. ✅ Added extractErrorMessage() calls throughout (agent-proxy, request-proxy extensions)
+8. ✅ Created VSCodeCommandExecutor wrapper for command abstraction
+9. ✅ Both extensions build and compile successfully
+10. ✅ No behavioral changes - fully backward compatible
 
 ### Known Issues
 

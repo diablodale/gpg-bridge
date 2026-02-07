@@ -99,8 +99,8 @@ export class AgentProxy {
             // Wait for connection and send nonce
             await new Promise<void>((resolve, reject) => {
                 const rejectWith = (error: unknown, fallbackMessage: string) => {
-                    const msg = error instanceof Error ? error.message : String(error || '');
-                    reject(new Error(msg || fallbackMessage));
+                    const msg = extractErrorMessage(error, fallbackMessage);
+                    reject(new Error(msg));
                 };
 
                 const connectHandler = () => {
@@ -151,7 +151,7 @@ export class AgentProxy {
             this.config.statusBarCallback?.();
             return { sessionId, greeting };
         } catch (error) {
-            const msg = (error instanceof Error ? error.message : String(error)) || 'Unknown error during connection';
+            const msg = extractErrorMessage(error, 'Unknown error during connection');
             log(this.config, `[${sessionId}] Connection to gpg-agent failed: ${msg}`);
             socket?.destroy();
             throw new Error(`Connection to gpg-agent failed: ${msg}`);
@@ -242,13 +242,13 @@ export class AgentProxy {
                 if (error) {
                     // Write failed asynchronously - destroy socket
                     // This will trigger 'error' and 'close' events, causing waitForResponse to reject
-                    const msg = (error instanceof Error ? error.message : String(error)) || 'Unknown error during write';
+                    const msg = extractErrorMessage(error, 'Unknown error during write');
                     log(this.config, `[${sessionId}] Send to gpg-agent failed: ${msg}`);
                     session.socket.destroy(error);
                 }
             });
         } catch (error) {
-            const msg = (error instanceof Error ? error.message : String(error)) || 'Unknown error during write';
+            const msg = extractErrorMessage(error, 'Unknown error during write');
             log(this.config, `[${sessionId}] Send to gpg-agent failed (sync): ${msg}`);
             session.socket.destroy();
             throw new Error(`Send to gpg-agent failed: ${msg}`);
@@ -316,7 +316,7 @@ export class AgentProxy {
             log(this.config, `[${sessionId}] Disconnected from gpg-agent`);
         } catch (error) {
             // If BYE fails, log but continue with cleanup
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = extractErrorMessage(error);
             log(this.config, `[${sessionId}] Disconnect gracefully failed: ${msg}`);
             log(this.config, `[${sessionId}] Destroying session and force closing socket to gpg-agent`);
         } finally {
