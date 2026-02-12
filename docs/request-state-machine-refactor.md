@@ -99,6 +99,13 @@ stateDiagram-v2
 - [x] Add validation that transition table covers all valid (state, event) pairs
 - [x] Create `dispatch(event: StateEvent) → Promise<void>` function as central router (implemented as `dispatchStateEvent`)
 
+#### Dependency Injection Design ✅ COMPLETE
+- [x] `RequestProxyConfig` — public API, no `commandExecutor` (static config only)
+- [x] `RequestProxyDeps` — optional dependencies for injection (includes `commandExecutor`, `serverFactory`, `fileSystem`, `getSocketPath`)
+- [x] `RequestProxyConfigWithExecutor` — internal type used by handlers (guarantees `commandExecutor` is present)
+- [x] Simplify `startRequestProxy(config, deps?)` signature (removed `Omit<>` pattern)
+- [x] All handlers use internal type with executor (non-optional, type-safe)
+
 ### Phase 2: State Handlers ✅ COMPLETE
 **File:** `request-proxy/src/services/requestProxy.ts`  
 Implement handler for each state:
