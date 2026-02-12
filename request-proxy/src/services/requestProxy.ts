@@ -216,36 +216,18 @@ async function handleClientData(config: RequestProxyConfig, commandExecutor: ICo
     // Use latin1 to preserve raw bytes, add to buffer
     session.buffer += decodeProtocolData(chunk);
 
-    // Process buffer based on state
-    let data: string | null = null;
-    if (session.state === 'SEND_COMMAND') {
-        // Look for newline to delimit one complete command
-        const newlineIndex = session.buffer.indexOf('\n');
-        if (newlineIndex === -1) {
-            return; // Wait for more data
-        }
+    // Extract command based on current state
+    const { command, remaining } = extractNextCommand(session.buffer, session.state);
 
-        // Extract one command and newline, keep the rest in buffer
-        data = session.buffer.substring(0, newlineIndex + 1);
-        session.buffer = session.buffer.substring(newlineIndex + 1);
-    } else if (session.state === 'INQUIRE_DATA') {
-        // Look for D lines followed by END
-        const endIndex = session.buffer.indexOf('END\n');
-        if (endIndex === -1) {
-            return; // Wait for more data
-        }
+    if (!command) {
+        return; // Wait for more data
+    }
 
-        // Extract D block (including END\n), keep the rest in buffer
-        data = session.buffer.substring(0, endIndex + 4);
-        session.buffer = session.buffer.substring(endIndex + 4);
-    }
-    else {
-        // invalid state
-        throw new Error(`Invalid state ${session.state} when receiving client data`);
-    }
+    // Update buffer with remaining data
+    session.buffer = remaining;
 
     // Send command to gpg-agent-proxy and wait for response
-    await waitResponse(config, commandExecutor, session, data);
+    await waitResponse(config, commandExecutor, session, command);
 }
 
 async function waitResponse(config: RequestProxyConfig, commandExecutor: ICommandExecutor, session: ClientSession, data: string): Promise<void> {
@@ -256,17 +238,13 @@ async function waitResponse(config: RequestProxyConfig, commandExecutor: IComman
     const response = result.response;
     writeToClient(config, session, response, `Proxying client <- agent: ${sanitizeForLog(response)}`);
 
-    // Check if response contains another INQUIRE (must be at start of line per Assuan protocol)
-    if (/(^|\n)INQUIRE/.test(response)) {
-        session.state = 'INQUIRE_DATA';
-        log(config, `[${session.sessionId}] Entering INQUIRE_DATA state`);
-    } else {
-        // Back to SEND_COMMAND for next command
-        session.state = 'SEND_COMMAND';
-        // Process any buffered data
-        if (session.buffer.length > 0) {
-            handleClientData(config, commandExecutor, session, Buffer.from(session.buffer));
-        }
+    // Determine next state based on response
+    session.state = determineNextState(response, session.state);
+    log(config, `[${session.sessionId}] Next state: ${session.state}`);
+
+    // Process any buffered data
+    if (session.buffer.length > 0) {
+        handleClientData(config, commandExecutor, session, Buffer.from(session.buffer));
     }
 }
 
