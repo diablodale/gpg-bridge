@@ -4,8 +4,8 @@
  * Creates a Unix socket server on the GPG agent socket path.
  * Implements a 12-state finite state machine to handle GPG Assuan protocol:
  *   DISCONNECTED → CLIENT_CONNECTED → AGENT_CONNECTING → READY
- *   READY ↔ BUFFERING_COMMAND ↔ DATA_READY ↔ SENDING_TO_AGENT ↔ WAITING_FOR_AGENT ↔ SENDING_TO_CLIENT
- *   READY ↔ BUFFERING_INQUIRE ↔ DATA_READY
+ *   READY ↔ BUFFERING_COMMAND → SENDING_TO_AGENT ↔ WAITING_FOR_AGENT ↔ SENDING_TO_CLIENT
+ *   READY ↔ BUFFERING_INQUIRE → SENDING_TO_AGENT
  *   Any state → ERROR → CLOSING → DISCONNECTED or FATAL
  *
  * Each client connection manages its own state machine using sessionId.
@@ -34,7 +34,6 @@ type ClientState =
   | 'READY'
   | 'BUFFERING_COMMAND'
   | 'BUFFERING_INQUIRE'
-  | 'DATA_READY'
   | 'SENDING_TO_AGENT'
   | 'WAITING_FOR_AGENT'
   | 'SENDING_TO_CLIENT'
@@ -95,17 +94,14 @@ const transitionTable: Record<ClientState, Record<string, ClientState>> = {
   },
   BUFFERING_COMMAND: {
     'CLIENT_DATA_PARTIAL': 'BUFFERING_COMMAND',
-    'COMMAND_COMPLETE': 'DATA_READY',
+    'COMMAND_COMPLETE': 'SENDING_TO_AGENT',
     'BUFFER_ERROR': 'ERROR',
   },
   BUFFERING_INQUIRE: {
     'INQUIRE_DATA_START': 'BUFFERING_INQUIRE',
     'INQUIRE_DATA_PARTIAL': 'BUFFERING_INQUIRE',
-    'INQUIRE_COMPLETE': 'DATA_READY',
+    'INQUIRE_COMPLETE': 'SENDING_TO_AGENT',
     'BUFFER_ERROR': 'ERROR',
-  },
-  DATA_READY: {
-    'DISPATCH_DATA': 'SENDING_TO_AGENT',
   },
   SENDING_TO_AGENT: {
     'WRITE_OK': 'WAITING_FOR_AGENT',
@@ -219,6 +215,7 @@ async function handleAgentConnecting(config: RequestProxyConfigWithExecutor, ses
  * Handler for READY state
  * Accepts CLIENT_DATA_START event and transitions to BUFFERING_COMMAND.
  * Buffers incoming data and checks for complete command.
+ * Phase 3: Directly processes complete data using processCompleteData helper.
  */
 async function handleReady(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
     if (event.type === 'CLIENT_DATA_START') {
@@ -229,9 +226,9 @@ async function handleReady(config: RequestProxyConfigWithExecutor, session: Clie
         // Check if complete command (ends with \n)
         const newlineIndex = session.buffer.indexOf('\n');
         if (newlineIndex !== -1) {
-            // Command complete, ready to dispatch
+            // Command complete, process it directly
             log(config, `[${session.sessionId}] Command complete: ${sanitizeForLog(session.buffer.substring(0, newlineIndex + 1))}`);
-            return 'DATA_READY';
+            return processCompleteData(config, session);
         }
 
         // Command incomplete, continue buffering
@@ -244,6 +241,7 @@ async function handleReady(config: RequestProxyConfigWithExecutor, session: Clie
 /**
  * Handler for BUFFERING_COMMAND state
  * Continues buffering client data until complete command (\n).
+ * Phase 3: Directly processes complete data using processCompleteData helper.
  */
 async function handleBufferingCommand(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
     if (event.type === 'CLIENT_DATA_PARTIAL') {
@@ -255,7 +253,7 @@ async function handleBufferingCommand(config: RequestProxyConfigWithExecutor, se
         const newlineIndex = session.buffer.indexOf('\n');
         if (newlineIndex !== -1) {
             log(config, `[${session.sessionId}] Command complete: ${sanitizeForLog(session.buffer.substring(0, newlineIndex + 1))}`);
-            return 'DATA_READY';
+            return processCompleteData(config, session);
         }
         return 'BUFFERING_COMMAND';
     } else if (event.type === 'BUFFER_ERROR') {
@@ -269,6 +267,7 @@ async function handleBufferingCommand(config: RequestProxyConfigWithExecutor, se
 /**
  * Handler for BUFFERING_INQUIRE state
  * Buffers inquire response data (D lines) until complete (END\n).
+ * Phase 3: Directly processes complete data using processCompleteData helper.
  */
 async function handleBufferingInquire(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
     if (event.type === 'INQUIRE_DATA_START' || event.type === 'INQUIRE_DATA_PARTIAL') {
@@ -280,62 +279,13 @@ async function handleBufferingInquire(config: RequestProxyConfigWithExecutor, se
         const endIndex = session.buffer.indexOf('END\n');
         if (endIndex !== -1) {
             log(config, `[${session.sessionId}] Inquire data complete`);
-            return 'DATA_READY';
+            return processCompleteData(config, session);
         }
         return 'BUFFERING_INQUIRE';
     } else if (event.type === 'BUFFER_ERROR') {
         const error = (event as any).error as string;
         log(config, `[${session.sessionId}] Buffer error: ${error}`);
         return 'ERROR';
-    }
-    return 'ERROR';
-}
-
-/**
- * Handler for DATA_READY state
- * Sends buffered command/inquire data to agent-proxy via VS Code command.
- * Processes response and transitions to BUFFERING_INQUIRE or READY.
- */
-async function handleDataReady(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
-    if (event.type === 'DISPATCH_DATA') {
-        const data = session.buffer;
-        if (!data || data.length === 0) {
-            log(config, `[${session.sessionId}] No data to dispatch`);
-            return 'READY';
-        }
-
-        log(config, `[${session.sessionId}] Dispatching to agent: ${sanitizeForLog(data)}`);
-        try {
-            const result = await config.commandExecutor.sendCommands(session.sessionId!, data);
-            const response = result.response;
-
-            writeToClient(config, session, response, `Proxying agent response: ${sanitizeForLog(response)}`);
-
-            // Clear sent command from buffer
-            session.buffer = '';
-
-            // Check if response contains INQUIRE (next state depends on response type)
-            if (/(^|\n)INQUIRE/.test(response)) {
-                log(config, `[${session.sessionId}] Response contains INQUIRE, waiting for client data`);
-                return 'BUFFERING_INQUIRE';
-            }
-
-            log(config, `[${session.sessionId}] Response OK/ERR, ready for next command`);
-
-            // If client sent pipelined data while we were waiting, process buffered data
-            if (session.buffer.length > 0) {
-                const newlineIndex = session.buffer.indexOf('\n');
-                if (newlineIndex !== -1) {
-                    return 'DATA_READY';
-                }
-                return 'BUFFERING_COMMAND';
-            }
-            return 'READY';
-        } catch (err) {
-            const msg = extractErrorMessage(err);
-            log(config, `[${session.sessionId}] Error sending to agent: ${msg}`);
-            return 'ERROR';
-        }
     }
     return 'ERROR';
 }
@@ -488,7 +438,6 @@ const stateHandlers: Record<ClientState, StateHandler> = {
     READY: handleReady,
     BUFFERING_COMMAND: handleBufferingCommand,
     BUFFERING_INQUIRE: handleBufferingInquire,
-    DATA_READY: handleDataReady,
     SENDING_TO_AGENT: handleSendingToAgent,
     WAITING_FOR_AGENT: handleWaitingForAgent,
     SENDING_TO_CLIENT: handleSendingToClient,
@@ -496,6 +445,53 @@ const stateHandlers: Record<ClientState, StateHandler> = {
     CLOSING: handleClosing,
     FATAL: handleFatal,
 };
+
+/**
+ * Helper function to process complete command/inquire data
+ * Called directly by handlers when complete data is detected (Phase 3 simplification)
+ * Sends to agent, gets response, writes to client, determines next state
+ */
+async function processCompleteData(config: RequestProxyConfigWithExecutor, session: ClientSession): Promise<ClientState> {
+    const data = session.buffer;
+    if (!data || data.length === 0) {
+        log(config, `[${session.sessionId}] No data to process`);
+        return 'READY';
+    }
+
+    log(config, `[${session.sessionId}] Processing complete data: ${sanitizeForLog(data)}`);
+    try {
+        const result = await config.commandExecutor.sendCommands(session.sessionId!, data);
+        const response = result.response;
+
+        writeToClient(config, session, response, `Proxying agent response: ${sanitizeForLog(response)}`);
+
+        // Clear sent command from buffer
+        session.buffer = '';
+
+        // Check if response contains INQUIRE (next state depends on response type)
+        if (/(^|\n)INQUIRE/.test(response)) {
+            log(config, `[${session.sessionId}] Response contains INQUIRE, waiting for client data`);
+            return 'BUFFERING_INQUIRE';
+        }
+
+        log(config, `[${session.sessionId}] Response OK/ERR, ready for next command`);
+
+        // If client sent pipelined data while we were waiting, process buffered data
+        if (session.buffer.length > 0) {
+            const newlineIndex = session.buffer.indexOf('\n');
+            if (newlineIndex !== -1) {
+                // Have complete command, process it
+                return processCompleteData(config, session);
+            }
+            return 'BUFFERING_COMMAND';
+        }
+        return 'READY';
+    } catch (err) {
+        const msg = extractErrorMessage(err);
+        log(config, `[${session.sessionId}] Error processing data: ${msg}`);
+        return 'ERROR';
+    }
+}
 
 /**
  * State handler dispatcher
@@ -753,14 +749,14 @@ async function handleClientData(config: RequestProxyConfigWithExecutor, session:
         if (newlineIndex !== -1) {
             command = session.buffer.substring(0, newlineIndex + 1);
             session.buffer = session.buffer.substring(newlineIndex + 1);
-            session.state = 'DATA_READY';
+            session.state = 'SENDING_TO_AGENT';
         }
     } else if (session.state === 'BUFFERING_INQUIRE') {
         const endIndex = session.buffer.indexOf('END\n');
         if (endIndex !== -1) {
             command = session.buffer.substring(0, endIndex + 4);
             session.buffer = session.buffer.substring(endIndex + 4);
-            session.state = 'DATA_READY';
+            session.state = 'SENDING_TO_AGENT';
         }
     }
 

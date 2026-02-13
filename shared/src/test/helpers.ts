@@ -63,6 +63,7 @@ export class MockSocket extends EventEmitter {
     public destroyed = false;
     public writeError: Error | null = null;
     private readBuffer: Buffer[] = [];
+    private _paused = false;
 
     write(data: Buffer | string, callback?: (err?: Error | null) => void): boolean {
         if (this.destroyed) {
@@ -104,11 +105,15 @@ export class MockSocket extends EventEmitter {
     }
 
     pause(): void {
-        // Mock pause/resume for flow control
+        this._paused = true;
     }
 
     resume(): void {
-        // Mock pause/resume for flow control
+        this._paused = false;
+    }
+
+    isPaused(): boolean {
+        return this._paused;
     }
 
     // Test helper methods
@@ -126,6 +131,10 @@ export class MockSocket extends EventEmitter {
     simulateDataReceived(data: Buffer): void {
         this.readBuffer.push(data);
         this.emit('readable');
+    }
+
+    pushData(data: Buffer): void {
+        this.readBuffer.push(data);
     }
 
     simulateError(error: Error): void {
@@ -146,10 +155,12 @@ export class MockServer extends EventEmitter {
     public connections: MockSocket[] = [];
     public listenPath: string | null = null;
     private clientHandler: ((socket: MockSocket) => void) | null = null;
+    private pauseOnConnect: boolean;
 
     constructor(options?: { pauseOnConnect?: boolean }, clientHandler?: (socket: MockSocket) => void) {
         super();
         this.clientHandler = clientHandler || null;
+        this.pauseOnConnect = options?.pauseOnConnect ?? false;
     }
 
     listen(path: string, callback?: () => void): void {
@@ -170,6 +181,9 @@ export class MockServer extends EventEmitter {
     // Test helper methods
     simulateClientConnection(): MockSocket {
         const socket = new MockSocket();
+        if (this.pauseOnConnect) {
+            socket.pause();
+        }
         this.connections.push(socket);
         if (this.clientHandler) {
             this.clientHandler(socket);
