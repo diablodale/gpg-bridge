@@ -170,7 +170,7 @@ describe('RequestProxy', () => {
             const server = mockServerFactory.getServers()[0];
             const clientSocket = server.simulateClientConnection();
 
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 20));
 
             // Check that greeting was written to client
             const written = clientSocket.getWrittenData();

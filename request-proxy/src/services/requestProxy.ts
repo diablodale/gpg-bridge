@@ -43,7 +43,7 @@ type ClientState =
   | 'FATAL';
 
 /**
- * State machine events (21 total)
+ * State machine events (22 total)
  */
 type StateEvent =
   | { type: 'CLIENT_SOCKET_CONNECTED' }
@@ -53,6 +53,7 @@ type StateEvent =
   | { type: 'CLIENT_DATA_START'; data: Buffer }
   | { type: 'CLIENT_DATA_PARTIAL'; data: Buffer }
   | { type: 'COMMAND_COMPLETE'; command: string }
+  | { type: 'INQUIRE_DATA_START'; data: Buffer }
   | { type: 'INQUIRE_DATA_PARTIAL'; data: Buffer }
   | { type: 'INQUIRE_COMPLETE'; inquireDataBlock: string }
   | { type: 'BUFFER_ERROR'; error: string }
@@ -98,6 +99,7 @@ const transitionTable: Record<ClientState, Record<string, ClientState>> = {
     'BUFFER_ERROR': 'ERROR',
   },
   BUFFERING_INQUIRE: {
+    'INQUIRE_DATA_START': 'BUFFERING_INQUIRE',
     'INQUIRE_DATA_PARTIAL': 'BUFFERING_INQUIRE',
     'INQUIRE_COMPLETE': 'DATA_READY',
     'BUFFER_ERROR': 'ERROR',
@@ -166,52 +168,51 @@ interface ClientSession {
 
 /**
  * Handler for DISCONNECTED state
- * No valid events in this state. Stay disconnected until socket reconnects.
+ * Accepts CLIENT_SOCKET_CONNECTED event and transitions to CLIENT_CONNECTED.
  */
 async function handleDisconnected(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
-    log(config, `[${session.sessionId ?? 'pending'}] Received event ${event.type} in DISCONNECTED state (invalid)`);
-    return 'DISCONNECTED';
+    if (event.type !== 'CLIENT_SOCKET_CONNECTED') {
+        throw new Error(`Invalid event ${event.type} for state DISCONNECTED`);
+    }
+    log(config, `[${session.sessionId ?? 'pending'}] Client socket connected`);
+    return 'CLIENT_CONNECTED';
 }
 
 /**
  * Handler for CLIENT_CONNECTED state
- * Only accepts CLIENT_SOCKET_CONNECTED event (already handled by server).
- * Transition to AGENT_CONNECTING to start agent connection.
+ * Accepts START_AGENT_CONNECT event and transitions to AGENT_CONNECTING.
  */
 async function handleClientConnected(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
-    if (event.type === 'CLIENT_SOCKET_CONNECTED') {
-        log(config, `[${session.sessionId ?? 'pending'}] Client connected, initiating agent connection...`);
-        return 'AGENT_CONNECTING';
+    if (event.type !== 'START_AGENT_CONNECT') {
+        throw new Error(`Invalid event ${event.type} for state CLIENT_CONNECTED`);
     }
-    log(config, `[${session.sessionId ?? 'pending'}] Unexpected event ${event.type} in CLIENT_CONNECTED state`);
-    return 'ERROR';
+    log(config, `[${session.sessionId ?? 'pending'}] Starting agent connection`);
+    return 'AGENT_CONNECTING';
 }
 
 /**
  * Handler for AGENT_CONNECTING state
  * Processes connection result: success (READY) or error (ERROR).
- * Side effect: Calls connectToAgent() via command executor.
+ * Connection work is done by socket initialization code which emits these events.
  */
 async function handleAgentConnecting(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
-    if (event.type === 'START_AGENT_CONNECT') {
-        // Transition: initiate connection to agent-proxy
-        log(config, `[${session.sessionId ?? 'pending'}] Connecting to GPG Agent Proxy...`);
-        try {
-            const result = await config.commandExecutor.connectAgent();
-            session.sessionId = result.sessionId;
-            log(config, `[${session.sessionId}] Connected to GPG Agent Proxy`);
-
-            if (result.greeting) {
-                writeToClient(config, session, result.greeting, 'Ready for client data');
+    if (event.type === 'AGENT_GREETING_OK') {
+        // Extract sessionId from greeting if not already set
+        if (!session.sessionId && event.greeting) {
+            const greetingParts = event.greeting.split(' ');
+            if (greetingParts.length > 0) {
+                session.sessionId = greetingParts[0];
             }
-            return 'READY';
-        } catch (err) {
-            const msg = extractErrorMessage(err);
-            log(config, `[${session.sessionId}] Failed to connect to GPG Agent Proxy: ${msg}`);
-            return 'ERROR';
         }
+        log(config, `[${session.sessionId}] Agent connected with greeting`);
+        writeToClient(config, session, event.greeting, 'Agent greeting sent to client');
+        return 'READY';
     }
-    return 'ERROR';
+    if (event.type === 'AGENT_CONNECT_ERROR') {
+        log(config, `[${session.sessionId ?? 'pending'}] Agent connection failed: ${event.error}`);
+        return 'ERROR';
+    }
+    throw new Error(`Invalid event ${event.type} for state AGENT_CONNECTING`);
 }
 
 /**
@@ -270,7 +271,7 @@ async function handleBufferingCommand(config: RequestProxyConfigWithExecutor, se
  * Buffers inquire response data (D lines) until complete (END\n).
  */
 async function handleBufferingInquire(config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent): Promise<ClientState> {
-    if (event.type === 'INQUIRE_DATA_PARTIAL') {
+    if (event.type === 'INQUIRE_DATA_START' || event.type === 'INQUIRE_DATA_PARTIAL') {
         const chunk = (event as any).data as Buffer;
         session.buffer += decodeProtocolData(chunk);
         log(config, `[${session.sessionId}] Buffering inquire data, received ${chunk.length} bytes, total: ${session.buffer.length}`);
@@ -568,6 +569,8 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         // - local destroy without arg: socket.destroy() -> 'close'
         clientSocket.on('close', () => {
             log(fullConfig, `[${clientSession.sessionId ?? 'pending'}] Client socket closed`);
+            // Call disconnectAgent directly to clean up session
+            // (This is outside normal state machine flow - it's cleanup after connection termination)
             disconnectAgent(fullConfig, clientSession);
         });
 
@@ -579,15 +582,25 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         // - local destroy with arg `socket.destroy(err)`: 'error' -> 'close'
         clientSocket.on('error', (err: Error) => {
             log(fullConfig, `[${clientSession.sessionId ?? 'pending'}] Client socket error: ${err.message}`);
+            // Error event is logged; 'close' event will trigger cleanup
         });
 
-        // Log when socket becomes readable/writable
+        // 'readable' fires when data is available to read from the socket
         clientSocket.on('readable', () => {
             let chunk: Buffer | null;
             while ((chunk = clientSocket.read()) !== null) {
-                handleClientData(fullConfig, clientSession, chunk).catch((err) => {
+                // Determine event type based on current state and buffer status
+                // For INQUIRE flow: use INQUIRE_DATA_START/PARTIAL
+                // For normal command flow: use CLIENT_DATA_START/PARTIAL
+                let eventType: StateEvent['type'];
+                if (clientSession.state === 'BUFFERING_INQUIRE') {
+                    eventType = clientSession.buffer.length === 0 ? 'INQUIRE_DATA_START' : 'INQUIRE_DATA_PARTIAL';
+                } else {
+                    eventType = clientSession.buffer.length === 0 ? 'CLIENT_DATA_START' : 'CLIENT_DATA_PARTIAL';
+                }
+                dispatchStateEvent(fullConfig, clientSession, { type: eventType, data: chunk }).catch((err) => {
                     const msg = extractErrorMessage(err);
-                    log(fullConfig, `[${clientSession.sessionId ?? 'pending'}] Error proxying client <-> agent: ${msg}`);
+                    log(fullConfig, `[${clientSession.sessionId ?? 'pending'}] Error handling client data: ${msg}`);
                     try {
                         clientSession.socket.destroy();
                     } catch (err) {
@@ -597,18 +610,49 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
             }
         });
 
-        // Connect to gpg-agent-proxy, this runs async with no await so that we can handle client socket events while waiting for connection
+        // Start connection sequence via state machine
         log(fullConfig, 'Client connected to socket. Socket is paused while initiating connection to GPG Agent Proxy');
-        connectToAgent(fullConfig, clientSession).then(() => {
-            // Resume after greeting is sent, could be a race condition since Socket::write() completes asynchronously
-            clientSocket.resume();
-        }).catch(() => {
+        (async () => {
             try {
-                clientSocket.destroy();
+                // Emit CLIENT_SOCKET_CONNECTED event
+                await dispatchStateEvent(fullConfig, clientSession, { type: 'CLIENT_SOCKET_CONNECTED' });
+
+                // Emit START_AGENT_CONNECT event
+                await dispatchStateEvent(fullConfig, clientSession, { type: 'START_AGENT_CONNECT' });
+
+                // Connect to agent-proxy and get greeting
+                log(fullConfig, `[${clientSession.sessionId ?? 'pending'}] Connecting to GPG Agent Proxy via command...`);
+                const result = await fullConfig.commandExecutor.connectAgent();
+                clientSession.sessionId = result.sessionId;
+                log(fullConfig, `[${clientSession.sessionId}] Connected to GPG Agent Proxy`);
+
+                // Emit AGENT_GREETING_OK event with greeting
+                if (result.greeting) {
+                    await dispatchStateEvent(fullConfig, clientSession, {
+                        type: 'AGENT_GREETING_OK',
+                        greeting: result.greeting
+                    });
+                } else {
+                    log(fullConfig, `[${clientSession.sessionId}] Warning: greeting is undefined`);
+                }
+
+                // Resume socket after greeting is sent
+                clientSocket.resume();
             } catch (err) {
-                // Ignore
+                const msg = extractErrorMessage(err);
+                log(fullConfig, `Failed to connect to GPG Agent Proxy: ${msg}`);
+                // Emit AGENT_CONNECT_ERROR event
+                await dispatchStateEvent(fullConfig, clientSession, {
+                    type: 'AGENT_CONNECT_ERROR',
+                    error: msg
+                }).catch(() => { /* Ignore dispatch errors during error handling */ });
+                try {
+                    clientSocket.destroy();
+                } catch (err) {
+                    // Ignore
+                }
             }
-        });
+        })();
     });
 
     // Handle server errors, only logging for now
