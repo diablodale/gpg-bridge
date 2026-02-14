@@ -1585,5 +1585,996 @@ describe('RequestProxy', () => {
         });
     });
 
+    // Phase 7c: Tests for Response Processing & INQUIRE (Phase 5)
+    // Testing EventEmitter architecture - CLIENT_DATA_COMPLETE, RESPONSE_INQUIRE, RESPONSE_OK_OR_ERR
+
+    describe('Phase 7c: Event Emission from Buffering States', () => {
+        it('should process command when BUFFERING_COMMAND detects newline', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send command with newline - should be sent to agent
+            mockCommandExecutor.setSendCommandsResponse('OK test\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Verify command was sent to agent and response returned to client
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(1);
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('OK test');
+
+            await instance.stop();
+        });
+
+        it('should buffer data when newline not detected in BUFFERING_COMMAND', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send partial command (no newline) - should not be sent yet
+            clientSocket.simulateDataReceived(Buffer.from('GETIN', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Command should not have been sent to agent yet
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(0);
+
+            // Complete the command
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('FO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Now it should be sent
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(1);
+
+            await instance.stop();
+        });
+
+        it('should process D-block when BUFFERING_INQUIRE detects END\\n', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE response
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send D-block with END\n - should be sent to agent
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D secret\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Verify D-block was sent (2 commands: PASSWD + D-block)
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+
+        it('should buffer data when END\\n not detected in BUFFERING_INQUIRE', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE response
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            const sendCount1 = mockCommandExecutor.getCallCount('sendCommands');
+
+            // Send partial D-block (no END\n) - should not be sent yet
+            clientSocket.simulateDataReceived(Buffer.from('D secret', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // D-block should not have been sent yet
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(sendCount1);
+
+            // Complete the D-block
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Now it should be sent
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThan(sendCount1);
+
+            await instance.stop();
+        });
+
+        it('should send complete command to agent', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('OK version 2.1\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Verify response includes version info
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('OK version 2.1');
+
+            await instance.stop();
+        });
+
+        it('should send complete D-block to agent', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send D-block
+            mockCommandExecutor.setSendCommandsResponse('OK success\n');
+            clientSocket.simulateDataReceived(Buffer.from('D mypassword\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Verify D-block was sent and OK received
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('OK success');
+
+            await instance.stop();
+        });
+    });
+
+    describe('Phase 7c: Buffer Clearing During State Transitions', () => {
+        it('should clear buffer after command extracted and sent to agent', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send first command
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Send second command - should work cleanly without leftover buffer data
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('NOP\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+            await instance.stop();
+        });
+
+        it('should clear buffer after command sent across multiple chunks', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send command across two chunks
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('GET', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            clientSocket.simulateDataReceived(Buffer.from('INFO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Send another command - should work cleanly
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('NOP\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+            await instance.stop();
+        });
+
+        it('should clear buffer after D-block extracted and sent to agent', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send D-block
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D data\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // After D-block sent and OK received, send another command
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('NOP\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            // Should have sent: PASSWD, D-block, NOP
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(3);
+
+            await instance.stop();
+        });
+
+        it('should have clean buffer when entering BUFFERING_INQUIRE', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE - buffer should be cleared on transition
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send D-block - should work cleanly without leftover command buffer
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D clean\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+    });
+
+    describe('Phase 7c: INQUIRE Response Detection', () => {
+        it('should detect INQUIRE response starting with "INQUIRE"', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send command that triggers INQUIRE response
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD Enter passphrase\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Verify INQUIRE was sent to client and we're now waiting for D-block
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('INQUIRE KEYPWD');
+
+            // Send D-block to verify we're in INQUIRE state
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D data\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+
+        it('should detect INQUIRE response containing "\\nINQUIRE"', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send command with multi-line response containing INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('S PROGRESS status\nINQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Verify INQUIRE was detected by sending D-block
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D data\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+
+        it('should respect case sensitivity of INQUIRE detection', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // "inquire" in lowercase should NOT trigger INQUIRE detection
+            mockCommandExecutor.setSendCommandsResponse('OK inquire test\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Should complete normally (return to READY), not waiting for D-block
+            // Send another command to verify state
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+            await instance.stop();
+        });
+
+        it('should not trigger INQUIRE detection for OK response', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Should be back in READY, able to send another command
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('NOP\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+            await instance.stop();
+        });
+
+        it('should not trigger INQUIRE detection for ERR response', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('ERR 67109139 Unknown command\n');
+            clientSocket.simulateDataReceived(Buffer.from('INVALID\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Should be back in READY, error sent to client
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('ERR 67109139');
+
+            // Send another command to verify we're back in READY
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('NOP\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+            await instance.stop();
+        });
+
+        it('should forward INQUIRE response to client', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('INQUIRE KEYPWD');
+
+            await instance.stop();
+        });
+
+        it('should forward OK/ERR responses to client', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('OK test\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('OK test');
+
+            await instance.stop();
+        });
+    });
+
+    describe('Phase 7c: Comprehensive INQUIRE Flow', () => {
+        it('should complete full INQUIRE cycle end-to-end', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send command that triggers INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send D-block data
+            mockCommandExecutor.setSendCommandsResponse('OK success\n');
+            clientSocket.simulateDataReceived(Buffer.from('D mypassword\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Verify full cycle worked
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('INQUIRE KEYPWD');
+            expect(written).to.include('OK success');
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+
+        it('should preserve binary data in INQUIRE D-block', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send D-block with all byte values 0-255
+            const binaryData = Buffer.alloc(256);
+            for (let i = 0; i < 256; i++) {
+                binaryData[i] = i;
+            }
+            const dblock = Buffer.concat([
+                Buffer.from('D ', 'latin1'),
+                binaryData,
+                Buffer.from('\nEND\n', 'latin1')
+            ]);
+
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(dblock);
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Verify D-block was sent to agent (2 sendCommands: PASSWD + D-block)
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+
+        it('should handle INQUIRE with multiple D lines', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send multiple D lines
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D line1\nD line2\nD line3\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+
+        it('should handle multiple sequential INQUIRE sequences in same session', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // First INQUIRE sequence
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt1\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D pass1\nEND\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Second INQUIRE sequence
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt2\n');
+            clientSocket.simulateDataReceived(Buffer.from('SIGN\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D pass2\nEND\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(4);
+
+            await instance.stop();
+        });
+
+        it('should handle nested INQUIRE (agent responds to D-block with another INQUIRE)', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // First INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt1\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send D-block, agent responds with another INQUIRE (nested)
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE CONFIRM confirm\n');
+            clientSocket.simulateDataReceived(Buffer.from('D pass\nEND\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Respond to nested INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D yes\nEND\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(3);
+
+            await instance.stop();
+        });
+
+        it('should handle INQUIRE followed by regular command', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // INQUIRE sequence
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D password\nEND\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Regular command after INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('OK version 2.1\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('OK version 2.1');
+
+            await instance.stop();
+        });
+    });
+
+    describe('Phase 7c: Response Processing', () => {
+        it('should process multi-line agent response', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Send command and receive multi-line response
+            mockCommandExecutor.setSendCommandsResponse('OK version 2.1.23\n');
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('OK version 2.1.23');
+
+            await instance.stop();
+        });
+
+        it('should detect complete response ending with OK', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('S PROGRESS 50\nOK\n');
+            clientSocket.simulateDataReceived(Buffer.from('SIGN\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Should be back in READY, able to send another command
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('NOP\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+            await instance.stop();
+        });
+
+        it('should detect complete response ending with ERR', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('ERR 67109139 Unknown command\n');
+            clientSocket.simulateDataReceived(Buffer.from('INVALID\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Error should be sent to client
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('ERR 67109139');
+
+            // Should be back in READY
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('NOP\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+            await instance.stop();
+        });
+
+        it('should detect complete response ending with INQUIRE', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Should be waiting for D-block - send it to complete
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+            clientSocket.simulateDataReceived(Buffer.from('D data\nEND\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+
+            await instance.stop();
+        });
+
+        it('should preserve binary data in response', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Create response with binary data
+            const binaryData = Buffer.alloc(128);
+            for (let i = 0; i < 128; i++) {
+                binaryData[i] = i;
+            }
+            const response = Buffer.concat([
+                Buffer.from('D ', 'latin1'),
+                binaryData,
+                Buffer.from('\nOK\n', 'latin1')
+            ]);
+
+            mockCommandExecutor.setSendCommandsResponse(response.toString('latin1'));
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO\n', 'latin1'));
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            const written = clientSocket.getWrittenData();
+
+            // Verify binary data is preserved in response
+            expect(written.length).to.be.greaterThan(128);
+
+            // Check for some binary values
+            let foundBinaryData = false;
+            for (let i = 0; i < written.length - 10; i++) {
+                if (written[i] === 0 && written[i + 1] === 1 && written[i + 2] === 2) {
+                    foundBinaryData = true;
+                    break;
+                }
+            }
+            expect(foundBinaryData).to.be.true;
+
+            await instance.stop();
+        });
+    });
+
 });
 
