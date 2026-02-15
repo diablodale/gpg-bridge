@@ -62,6 +62,8 @@ export class MockSocket extends EventEmitter {
     public data: Buffer[] = [];
     public destroyed = false;
     public writeError: Error | null = null;
+    public removeAllListenersError: Error | null = null;
+    public destroyError: Error | null = null;
     private readBuffer: Buffer[] = [];
     private _paused = false;
 
@@ -91,7 +93,21 @@ export class MockSocket extends EventEmitter {
         return true;
     }
 
+    removeAllListeners(event?: string | symbol): this {
+        if (this.removeAllListenersError) {
+            const err = this.removeAllListenersError;
+            this.removeAllListenersError = null;
+            throw err;
+        }
+        return super.removeAllListeners(event);
+    }
+
     destroy(error?: Error): void {
+        if (this.destroyError) {
+            const err = this.destroyError;
+            this.destroyError = null;
+            throw err;
+        }
         this.destroyed = true;
         if (error) {
             this.emit('error', error);
@@ -139,6 +155,14 @@ export class MockSocket extends EventEmitter {
 
     simulateError(error: Error): void {
         this.emit('error', error);
+    }
+
+    setRemoveAllListenersError(error: Error): void {
+        this.removeAllListenersError = error;
+    }
+
+    setDestroyError(error: Error): void {
+        this.destroyError = error;
     }
 
     clearData(): void {

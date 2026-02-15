@@ -155,7 +155,7 @@ interface ClientSession {
  * Handlers are registered for events (like socket.on('data', handler))
  */
 class ClientSessionManager extends EventEmitter {
-    private config: RequestProxyConfigWithExecutor;
+    public readonly config: RequestProxyConfigWithExecutor;
     public socket: net.Socket;
     public sessionId: string | null = null;
     private state: ClientState = 'DISCONNECTED';
@@ -345,43 +345,52 @@ class ClientSessionManager extends EventEmitter {
         log(this.config, `[${this.sessionId ?? 'pending'}] Starting cleanup`);
 
         // Disconnect from agent if we have a session
+        let cleanupError: unknown = null;
+        const oldSessionId = this.sessionId; // Store old sessionId for logging after cleanup
         if (this.sessionId) {
             try {
                 await this.config.commandExecutor.disconnectAgent(this.sessionId);
                 log(this.config, `[${this.sessionId}] Disconnected from agent`);
-                this.emit('CLEANUP_COMPLETE');
             } catch (err) {
-                const msg = extractErrorMessage(err);
-                this.emit('CLEANUP_ERROR', msg);
+                // socket or client session manager may be in unexpected state during cleanup failure
+                cleanupError = err;
             }
+            this.buffer = '';
+            this.sessionId = null;
+        }
+
+        // cleanup socket and remove listeners because Javascript has no destructors :-(
+        // socket or client session manager may be in unexpected state with cleanup failure(s)
+        try {
+            this.socket.removeAllListeners();
+        } catch (err) {
+            cleanupError = cleanupError ?? err;
+        }
+        try {
+            this.socket.destroy();
+        } catch (err) {
+            cleanupError = cleanupError ?? err;
+        }
+        if (cleanupError) {
+            this.emit('CLEANUP_ERROR', extractErrorMessage(cleanupError));
         } else {
-            // No session, cleanup complete
             this.emit('CLEANUP_COMPLETE');
+        }
+        try {
+            this.removeAllListeners();
+        } catch {
+            log(this.config, `[${oldSessionId ?? 'pending'}] Error: failed to remove session event listeners during cleanup`);
         }
     }
 
     private handleCleanupComplete(): void {
         this.setState('DISCONNECTED');
         log(this.config, `[${this.sessionId ?? 'pending'}] Cleanup complete`);
-
-        // Destroy socket
-        try {
-            this.socket.destroy();
-        } catch (err) {
-            // Ignore
-        }
     }
 
     private handleCleanupError(error: string): void {
         this.setState('FATAL');
         log(this.config, `[${this.sessionId ?? 'pending'}] Fatal cleanup error: ${error}`);
-
-        // Force destroy socket
-        try {
-            this.socket.destroy();
-        } catch (err) {
-            // Ignore
-        }
     }
 
     // ========================================================================
@@ -514,6 +523,9 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         // Create session manager (EventEmitter pattern like NodeJS Socket)
         const sessionManager = new ClientSessionManager(fullConfig, clientSocket);
 
+
+        // Attach socket event handlers
+
         // 'close' fires when the socket is fully closed and resources are released
         // hadError arg indicates if it closed because of an error
         // event sequences:
@@ -522,11 +534,11 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         // - local shutdown: socket.end() -> 'close'
         // - local destroy without arg: socket.destroy() -> 'close'
         clientSocket.on('close', () => {
-            log(fullConfig, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed`);
+            log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed`);
             // Clean up session
             if (sessionManager.sessionId) {
-                fullConfig.commandExecutor.disconnectAgent(sessionManager.sessionId).catch((err) => {
-                    log(fullConfig, `[${sessionManager.sessionId}] Disconnect error: ${extractErrorMessage(err)}`);
+                sessionManager.config.commandExecutor.disconnectAgent(sessionManager.sessionId).catch((err) => {
+                    log(sessionManager.config, `[${sessionManager.sessionId}] Disconnect error: ${extractErrorMessage(err)}`);
                 });
             }
         });
@@ -538,7 +550,7 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         // - OS error: 'error' -> 'close'
         // - local destroy with arg `socket.destroy(err)`: 'error' -> 'close'
         clientSocket.on('error', (err: Error) => {
-            log(fullConfig, `[${sessionManager.sessionId ?? 'pending'}] Client socket error: ${err.message}`);
+            log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket error: ${err.message}`);
             // Error event is logged; 'close' event will trigger cleanup
         });
 
