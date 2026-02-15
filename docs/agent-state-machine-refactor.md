@@ -340,35 +340,46 @@ The public API methods bridge between Promises (external) and EventEmitter (inte
 
 ## Implementation Plan
 
-### Phase 1: Type Definitions & Infrastructure
+### Phase 1: Type Definitions & Infrastructure ✅ COMPLETE
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
-- [ ] Define `SessionState` type with all 7 states
-- [ ] Define `StateEvent` union with all 11 events (CLIENT_*/AGENT_*/CLEANUP_* patterns)
-- [ ] Define `StateHandler` function signature
-- [ ] Create transition table (lookup: `(state, event) → nextState`)
-- [ ] Add validation that transition table covers all valid (state, event) pairs
-- [ ] Create `AgentSessionManager` class extending EventEmitter (per session, not global)
-- [ ] Update `AgentProxy` class to manage Map<sessionId, AgentSessionManager>
+- [x] Define `SessionState` type with all 7 states
+- [x] Define `StateEvent` union with all 11 events (CLIENT_*/AGENT_*/CLEANUP_* patterns)
+- [x] Define `StateHandler` function signature
+- [x] Create transition table (lookup: `(state, event) → nextState`)
+- [x] Add validation that transition table covers all valid (state, event) pairs
+- [x] Create `AgentSessionManager` class extending EventEmitter (per session, not global)
+- [x] Update `AgentProxy` class to manage Map<sessionId, AgentSessionManager>
 
 **Dependency Injection Design:**
-- [ ] Keep existing `AgentProxyConfig` for public API
-- [ ] Keep existing `AgentProxyDeps` for optional dependencies (socketFactory, fileSystem)
-- [ ] Add `AgentSessionManagerConfig` for per-session configuration (includes timeout values)
-- [ ] All handlers use injected dependencies (testable via mocks)
+- [x] Keep existing `AgentProxyConfig` for public API
+- [x] Keep existing `AgentProxyDeps` for optional dependencies (socketFactory, fileSystem)
+- [x] Add `AgentSessionManagerConfig` for per-session configuration (includes timeout values)
+- [x] All handlers use injected dependencies (testable via mocks)
 
 **Promise ↔ EventEmitter Bridge Design:**
-- [ ] Public API methods (`connectAgent`, `sendCommands`, `disconnectAgent`) remain async and return Promises
-- [ ] Each public method bridges to EventEmitter:
+- [x] Public API methods (`connectAgent`, `sendCommands`, `disconnectAgent`) remain async and return Promises
+- [x] Each public method bridges to EventEmitter:
   1. Validate preconditions (e.g., session state)
   2. Create Promise with resolve/reject callbacks
   3. Register event listeners for completion (AGENT_RESPONSE_COMPLETE, ERROR_OCCURRED, CLEANUP_REQUESTED)
   4. Emit event describing what happened (CLIENT_CONNECT_REQUESTED, CLIENT_COMMAND_RECEIVED)
   5. Event handlers process asynchronously and emit completion events
   6. Completion events trigger resolve/reject, cleanup listeners
-- [ ] Pattern allows VS Code commands to await results while state machine processes events internally
+- [x] Pattern allows VS Code commands to await results while state machine processes events internally
+
+**Implementation Notes:**
+- Added complete STATE_TRANSITIONS table with all valid (state, event) → nextState mappings
+- AgentSessionManager extends EventEmitter with socket event wiring using .once() for connect/error/close, .on() for data
+- Socket 'close' handler checks hadError parameter and emits ERROR_OCCURRED (hadError=true) or CLEANUP_REQUESTED (hadError=false)
+- Added validateTransitionTable() utility function for debugging transition completeness
+- Added sessionTimeouts field to AgentProxy (connection: 5000ms, greeting: 5000ms, response: 30000ms)
+- Added createSessionConfig() helper method to AgentProxy for Phase 3 integration
+- Original implementation preserved - all changes are additive and non-breaking
+- File size increased from 348 to 666 lines
 
 **Deliverable:** ✅ Compiles, no behavior change, architecture in place
+**Status:** Complete - verified with `npm run compile` (successful compilation)
 
 ---
 

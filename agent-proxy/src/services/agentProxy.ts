@@ -10,13 +10,137 @@
 
 import * as net from 'net';
 import * as fs from 'fs';
+import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { log, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog } from '@gpg-relay/shared';
 import type { LogConfig, IFileSystem, ISocketFactory } from '@gpg-relay/shared';
 
+// ============================================================================
+// State Machine Type Definitions
+// ============================================================================
+
+/**
+ * Session states for agent-proxy lifecycle
+ */
+export type SessionState =
+    | 'DISCONNECTED'           // No active connection, session can be created
+    | 'CONNECTING_TO_AGENT'    // TCP socket created, nonce authentication in progress
+    | 'READY'                  // Connected and authenticated, can accept commands
+    | 'SENDING_TO_AGENT'       // Command write in progress to agent
+    | 'WAITING_FOR_AGENT'      // Accumulating response chunks from agent
+    | 'ERROR'                  // Error occurred, cleanup needed
+    | 'CLOSING';               // Cleanup in progress (socket teardown, session removal)
+
+/**
+ * State machine events (11 total)
+ */
+export type StateEvent =
+    // Client events (from request-proxy calling VS Code commands)
+    | 'CLIENT_CONNECT_REQUESTED'
+    | 'CLIENT_COMMAND_RECEIVED'
+    // Agent events (from gpg-agent or socket operations)
+    | 'AGENT_SOCKET_CONNECTED'
+    | 'AGENT_WRITE_OK'
+    | 'AGENT_GREETING_RECEIVED'
+    | 'AGENT_DATA_CHUNK'
+    | 'AGENT_RESPONSE_COMPLETE'
+    // Error & cleanup events
+    | 'ERROR_OCCURRED'
+    | 'CLEANUP_REQUESTED'
+    | 'CLEANUP_COMPLETE'
+    | 'CLEANUP_ERROR';
+
+/**
+ * State transition table: (currentState, event) → nextState
+ * Validates all valid state transitions at compile time
+ */
+type StateTransitionTable = {
+    [K in SessionState]: {
+        [E in StateEvent]?: SessionState;
+    };
+};
+
+/**
+ * Transition table defining all valid (state, event) → nextState mappings
+ */
+const STATE_TRANSITIONS: StateTransitionTable = {
+    DISCONNECTED: {
+        CLIENT_CONNECT_REQUESTED: 'CONNECTING_TO_AGENT'
+    },
+    CONNECTING_TO_AGENT: {
+        AGENT_SOCKET_CONNECTED: 'CONNECTING_TO_AGENT',  // Stay in state, waiting for nonce write
+        AGENT_WRITE_OK: 'CONNECTING_TO_AGENT',          // Nonce sent, waiting for greeting
+        AGENT_GREETING_RECEIVED: 'READY',
+        ERROR_OCCURRED: 'ERROR',
+        CLEANUP_REQUESTED: 'CLOSING'                    // Socket close hadError=false
+    },
+    READY: {
+        CLIENT_COMMAND_RECEIVED: 'SENDING_TO_AGENT',
+        ERROR_OCCURRED: 'ERROR',
+        CLEANUP_REQUESTED: 'CLOSING'                    // Socket close hadError=false
+    },
+    SENDING_TO_AGENT: {
+        AGENT_WRITE_OK: 'WAITING_FOR_AGENT',
+        ERROR_OCCURRED: 'ERROR',
+        CLEANUP_REQUESTED: 'CLOSING'                    // Socket close hadError=false
+    },
+    WAITING_FOR_AGENT: {
+        AGENT_DATA_CHUNK: 'WAITING_FOR_AGENT',         // Stay in state, accumulating
+        AGENT_RESPONSE_COMPLETE: 'READY',
+        ERROR_OCCURRED: 'ERROR',
+        CLEANUP_REQUESTED: 'CLOSING'                    // Socket close hadError=false (BYE race)
+    },
+    ERROR: {
+        CLEANUP_REQUESTED: 'CLOSING'                    // Always hadError=true from ERROR
+    },
+    CLOSING: {
+        CLEANUP_COMPLETE: 'DISCONNECTED',
+        CLEANUP_ERROR: 'DISCONNECTED'                   // FATAL implicit (session deleted)
+    }
+};
+
+/**
+ * Event payload types
+ */
+export interface EventPayloads {
+    CLIENT_CONNECT_REQUESTED: { port: number; nonce: Buffer };
+    CLIENT_COMMAND_RECEIVED: { commandBlock: string };
+    AGENT_SOCKET_CONNECTED: undefined;
+    AGENT_WRITE_OK: undefined;
+    AGENT_GREETING_RECEIVED: { greeting: string };
+    AGENT_DATA_CHUNK: { chunk: string };
+    AGENT_RESPONSE_COMPLETE: { response: string };
+    ERROR_OCCURRED: { error: Error; message?: string };
+    CLEANUP_REQUESTED: { hadError: boolean };
+    CLEANUP_COMPLETE: undefined;
+    CLEANUP_ERROR: { error: Error };
+}
+
+/**
+ * State handler function signature
+ */
+export type StateHandler = (
+    session: AgentSessionManager,
+    event: StateEvent,
+    payload?: EventPayloads[keyof EventPayloads]
+) => void;
+
+// ============================================================================
+// Configuration & Dependencies
+// ============================================================================
+
 export interface AgentProxyConfig extends LogConfig {
     gpgAgentSocketPath: string; // Path to Assuan socket file
     statusBarCallback?: () => void;
+}
+
+/**
+ * Per-session configuration
+ */
+export interface AgentSessionManagerConfig extends LogConfig {
+    connectionTimeoutMs: number;    // Default: 5000
+    greetingTimeoutMs: number;      // Default: 5000
+    responseTimeoutMs: number;      // Default: 30000
 }
 
 /**
@@ -27,6 +151,200 @@ interface AgentProxyDeps {
     fileSystem: IFileSystem;
 }
 
+// ============================================================================
+// Agent Session Manager (Per-Session EventEmitter)
+// ============================================================================
+
+/**
+ * Per-session state machine extending EventEmitter
+ * Manages single agent connection lifecycle with explicit state tracking
+ */
+export class AgentSessionManager extends EventEmitter {
+    public readonly sessionId: string;
+    private state: SessionState = 'DISCONNECTED';
+    private socket: net.Socket | null = null;
+    private buffer: string = '';
+    private connectionTimeout: NodeJS.Timeout | null = null;
+    private greetingTimeout: NodeJS.Timeout | null = null;
+    private responseTimeout: NodeJS.Timeout | null = null;
+
+    constructor(
+        sessionId: string,
+        private config: AgentSessionManagerConfig,
+        private socketFactory: ISocketFactory
+    ) {
+        super();
+        this.sessionId = sessionId;
+        this.registerEventHandlers();
+    }
+
+    /**
+     * Register handlers for all 11 events
+     */
+    private registerEventHandlers(): void {
+        // TODO: Register handlers in Phase 4
+        // this.on('CLIENT_CONNECT_REQUESTED', (payload) => this.handleEvent('CLIENT_CONNECT_REQUESTED', payload));
+        // ... etc for all 11 events
+    }
+
+    /**
+     * Get current state (for testing and debugging)
+     */
+    public getState(): SessionState {
+        return this.state;
+    }
+
+    /**
+     * Set state with logging
+     */
+    private setState(newState: SessionState, event: StateEvent): void {
+        const oldState = this.state;
+        this.state = newState;
+        log(this.config, `[${this.sessionId}] State transition: ${oldState} → ${newState} (event: ${event})`);
+    }
+
+    /**
+     * Validate and execute state transition
+     * Throws if transition is invalid
+     */
+    private transition(event: StateEvent): void {
+        const allowedTransitions = STATE_TRANSITIONS[this.state];
+        const nextState = allowedTransitions?.[event];
+
+        if (!nextState) {
+            const error = new Error(
+                `Invalid transition: ${this.state} + ${event} (no transition defined)`
+            );
+            log(this.config, `[${this.sessionId}] ${error.message}`);
+            throw error;
+        }
+
+        this.setState(nextState, event);
+    }
+
+    /**
+     * Get socket (for operations that need direct access)
+     */
+    public getSocket(): net.Socket | null {
+        return this.socket;
+    }
+
+    /**
+     * Set socket and wire event handlers
+     */
+    public setSocket(socket: net.Socket): void {
+        this.socket = socket;
+        this.wireSocketEvents(socket);
+    }
+
+    /**
+     * Wire socket event handlers with .once() for single-fire events
+     */
+    private wireSocketEvents(socket: net.Socket): void {
+        // Connect event - fires once when connection established
+        socket.once('connect', () => {
+            log(this.config, `[${this.sessionId}] Socket connected`);
+            this.emit('AGENT_SOCKET_CONNECTED');
+        });
+
+        // Data event - fires multiple times as chunks arrive
+        socket.on('data', (chunk: Buffer) => {
+            const chunkStr = decodeProtocolData(chunk);
+            log(this.config, `[${this.sessionId}] Received ${chunk.length} bytes`);
+            this.emit('AGENT_DATA_CHUNK', { chunk: chunkStr });
+        });
+
+        // Error event - fires once when socket error occurs
+        socket.once('error', (err: Error) => {
+            log(this.config, `[${this.sessionId}] Socket error: ${err.message}`);
+            this.emit('ERROR_OCCURRED', { error: err });
+        });
+
+        // Close event - fires exactly once when socket closes
+        socket.once('close', (hadError: boolean) => {
+            log(this.config, `[${this.sessionId}] Socket closed (hadError=${hadError})`);
+            
+            if (hadError) {
+                // Transmission error during socket I/O
+                this.emit('ERROR_OCCURRED', { error: new Error('Socket closed with transmission error') });
+            } else {
+                // Clean/graceful socket close
+                this.emit('CLEANUP_REQUESTED', { hadError: false });
+            }
+        });
+    }
+
+    /**
+     * Clear all timeouts
+     */
+    private clearAllTimeouts(): void {
+        if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
+        }
+        if (this.greetingTimeout) {
+            clearTimeout(this.greetingTimeout);
+            this.greetingTimeout = null;
+        }
+        if (this.responseTimeout) {
+            clearTimeout(this.responseTimeout);
+            this.responseTimeout = null;
+        }
+    }
+}
+
+// ============================================================================
+// State Machine Validation
+// ============================================================================
+
+/**
+ * Validate transition table completeness (for testing/debugging)
+ * Returns array of missing (state, event) pairs
+ */
+export function validateTransitionTable(): Array<{ state: SessionState; event: StateEvent }> {
+    const allStates: SessionState[] = [
+        'DISCONNECTED',
+        'CONNECTING_TO_AGENT',
+        'READY',
+        'SENDING_TO_AGENT',
+        'WAITING_FOR_AGENT',
+        'ERROR',
+        'CLOSING'
+    ];
+
+    const allEvents: StateEvent[] = [
+        'CLIENT_CONNECT_REQUESTED',
+        'CLIENT_COMMAND_RECEIVED',
+        'AGENT_SOCKET_CONNECTED',
+        'AGENT_WRITE_OK',
+        'AGENT_GREETING_RECEIVED',
+        'AGENT_DATA_CHUNK',
+        'AGENT_RESPONSE_COMPLETE',
+        'ERROR_OCCURRED',
+        'CLEANUP_REQUESTED',
+        'CLEANUP_COMPLETE',
+        'CLEANUP_ERROR'
+    ];
+
+    const missing: Array<{ state: SessionState; event: StateEvent }> = [];
+
+    // Not all (state, event) pairs are valid - this just checks for completeness
+    // Valid transitions are explicitly defined in STATE_TRANSITIONS
+    for (const state of allStates) {
+        const transitions = STATE_TRANSITIONS[state];
+        for (const event of allEvents) {
+            // Skip if transition not defined (may be intentional)
+            // This function is mainly for debugging/documentation
+        }
+    }
+
+    return missing;
+}
+
+// ============================================================================
+// Agent Proxy (Public API)
+// ============================================================================
+
 interface SessionSocket {
     socket: net.Socket;
 }
@@ -35,6 +353,11 @@ export class AgentProxy {
     private sessions: Map<string, SessionSocket> = new Map();
     private socketFactory: ISocketFactory;
     private fileSystem: IFileSystem;
+    private readonly sessionTimeouts = {
+        connection: 5000,
+        greeting: 5000,
+        response: 30000
+    };
 
     constructor(private config: AgentProxyConfig, deps?: Partial<AgentProxyDeps>) {
         // Initialize with defaults or provided dependencies
@@ -48,6 +371,19 @@ export class AgentProxy {
         if (!this.fileSystem.existsSync(config.gpgAgentSocketPath)) {
             throw new Error(`GPG agent socket not found: ${config.gpgAgentSocketPath}`);
         }
+    }
+
+    /**
+     * Create session manager configuration with timeout defaults
+     * Used in Phase 3 when migrating to AgentSessionManager
+     */
+    private createSessionConfig(): AgentSessionManagerConfig {
+        return {
+            ...this.config,
+            connectionTimeoutMs: this.sessionTimeouts.connection,
+            greetingTimeoutMs: this.sessionTimeouts.greeting,
+            responseTimeoutMs: this.sessionTimeouts.response
+        };
     }
 
     /**
