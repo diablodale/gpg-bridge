@@ -103,6 +103,7 @@ const STATE_TRANSITIONS: StateTransitionTable = {
   },
   CLIENT_CONNECTED: {
     START_AGENT_CONNECT: 'AGENT_CONNECTING',
+    ERROR_OCCURRED: 'ERROR',
   },
   AGENT_CONNECTING: {
     AGENT_GREETING_OK: 'READY',
@@ -110,6 +111,7 @@ const STATE_TRANSITIONS: StateTransitionTable = {
   },
   READY: {
     CLIENT_DATA_START: 'BUFFERING_COMMAND',
+    ERROR_OCCURRED: 'ERROR',
   },
   BUFFERING_COMMAND: {
     CLIENT_DATA_PARTIAL: 'BUFFERING_COMMAND',
@@ -244,7 +246,7 @@ class ClientSessionManager extends EventEmitter {
     // ========================================================================
 
     private handleClientSocketConnected(): void {
-        this.setState('CLIENT_CONNECTED');
+        this.transition('CLIENT_SOCKET_CONNECTED');
         log(this.config, `[${this.sessionId ?? 'pending'}] Client socket connected`);
 
         // Start agent connection sequence
@@ -252,7 +254,7 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private async handleStartAgentConnect(): Promise<void> {
-        this.setState('AGENT_CONNECTING');
+        this.transition('START_AGENT_CONNECT');
         log(this.config, `[${this.sessionId ?? 'pending'}] Connecting to GPG Agent Proxy via command...`);
 
         try {
@@ -274,7 +276,7 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private handleAgentGreetingOk(greeting: string): void {
-        this.setState('READY');
+        this.transition('AGENT_GREETING_OK');
         log(this.config, `[${this.sessionId}] Agent greeting: ${sanitizeForLog(greeting)}`);
         this.writeToClient(greeting, `Sending greeting to client: ${sanitizeForLog(greeting)}`);
 
@@ -283,7 +285,7 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private handleClientDataStart(data: Buffer): void {
-        this.setState('BUFFERING_COMMAND');
+        this.transition('CLIENT_DATA_START');
         try {
             this.buffer += decodeProtocolData(data);
             log(this.config, `[${this.sessionId}] Buffering command, received ${data.length} bytes`);
@@ -313,7 +315,7 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private handleClientDataComplete(data: string): void {
-        this.setState('SENDING_TO_AGENT');
+        this.transition('CLIENT_DATA_COMPLETE');
         log(this.config, `[${this.sessionId}] Data complete: ${sanitizeForLog(data)}`);
 
         // Send to agent
@@ -322,11 +324,11 @@ class ClientSessionManager extends EventEmitter {
 
     private handleWriteOk(): void {
         if (this.getState() === 'SENDING_TO_AGENT') {
-            this.setState('WAITING_FOR_AGENT');
+            this.transition('WRITE_OK');
             log(this.config, `[${this.sessionId}] Write to agent OK, waiting for response`);
         } else if (this.getState() === 'SENDING_TO_CLIENT') {
             // Response written to client, return to READY
-            this.setState('READY');
+            this.transition('WRITE_OK');
             log(this.config, `[${this.sessionId}] Write to client OK, ready for next command`);
 
             // Check for pipelined data
@@ -335,7 +337,7 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private handleAgentResponseComplete(response: string): void {
-        this.setState('SENDING_TO_CLIENT');
+        this.transition('AGENT_RESPONSE_COMPLETE');
         log(this.config, `[${this.sessionId}] Agent response: ${sanitizeForLog(response)}`);
 
         // Write response to client and emit appropriate event
@@ -355,12 +357,12 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private handleResponseInquire(response: string): void {
-        this.setState('BUFFERING_INQUIRE');
+        this.transition('RESPONSE_INQUIRE');
         log(this.config, `[${this.sessionId}] Response contains INQUIRE, waiting for client data`);
     }
 
     private handleErrorOccurred(error: string): void {
-        this.setState('ERROR');
+        this.transition('ERROR_OCCURRED');
         log(this.config, `[${this.sessionId ?? 'pending'}] ${error}`);
 
         // Start cleanup sequence
@@ -368,7 +370,7 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private async handleCleanupStart(): Promise<void> {
-        this.setState('CLOSING');
+        this.transition('CLEANUP_START');
         log(this.config, `[${this.sessionId ?? 'pending'}] Starting cleanup`);
 
         // Disconnect from agent if we have a session
@@ -411,12 +413,12 @@ class ClientSessionManager extends EventEmitter {
     }
 
     private handleCleanupComplete(): void {
-        this.setState('DISCONNECTED');
+        this.transition('CLEANUP_COMPLETE');
         log(this.config, `[${this.sessionId ?? 'pending'}] Cleanup complete`);
     }
 
     private handleCleanupError(error: string): void {
-        this.setState('FATAL');
+        this.transition('CLEANUP_ERROR');
         log(this.config, `[${this.sessionId ?? 'pending'}] Fatal cleanup error: ${error}`);
     }
 
@@ -432,13 +434,24 @@ class ClientSessionManager extends EventEmitter {
     }
 
     /**
-     * Set state with logging
+     * Validate and execute state transition
+     * Throws if transition is invalid
      */
-    private setState(newState: SessionState): void {
+    private transition(event: StateEvent): void {
+        const allowedTransitions = STATE_TRANSITIONS[this.state];
+        const nextState = allowedTransitions?.[event];
+
+        if (!nextState) {
+            const error = new Error(
+                `Invalid transition: ${this.state} + ${event} (no transition defined)`
+            );
+            log(this.config, `[${this.sessionId ?? 'pending'}] ${error.message}`);
+            throw error;
+        }
+
         const oldState = this.state;
-        this.state = newState;
-        // TODO add event which caused transition
-        log(this.config, `[${this.sessionId ?? 'pending'}] ${oldState} → ${newState}`);
+        this.state = nextState;
+        log(this.config, `[${this.sessionId ?? 'pending'}] ${oldState} → ${nextState} (event: ${event})`);
     }
 
     /**

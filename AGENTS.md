@@ -109,6 +109,9 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { /* handler */ });
 ```
 
 **State Transition Validation:**
+
+The `transition()` method validates all state changes against the STATE_TRANSITIONS table:
+
 ```typescript
 // Runtime validation using STATE_TRANSITIONS table
 private transition(event: StateEvent): void {
@@ -119,15 +122,25 @@ private transition(event: StateEvent): void {
         throw new Error(`Invalid transition: ${this.state} + ${event}`);
     }
     
-    this.setState(nextState, event);
+    const oldState = this.state;
+    this.state = nextState;
+    log(this.config, `[${this.sessionId}] ${oldState} → ${nextState} (event: ${event})`);
 }
 ```
+
+**Key principles:**
+
+- **STATE_TRANSITIONS is the single source of truth**: All valid state transitions are defined in this table
+- **Fail-fast on invalid transitions**: Attempting an undefined transition throws an error immediately, preventing invalid state
+- **Event handlers use transition()**: All state changes go through `transition()` for consistent validation
+- **Inline state update**: State change and logging are inlined for clarity (no separate setState method)
 
 This pattern provides:
 - Compile-time type safety via TypeScript
 - Runtime transition validation via STATE_TRANSITIONS
 - Clear event logging with event names in state transitions
 - Single source of truth for valid state machine transitions
+- Fail-fast error detection for invalid state changes
 
 ## Testing
 

@@ -259,15 +259,6 @@ export class AgentSessionManager extends EventEmitter {
     }
 
     /**
-     * Set state with logging
-     */
-    private setState(newState: SessionState, event: StateEvent): void {
-        const oldState = this.state;
-        this.state = newState;
-        log(this.config, `[${this.sessionId}] ${oldState} → ${newState} (event: ${event})`);
-    }
-
-    /**
      * Validate and execute state transition
      * Throws if transition is invalid
      */
@@ -283,7 +274,9 @@ export class AgentSessionManager extends EventEmitter {
             throw error;
         }
 
-        this.setState(nextState, event);
+        const oldState = this.state;
+        this.state = nextState;
+        log(this.config, `[${this.sessionId}] ${oldState} → ${nextState} (event: ${event})`);
     }
 
     /**
