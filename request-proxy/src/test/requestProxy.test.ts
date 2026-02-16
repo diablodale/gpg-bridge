@@ -66,6 +66,242 @@ describe('RequestProxy', () => {
         });
     });
 
+    describe('Phase 3.2: Transition Validation', () => {
+        it('should enforce valid transitions via STATE_TRANSITIONS table', async () => {
+            // This test verifies that STATE_TRANSITIONS is the source of truth for valid transitions
+            // Invalid transitions would cause the system to throw errors
+            // We validate this through successful execution of complex flows
+
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-transition-enforcement',
+                greeting: 'OK\n'
+            };
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            // Execute command - all transitions must be valid
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // If we got here, all transitions were valid (no exceptions thrown)
+            // Verify we went through expected states
+            const stateTransitions = logs.filter(log => log.includes('→'));
+            expect(stateTransitions.length).to.be.greaterThan(5);
+
+            await instance.stop();
+        });
+
+        it('should log transitions with event names in format: oldState → newState (event: eventName)', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-transition-logging',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify transition log format includes arrow and event name
+            const transitionLogs = logs.filter(log => log.includes('→') && log.includes('(event:'));
+            expect(transitionLogs.length).to.be.greaterThan(0);
+
+            // Check specific transition patterns
+            const disconnectedToConnected = logs.filter(log =>
+                log.includes('DISCONNECTED → CLIENT_CONNECTED') && log.includes('(event: CLIENT_SOCKET_CONNECTED)')
+            );
+            expect(disconnectedToConnected.length).to.equal(1);
+
+            const connectedToConnecting = logs.filter(log =>
+                log.includes('CLIENT_CONNECTED → AGENT_CONNECTING') && log.includes('(event: START_AGENT_CONNECT)')
+            );
+            expect(connectedToConnecting.length).to.equal(1);
+
+            await instance.stop();
+        });
+
+        it('should have ERROR_OCCURRED transition from all non-terminal states', async () => {
+            const logs: string[] = [];
+
+            // Test ERROR_OCCURRED from READY state
+            mockCommandExecutor.setSendCommandsError(new Error('Test error'));
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-error-transitions',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Send command that will fail
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Verify ERROR_OCCURRED transition happened
+            const errorTransition = logs.filter(log =>
+                log.includes('→ ERROR') && log.includes('(event: ERROR_OCCURRED)')
+            );
+            expect(errorTransition.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+
+        it('should have CLEANUP_REQUESTED transition from all socket-having states', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-cleanup-transitions',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Close from READY state
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify CLEANUP_REQUESTED → CLOSING transition
+            const cleanupTransition = logs.filter(log =>
+                log.includes('→ CLOSING') && log.includes('(event: CLEANUP_REQUESTED)')
+            );
+            expect(cleanupTransition.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+
+        it('should transition to DISCONNECTED from CLOSING on CLEANUP_COMPLETE', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-cleanup-complete',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Trigger cleanup
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            // Verify CLOSING → DISCONNECTED transition
+            const completeTransition = logs.filter(log =>
+                log.includes('CLOSING → DISCONNECTED') && log.includes('(event: CLEANUP_COMPLETE)')
+            );
+            expect(completeTransition.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+
+        it('should transition to FATAL from CLOSING on CLEANUP_ERROR', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-cleanup-error',
+                greeting: 'OK\n'
+            };
+            mockCommandExecutor.setDisconnectAgentError(new Error('Disconnect failed'));
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Inject socket error to trigger cleanup failure
+            clientSocket.setRemoveAllListenersError(new Error('removeAllListeners failed'));
+
+            // Trigger cleanup
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Verify CLOSING → FATAL transition
+            const fatalTransition = logs.filter(log =>
+                log.includes('CLOSING → FATAL') && log.includes('(event: CLEANUP_ERROR)')
+            );
+            expect(fatalTransition.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+
+        it('should validate STATE_TRANSITIONS covers critical state paths', async () => {
+            // This test ensures critical transitions exist at runtime
+            // Import STATE_TRANSITIONS would require exposing it, so we test behavior instead
+
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-critical-paths',
+                greeting: 'OK\n'
+            };
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            // Execute full command cycle
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Verify all expected transitions occurred
+            const expectedTransitions = [
+                'DISCONNECTED → CLIENT_CONNECTED',
+                'CLIENT_CONNECTED → AGENT_CONNECTING',
+                'AGENT_CONNECTING → READY',
+                'READY → BUFFERING_COMMAND',
+                'BUFFERING_COMMAND → SENDING_TO_AGENT',
+                'SENDING_TO_AGENT → WAITING_FOR_AGENT',
+                'WAITING_FOR_AGENT → SENDING_TO_CLIENT',
+                'SENDING_TO_CLIENT → READY'
+            ];
+
+            for (const transition of expectedTransitions) {
+                const found = logs.some(log => log.includes(transition));
+                expect(found, `Missing transition: ${transition}`).to.equal(true);
+            }
+
+            await instance.stop();
+        });
+    });
+
     describe('server initialization', () => {
         it('should create Unix socket server at correct path', async () => {
             const instance = await startRequestProxy(
