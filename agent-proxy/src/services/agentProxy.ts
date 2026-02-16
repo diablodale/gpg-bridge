@@ -263,7 +263,7 @@ export class AgentSessionManager extends EventEmitter {
         // Close event - fires exactly once when socket closes
         socket.once('close', (hadError: boolean) => {
             log(this.config, `[${this.sessionId}] Socket closed (hadError=${hadError})`);
-            
+
             if (hadError) {
                 // Transmission error during socket I/O
                 this.emit('ERROR_OCCURRED', { error: new Error('Socket closed with transmission error') });
@@ -416,6 +416,16 @@ export class AgentProxy {
     }
 
     /**
+     * Cleanup socket and session (helper for connectAgent error paths)
+     */
+    private cleanupSession(sessionId: string, socket?: net.Socket): void {
+        if (socket) {
+            socket.destroy();
+        }
+        this.sessions.delete(sessionId);
+    }
+
+    /**
      * Connect to GPG agent and return a sessionId and greeting
      * On Windows, reads the socket file to extract port and nonce, then connects via TCP
      * Waits for nonce to be sent and greeting to be received before returning
@@ -447,6 +457,7 @@ export class AgentProxy {
                         socket.write(nonce, (error) => {
                             clearTimeout(connectionTimeout);
                             if (error) {
+                                this.cleanupSession(sessionId, socket);
                                 rejectWith(error, 'Failed to send nonce');
                             } else {
                                 resolve();
@@ -454,18 +465,22 @@ export class AgentProxy {
                         });
                     } catch (error) {
                         clearTimeout(connectionTimeout);
+                        this.cleanupSession(sessionId, socket);
                         rejectWith(error, 'Failed to send nonce');
                     }
                 };
 
                 const errorHandler = (error: Error) => {
                     clearTimeout(connectionTimeout);
-                    socket.removeListener('error', errorHandler);
+                    socket.removeListener('connect', connectHandler);
+                    this.cleanupSession(sessionId, socket);
                     rejectWith(error, 'Connection error during socket setup');
                 };
 
                 const connectionTimeout = setTimeout(() => {
+                    socket.removeListener('connect', connectHandler);
                     socket.removeListener('error', errorHandler);
+                    this.cleanupSession(sessionId, socket);
                     rejectWith(undefined, 'Timeout: No connection and nonce sent within 5 seconds');
                 }, 5000);
 
@@ -500,8 +515,11 @@ export class AgentProxy {
             return { sessionId, greeting };
         } catch (error) {
             const msg = extractErrorMessage(error, 'Unknown error during connection');
+            const session = this.sessions.get(sessionId);
+            if (session) {
+                this.cleanupSession(sessionId, session.socket);
+            }
             log(this.config, `[${sessionId}] Connection to gpg-agent failed: ${msg}`);
-            socket?.destroy();
             throw new Error(`Connection to gpg-agent failed: ${msg}`);
         }
     }
@@ -530,6 +548,7 @@ export class AgentProxy {
                     session.socket.removeListener('data', dataHandler);
                     session.socket.removeListener('close', closeHandler);
                     session.socket.removeListener('error', errorHandler);
+                    this.cleanupSession(sessionId, session.socket);
                     reject(new Error(`Response timeout after ${timeoutMs}ms`));
                 }, timeoutMs);
             }

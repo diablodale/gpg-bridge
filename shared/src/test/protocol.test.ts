@@ -131,6 +131,22 @@ describe('Protocol Utilities', () => {
             ]);
             assert.throws(() => parseSocketFile(invalidData), /Invalid nonce length/);
         });
+
+        it('parseSocketFile ignores extra data after nonce', () => {
+            const portStr = '31415';
+            const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+            const extraData = Buffer.from('this is extra data that should be ignored', 'utf-8');
+            const socketData = Buffer.concat([
+                Buffer.from(portStr, 'utf-8'),
+                Buffer.from('\n', 'utf-8'),
+                nonce,
+                extraData // Extra data after valid nonce
+            ]);
+
+            const result = parseSocketFile(socketData);
+            assert.strictEqual(result.port, 31415, 'Port should be parsed correctly');
+            assert.deepStrictEqual(result.nonce, nonce, 'Nonce should match (extra data ignored)');
+        });
     });
 
     describe('Binary Data Handling (GPG Agent Responses)', () => {

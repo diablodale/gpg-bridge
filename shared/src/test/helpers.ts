@@ -93,6 +93,10 @@ export class MockSocket extends EventEmitter {
         return true;
     }
 
+    setWriteError(error: Error): void {
+        this.writeError = error;
+    }
+
     removeAllListeners(event?: string | symbol): this {
         if (this.removeAllListenersError) {
             const err = this.removeAllListenersError;
@@ -313,6 +317,8 @@ export class MockCommandExecutor implements ICommandExecutor {
 export class MockSocketFactory implements ISocketFactory {
     public sockets: MockSocket[] = [];
     public connectError: Error | null = null;
+    private connectDelay: number = 0;
+    private nextWriteError: Error | null = null;
 
     createConnection(
         options: { host: string; port: number } | { path: string },
@@ -321,17 +327,38 @@ export class MockSocketFactory implements ISocketFactory {
         const socket = new MockSocket();
         this.sockets.push(socket);
 
-        // Simulate connection events in next tick
-        setImmediate(() => {
-            if (this.connectError) {
-                socket.emit('error', this.connectError);
-            } else {
-                socket.emit('connect');
-                if (connectListener) {
-                    connectListener();
+        // Apply write error if set
+        if (this.nextWriteError) {
+            socket.setWriteError(this.nextWriteError);
+            this.nextWriteError = null;
+        }
+
+        // Simulate connection events with optional delay
+        const delay = this.connectDelay || 0;
+        if (delay > 0) {
+            setTimeout(() => {
+                if (this.connectError) {
+                    socket.emit('error', this.connectError);
+                } else {
+                    socket.emit('connect');
+                    if (connectListener) {
+                        connectListener();
+                    }
                 }
-            }
-        });
+            }, delay);
+        } else {
+            // Use setImmediate for immediate connection (preserves original behavior)
+            setImmediate(() => {
+                if (this.connectError) {
+                    socket.emit('error', this.connectError);
+                } else {
+                    socket.emit('connect');
+                    if (connectListener) {
+                        connectListener();
+                    }
+                }
+            });
+        }
 
         return socket;
     }
@@ -346,6 +373,19 @@ export class MockSocketFactory implements ISocketFactory {
 
     getLastSocket(): MockSocket | null {
         return this.sockets[this.sockets.length - 1] || null;
+    }
+
+    setDelayConnect(delayMs: number): void {
+        this.connectDelay = delayMs;
+    }
+
+    setWriteError(error: Error): void {
+        this.nextWriteError = error;
+    }
+
+    getWrites(): Buffer[] {
+        const lastSocket = this.getLastSocket();
+        return lastSocket ? lastSocket.data : [];
     }
 }
 
