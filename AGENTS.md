@@ -128,6 +128,25 @@ private transition(event: StateEvent): void {
 }
 ```
 
+**Socket Close Handling:**
+
+Both extensions handle spontaneous socket closures through the state machine using the CLEANUP_REQUESTED event:
+
+```typescript
+// Socket 'close' handler (can fire in ANY socket-having state)
+socket.on('close', (hadError: boolean) => {
+    if (hadError) {
+        // Transmission error → ERROR → CLEANUP_REQUESTED
+        session.emit('ERROR_OCCURRED', 'Socket closed with transmission error');
+    } else {
+        // Clean close → CLEANUP_REQUESTED directly
+        session.emit('CLEANUP_REQUESTED', hadError);
+    }
+});
+```
+
+All socket-having states include `CLEANUP_REQUESTED: 'CLOSING'` transitions in STATE_TRANSITIONS, ensuring validated cleanup regardless of when the socket closes. The hadError boolean payload distinguishes error cleanups (true) from graceful cleanups (false).
+
 **Key principles:**
 
 - **STATE_TRANSITIONS is the single source of truth**: All valid state transitions are defined in this table

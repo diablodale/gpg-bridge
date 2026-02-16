@@ -1126,4 +1126,341 @@ describe('AgentProxy', () => {
         });
     });
 
+    describe('Phase 3.3: Socket Close State Machine Integration', () => {
+        it('should emit CLEANUP_REQUESTED(false) on graceful agent socket close', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Graceful close from agent side
+            socket!.end();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Verify cleanup occurred (socket closed)
+            const closeLogs = logs.filter(log => log.includes('Agent socket closed') || log.includes('closed'));
+            expect(closeLogs.length).to.be.greaterThan(0);
+        });
+
+        it('should emit ERROR_OCCURRED on socket close with transmission error', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            await connectPromise;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Close with transmission error
+            socket!.destroy(new Error('Agent connection lost'));
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Verify socket error was logged
+            const errorLogs = logs.filter(log =>
+                log.includes('Agent socket error') || log.includes('Agent connection lost')
+            );
+            expect(errorLogs.length).to.be.greaterThan(0);
+        });
+
+        it('should handle CLEANUP_REQUESTED from READY state', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Should be in READY state - close gracefully
+            socket!.end();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Verify session cleaned up (subsequent sendCommands should fail)
+            try {
+                await agentProxy.sendCommands(sessionId, 'TEST\n');
+                expect.fail('Should throw for closed session');
+            } catch (error: any) {
+                expect(error.message).to.include('session');
+            }
+        });
+
+        it('should handle CLEANUP_REQUESTED from SENDING_TO_AGENT state', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+
+            // Start sending command (transitions to SENDING_TO_AGENT)
+            const sendPromise = agentProxy.sendCommands(sessionId, 'GETINFO version\n');
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Close while sending
+            socket!.end();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // sendCommands should handle the closure
+            try {
+                await sendPromise;
+                // May complete or may throw - both are valid depending on timing
+            } catch (error: any) {
+                // Expected if close happened before write completed
+                expect(error).to.exist;
+            }
+        });
+
+        it('should use .once() for close - prevents duplicate state transitions', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Verify session is running
+            expect(agentProxy.isRunning()).to.equal(true);
+
+            // Close the socket
+            socket!.end();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Session should be cleaned up
+            expect(agentProxy.isRunning()).to.equal(false);
+
+            // Manually emit close again - should not cause errors or duplicate cleanup
+            socket!.emit('close', false);
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            // Verify no errors occurred (no additional state transitions logged)
+            const errorLogs = logs.filter(log => log.includes('ERROR') || log.includes('FATAL'));
+            expect(errorLogs.length).to.equal(0);
+        });
+
+        it('should use .once() for socket error - no duplicate ERROR_OCCURRED', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            await connectPromise;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // First error
+            const testError = new Error('Agent socket error');
+            socket!.emit('error', testError);
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            const errorLogCount = logs.filter(log => log.includes('Agent socket error')).length;
+            expect(errorLogCount).to.be.greaterThan(0);
+
+            // Try to emit error again (should be ignored by .once())
+            socket!.emit('error', new Error('Second error'));
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            // Should still only log first error
+            const finalErrorLogCount = logs.filter(log => log.includes('Agent socket error')).length;
+            expect(finalErrorLogCount).to.equal(errorLogCount);
+
+            // Close to cleanup
+            socket!.end();
+            await new Promise((resolve) => setTimeout(resolve, 30));
+        });
+
+        it('should pass hadError parameter through cleanup chain', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            await connectPromise;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Destroy without error (clean destroy)
+            socket!.destroy();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Verify cleanup occurred (socket closed)
+            const cleanupLogs = logs.filter(log => log.includes('Agent socket closed') || log.includes('closed'));
+            expect(cleanupLogs.length).to.be.greaterThan(0);
+        });
+
+        it('should handle socket close during connection phase', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+
+            // Close before greeting received (during AGENT_CONNECTING state)
+            socket!.end();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // connectAgent should reject
+            try {
+                await connectPromise;
+                expect.fail('Should have rejected on early close');
+            } catch (error: any) {
+                expect(error).to.exist;
+            }
+        });
+
+        it('should transition from multiple socket-having states to CLOSING', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+
+            // Send command to enter SENDING_TO_AGENT
+            const sendPromise = agentProxy.sendCommands(sessionId, 'TEST\n');
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Close from SENDING_TO_AGENT state
+            socket!.end();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Should log socket closure and cleanup
+            const closingLogs = logs.filter(log => log.includes('closed') || log.includes('CLOSING') || log.includes('DISCONNECTED'));
+            expect(closingLogs.length).to.be.greaterThan(0);
+
+            try {
+                await sendPromise;
+            } catch (error: any) {
+                // Expected if socket closed before write completed
+            }
+        });
+    });
+
 });

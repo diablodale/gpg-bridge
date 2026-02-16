@@ -166,30 +166,28 @@ export class AgentSessionManager extends EventEmitter {
     ) {
         super();
         this.sessionId = sessionId;
-        this.registerEventHandlers();
-    }
 
-    /**
-     * Register handlers for all 11 events
-     * Phase 3: Register event listeners (Phase 4 will implement full logic)
-     */
-    private registerEventHandlers(): void {
-        // Client events
-        this.on('CLIENT_CONNECT_REQUESTED', (payload) => this.handleClientConnectRequested(payload));
+        // Register handlers for all 11 events
+        // Use .once() for single-fire events, .on() for events that can fire multiple times
+
+        // Single-fire initialization events
+        this.once('CLIENT_CONNECT_REQUESTED', (payload) => this.handleClientConnectRequested(payload));
+        this.once('AGENT_SOCKET_CONNECTED', () => this.handleAgentSocketConnected());
+        this.once('AGENT_GREETING_RECEIVED', (payload) => this.handleAgentGreetingReceived(payload));
+
+        // Multi-fire command event (multiple commands per session)
         this.on('CLIENT_COMMAND_RECEIVED', (payload) => this.handleClientCommandReceived(payload));
 
-        // Agent events
-        this.on('AGENT_SOCKET_CONNECTED', () => this.handleAgentSocketConnected());
+        // Multi-fire agent I/O events (multiple writes and data chunks per session)
         this.on('AGENT_WRITE_OK', (payload) => this.handleAgentWriteOk(payload));
-        this.on('AGENT_GREETING_RECEIVED', (payload) => this.handleAgentGreetingReceived(payload));
         this.on('AGENT_DATA_CHUNK', (payload) => this.handleAgentDataChunk(payload));
         this.on('AGENT_RESPONSE_COMPLETE', (payload) => this.handleAgentResponseComplete(payload));
 
-        // Error and cleanup events
-        this.on('ERROR_OCCURRED', (payload) => this.handleErrorOccurred(payload));
-        this.on('CLEANUP_REQUESTED', (payload) => this.handleCleanupRequested(payload));
-        this.on('CLEANUP_COMPLETE', () => this.handleCleanupComplete());
-        this.on('CLEANUP_ERROR', (payload) => this.handleCleanupError(payload));
+        // Single-fire terminal events
+        this.once('ERROR_OCCURRED', (payload) => this.handleErrorOccurred(payload));
+        this.once('CLEANUP_REQUESTED', (payload) => this.handleCleanupRequested(payload));
+        this.once('CLEANUP_COMPLETE', () => this.handleCleanupComplete());
+        this.once('CLEANUP_ERROR', (payload) => this.handleCleanupError(payload));
     }
 
     // ========================================================================

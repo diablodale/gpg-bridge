@@ -113,15 +113,18 @@ export class MockSocket extends EventEmitter {
             throw err;
         }
         this.destroyed = true;
+        const hadError = !!error;
         if (error) {
             this.emit('error', error);
         }
-        this.emit('close');
+        // Emit 'close' with hadError boolean parameter
+        this.emit('close', hadError);
     }
 
     end(): void {
         this.emit('end');
-        this.emit('close');
+        // Emit 'close' with hadError=false for graceful end
+        this.emit('close', false);
     }
 
     pause(): void {

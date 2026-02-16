@@ -1156,12 +1156,12 @@ ERROR: { CLEANUP_REQUESTED: 'CLOSING' }
 
 **Phase 3.3a: Rename Event and Add Payload Type**
 
-- [ ] Rename StateEvent: `CLEANUP_START` → `CLEANUP_REQUESTED`
-- [ ] Update EventPayloads interface:
+- [x] Rename StateEvent: `CLEANUP_START` → `CLEANUP_REQUESTED`
+- [x] Update EventPayloads interface:
   ```typescript
   CLEANUP_REQUESTED: { hadError: boolean };  // Was undefined for CLEANUP_START
   ```
-- [ ] Update ERROR state transition:
+- [x] Update ERROR state transition:
   ```typescript
   ERROR: {
       CLEANUP_REQUESTED: 'CLOSING'  // Was CLEANUP_START
@@ -1172,7 +1172,7 @@ ERROR: { CLEANUP_REQUESTED: 'CLOSING' }
 
 Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
 
-- [ ] CLIENT_CONNECTED
+- [x] CLIENT_CONNECTED
   ```typescript
   CLIENT_CONNECTED: {
       START_AGENT_CONNECT: 'AGENT_CONNECTING',
@@ -1181,7 +1181,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   }
   ```
 
-- [ ] AGENT_CONNECTING
+- [x] AGENT_CONNECTING
   ```typescript
   AGENT_CONNECTING: {
       AGENT_GREETING_OK: 'READY',
@@ -1190,7 +1190,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   }
   ```
 
-- [ ] READY
+- [x] READY
   ```typescript
   READY: {
       CLIENT_DATA_START: 'BUFFERING_COMMAND',
@@ -1199,7 +1199,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   }
   ```
 
-- [ ] BUFFERING_COMMAND
+- [x] BUFFERING_COMMAND
   ```typescript
   BUFFERING_COMMAND: {
       CLIENT_DATA_PARTIAL: 'BUFFERING_COMMAND',
@@ -1209,7 +1209,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   }
   ```
 
-- [ ] BUFFERING_INQUIRE
+- [x] BUFFERING_INQUIRE
   ```typescript
   BUFFERING_INQUIRE: {
       CLIENT_DATA_PARTIAL: 'BUFFERING_INQUIRE',
@@ -1219,7 +1219,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   }
   ```
 
-- [ ] SENDING_TO_AGENT
+- [x] SENDING_TO_AGENT
   ```typescript
   SENDING_TO_AGENT: {
       WRITE_OK: 'WAITING_FOR_AGENT',
@@ -1228,7 +1228,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   }
   ```
 
-- [ ] WAITING_FOR_AGENT
+- [x] WAITING_FOR_AGENT
   ```typescript
   WAITING_FOR_AGENT: {
       AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
@@ -1237,7 +1237,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   }
   ```
 
-- [ ] SENDING_TO_CLIENT
+- [x] SENDING_TO_CLIENT
   ```typescript
   SENDING_TO_CLIENT: {
       WRITE_OK: 'READY',
@@ -1250,8 +1250,8 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
 
 **Phase 3.3c: Update Event Handler**
 
-- [ ] Rename handler method: `handleCleanupStart` → `handleCleanupRequested`
-- [ ] Update handler signature to accept payload:
+- [x] Rename handler method: `handleCleanupStart` → `handleCleanupRequested`
+- [x] Update handler signature to accept payload:
   ```typescript
   private handleCleanupRequested(hadError: boolean): void {
       this.transition('CLEANUP_REQUESTED');
@@ -1259,7 +1259,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
       // ... existing cleanup logic ...
   }
   ```
-- [ ] Update event registration in constructor:
+- [x] Update event registration in constructor:
   ```typescript
   this.on('CLEANUP_REQUESTED', this.handleCleanupRequested.bind(this));
   ```
@@ -1268,7 +1268,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
 
 Replace direct cleanup with event emission:
 
-- [ ] Update clientSocket.on('close') handler (lines 585-596):
+- [x] Update clientSocket.on('close') handler (lines 585-596):
   ```typescript
   // 'close' fires when the socket is fully closed and resources are released
   // hadError arg indicates if it closed because of an error
@@ -1293,7 +1293,7 @@ Replace direct cleanup with event emission:
 
 **Phase 3.3e: Update handleErrorOccurred**
 
-- [ ] Update `handleErrorOccurred` to emit CLEANUP_REQUESTED:
+- [x] Update `handleErrorOccurred` to emit CLEANUP_REQUESTED:
   ```typescript
   private handleErrorOccurred(error: string): void {
       this.transition('ERROR_OCCURRED');
@@ -1306,9 +1306,9 @@ Replace direct cleanup with event emission:
 
 **Phase 3.3f: Verification**
 
-- [ ] Compile request-proxy: `npm run compile`
-- [ ] Run all tests: `npm test` (expect all 109 tests to pass)
-- [ ] Verify transition validation works:
+- [x] Compile request-proxy: `npm run compile`
+- [x] Run all tests: `npm test` (expect all 109 tests to pass)
+- [x] Verify transition validation works:
   - Client drops in READY → CLEANUP_REQUESTED → CLOSING ✓
   - Client drops in BUFFERING_COMMAND → CLEANUP_REQUESTED → CLOSING ✓
   - Client drops in WAITING_FOR_AGENT → CLEANUP_REQUESTED → CLOSING ✓
@@ -1316,12 +1316,21 @@ Replace direct cleanup with event emission:
 
 **Phase 3.3g: Documentation**
 
-- [ ] Update AGENTS.md: Document CLEANUP_REQUESTED pattern with hadError payload
-- [ ] Update this plan: Mark Phase 3.3 complete
+- [x] Update AGENTS.md: Document CLEANUP_REQUESTED pattern with hadError payload
+- [x] Update this plan: Mark Phase 3.3 complete
 
 **Deliverable:** ✅ request-proxy socket 'close' handler properly integrated with state machine
 **Target:** Consistent event-driven cleanup matching agent-proxy architecture
-**Status:** Not started
+**Status:** Complete
+
+**Implementation Summary:**
+- Renamed CLEANUP_START → CLEANUP_REQUESTED with hadError boolean payload
+- Added CLEANUP_REQUESTED → CLOSING transitions to all 8 socket-having states
+- Updated handleCleanupRequested to accept and log hadError parameter
+- Fixed socket 'close' handler to emit events instead of direct cleanup bypass
+- Updated handleErrorOccurred to emit CLEANUP_REQUESTED with hadError=true
+- All 109 tests passing
+- AGENTS.md updated with socket close handling pattern
 
 **Benefits:**
 1. ✅ **State machine integrity**: All state changes validated by STATE_TRANSITIONS

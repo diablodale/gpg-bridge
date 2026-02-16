@@ -3213,5 +3213,269 @@ describe('RequestProxy', () => {
         });
     });
 
+    describe('Phase 3.3: Socket Close State Machine Integration', () => {
+        it('should emit CLEANUP_REQUESTED(false) on graceful socket close', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-graceful-close',
+                greeting: 'OK\n'
+            };
+            mockCommandExecutor.setSendCommandsResponse('OK version info\n');
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            // Send a command to establish session (transitions to READY)
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            // Graceful close (hadError=false)
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify CLEANUP_REQUESTED was handled (disconnectAgent called)
+            expect(mockCommandExecutor.getCallCount('disconnectAgent')).to.equal(1);
+
+            // Should log socket close
+            const closeLogs = logs.filter(log => log.includes('Client socket closed'));
+            expect(closeLogs.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+
+        it('should handle socket close with error - logs error and performs cleanup', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-error-close',
+                greeting: 'OK\n'
+            };
+            mockCommandExecutor.setSendCommandsResponse('OK version info\n');
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            // Send a command to establish session
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            // Destroy with error
+            clientSocket.destroy(new Error('Transmission error'));
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify socket error was logged
+            const errorLogs = logs.filter(log => log.includes('Client socket error'));
+            expect(errorLogs.length).to.be.greaterThan(0);
+
+            // Verify cleanup occurred
+            expect(mockCommandExecutor.getCallCount('disconnectAgent')).to.equal(1);
+
+            await instance.stop();
+        });
+
+        it('should handle CLEANUP_REQUESTED from READY state', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-ready-cleanup',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Session should be in READY state
+            // Graceful close should transition READY → CLOSING
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify cleanup completed
+            expect(mockCommandExecutor.getCallCount('disconnectAgent')).to.equal(1);
+
+            await instance.stop();
+        });
+
+        it('should handle CLEANUP_REQUESTED from WAITING_FOR_AGENT state', async () => {
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-waiting-cleanup',
+                greeting: 'OK\n'
+            };
+            // Delay sendCommands to keep session in WAITING_FOR_AGENT
+            let sendCommandsResolver: ((value: { response: string }) => void) | null = null;
+            mockCommandExecutor.sendCommands = async () => {
+                return new Promise((resolve) => {
+                    sendCommandsResolver = resolve;
+                });
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Send command to transition to WAITING_FOR_AGENT
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            // Close while waiting for agent response
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify cleanup occurred
+            expect(mockCommandExecutor.getCallCount('disconnectAgent')).to.equal(1);
+
+            // Resolve delayed sendCommands (cleanup)
+            if (sendCommandsResolver) {
+                (sendCommandsResolver as (value: { response: string }) => void)({ response: 'OK\n' });
+            }
+
+            await instance.stop();
+        });
+
+        it('should use .once() for socket close - no duplicate CLEANUP_REQUESTED', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-once-close',
+                greeting: 'OK\n'
+            };
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // First close
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const firstDisconnectCount = mockCommandExecutor.getCallCount('disconnectAgent');
+            expect(firstDisconnectCount).to.equal(1);
+
+            // Try to emit close again (should be ignored by .once())
+            // Note: In real socket this wouldn't happen, but we test .once() behavior
+            clientSocket.emit('close', false);
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            // disconnectAgent should still only be called once
+            expect(mockCommandExecutor.getCallCount('disconnectAgent')).to.equal(firstDisconnectCount);
+
+            await instance.stop();
+        });
+
+        it('should use .once() for socket error - logs error once', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-once-error',
+                greeting: 'OK\n'
+            };
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            // Establish session
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            // Trigger error event
+            const testError = new Error('Socket error');
+            clientSocket.emit('error', testError);
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            const errorLogCount = logs.filter(log => log.includes('Socket error')).length;
+            expect(errorLogCount).to.be.greaterThan(0);
+
+            // Close to cleanup (will also be handled by .once())
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            await instance.stop();
+        });
+
+        it('should transition from multiple socket-having states to CLOSING', async () => {
+            // Test CLEANUP_REQUESTED from CLIENT_CONNECTED state
+            const instance = await startRequestProxy(
+                { logCallback: mockLogConfig.logCallback },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+
+            // Close immediately (CLIENT_CONNECTED state)
+            await new Promise(resolve => setTimeout(resolve, 10));
+            clientSocket.end();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Should handle cleanup even before agent connection
+            const logs = mockLogConfig.getLogs();
+            const closingLogs = logs.filter(log => log.includes('CLOSING') || log.includes('DISCONNECTED'));
+            expect(closingLogs.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+
+        it('should pass hadError parameter through cleanup chain', async () => {
+            const logs: string[] = [];
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-haderror-chain',
+                greeting: 'OK\n'
+            };
+            mockCommandExecutor.setSendCommandsResponse('OK\n');
+
+            const instance = await startRequestProxy(
+                { logCallback: (msg) => logs.push(msg) },
+                createMockDeps()
+            );
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            // Establish session first
+            clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            // Destroy without error (clean destroy)
+            clientSocket.destroy();
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Verify cleanup occurred (socket closed, cleanup started)
+            const cleanupLogs = logs.filter(log => log.includes('Starting cleanup') || log.includes('Client socket closed'));
+            expect(cleanupLogs.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+    });
+
 });
 

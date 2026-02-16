@@ -58,7 +58,7 @@ type StateEvent =
   | 'AGENT_RESPONSE_COMPLETE'
   | 'RESPONSE_OK_OR_ERR'
   | 'RESPONSE_INQUIRE'
-  | 'CLEANUP_START'
+  | 'CLEANUP_REQUESTED'
   | 'CLEANUP_COMPLETE'
   | 'CLEANUP_ERROR';
 
@@ -79,7 +79,7 @@ export interface EventPayloads {
     AGENT_RESPONSE_COMPLETE: { response: string };
     RESPONSE_OK_OR_ERR: { response: string };
     RESPONSE_INQUIRE: { response: string };
-    CLEANUP_START: undefined;
+    CLEANUP_REQUESTED: { hadError: boolean };
     CLEANUP_COMPLETE: undefined;
     CLEANUP_ERROR: { error: string };
 }
@@ -104,41 +104,49 @@ const STATE_TRANSITIONS: StateTransitionTable = {
   CLIENT_CONNECTED: {
     START_AGENT_CONNECT: 'AGENT_CONNECTING',
     ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   AGENT_CONNECTING: {
     AGENT_GREETING_OK: 'READY',
     ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   READY: {
     CLIENT_DATA_START: 'BUFFERING_COMMAND',
     ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   BUFFERING_COMMAND: {
     CLIENT_DATA_PARTIAL: 'BUFFERING_COMMAND',
     CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
     ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   BUFFERING_INQUIRE: {
     CLIENT_DATA_PARTIAL: 'BUFFERING_INQUIRE',
     CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
     ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   SENDING_TO_AGENT: {
     WRITE_OK: 'WAITING_FOR_AGENT',
     ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   WAITING_FOR_AGENT: {
     AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
     ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   SENDING_TO_CLIENT: {
     WRITE_OK: 'READY',
-    ERROR_OCCURRED: 'ERROR',
     RESPONSE_OK_OR_ERR: 'READY',
     RESPONSE_INQUIRE: 'BUFFERING_INQUIRE',
+    ERROR_OCCURRED: 'ERROR',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   ERROR: {
-    CLEANUP_START: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',
   },
   CLOSING: {
     CLEANUP_COMPLETE: 'DISCONNECTED',
@@ -195,22 +203,28 @@ class ClientSessionManager extends EventEmitter {
         this.config = config;
         this.socket = socket;
 
-        // Register event handlers (like socket.on('event', handler))
+        // Register event handlers for session lifecycle
+        // Use .once() for single-fire events, .on() for events that can fire multiple times
 
-        this.on('CLIENT_SOCKET_CONNECTED', this.handleClientSocketConnected.bind(this));
-        this.on('START_AGENT_CONNECT', this.handleStartAgentConnect.bind(this));
-        this.on('AGENT_GREETING_OK', this.handleAgentGreetingOk.bind(this));
+        // Single-fire initialization events
+        this.once('CLIENT_SOCKET_CONNECTED', this.handleClientSocketConnected.bind(this));
+        this.once('START_AGENT_CONNECT', this.handleStartAgentConnect.bind(this));
+        this.once('AGENT_GREETING_OK', this.handleAgentGreetingOk.bind(this));
+
+        // Multi-fire data/command events (multiple writes and data chunks per session)
         this.on('CLIENT_DATA_START', this.handleClientDataStart.bind(this));
         this.on('CLIENT_DATA_PARTIAL', this.handleClientDataPartial.bind(this));
         this.on('CLIENT_DATA_COMPLETE', this.handleClientDataComplete.bind(this));
-        this.on('ERROR_OCCURRED', this.handleErrorOccurred.bind(this));
         this.on('WRITE_OK', this.handleWriteOk.bind(this));
         this.on('AGENT_RESPONSE_COMPLETE', this.handleAgentResponseComplete.bind(this));
         this.on('RESPONSE_OK_OR_ERR', this.handleResponseOkOrErr.bind(this));
         this.on('RESPONSE_INQUIRE', this.handleResponseInquire.bind(this));
-        this.on('CLEANUP_START', this.handleCleanupStart.bind(this));
-        this.on('CLEANUP_COMPLETE', this.handleCleanupComplete.bind(this));
-        this.on('CLEANUP_ERROR', this.handleCleanupError.bind(this));
+
+        // Single-fire terminal events
+        this.once('ERROR_OCCURRED', this.handleErrorOccurred.bind(this));
+        this.once('CLEANUP_REQUESTED', this.handleCleanupRequested.bind(this));
+        this.once('CLEANUP_COMPLETE', this.handleCleanupComplete.bind(this));
+        this.once('CLEANUP_ERROR', this.handleCleanupError.bind(this));
     }
 
     // ========================================================================
@@ -366,12 +380,12 @@ class ClientSessionManager extends EventEmitter {
         log(this.config, `[${this.sessionId ?? 'pending'}] ${error}`);
 
         // Start cleanup sequence
-        this.emit('CLEANUP_START');
+        this.emit('CLEANUP_REQUESTED', true);
     }
 
-    private async handleCleanupStart(): Promise<void> {
-        this.transition('CLEANUP_START');
-        log(this.config, `[${this.sessionId ?? 'pending'}] Starting cleanup`);
+    private async handleCleanupRequested(hadError: boolean): Promise<void> {
+        this.transition('CLEANUP_REQUESTED');
+        log(this.config, `[${this.sessionId ?? 'pending'}] Starting cleanup (hadError=${hadError})`);
 
         // Disconnect from agent if we have a session
         let cleanupError: unknown = null;
@@ -582,13 +596,16 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         // - graceful remote shutdown: 'end' -> 'close'
         // - local shutdown: socket.end() -> 'close'
         // - local destroy without arg: socket.destroy() -> 'close'
-        clientSocket.on('close', () => {
-            log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed`);
-            // Clean up session
-            if (sessionManager.sessionId) {
-                sessionManager.config.commandExecutor.disconnectAgent(sessionManager.sessionId).catch((err) => {
-                    log(sessionManager.config, `[${sessionManager.sessionId}] Disconnect error: ${extractErrorMessage(err)}`);
-                });
+        clientSocket.once('close', (hadError: boolean) => {
+            log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed (hadError=${hadError})`);
+
+            // Emit event to state machine for validated cleanup
+            if (hadError) {
+                // Transmission error during socket I/O
+                sessionManager.emit('ERROR_OCCURRED', 'Socket closed with transmission error');
+            } else {
+                // Clean/graceful socket close
+                sessionManager.emit('CLEANUP_REQUESTED', hadError);
             }
         });
 
@@ -598,7 +615,7 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         // event sequences:
         // - OS error: 'error' -> 'close'
         // - local destroy with arg `socket.destroy(err)`: 'error' -> 'close'
-        clientSocket.on('error', (err: Error) => {
+        clientSocket.once('error', (err: Error) => {
             log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket error: ${err.message}`);
             // Error event is logged; 'close' event will trigger cleanup
         });
