@@ -116,15 +116,6 @@ export interface EventPayloads {
     CLEANUP_ERROR: { error: Error };
 }
 
-/**
- * State handler function signature
- */
-export type StateHandler = (
-    session: AgentSessionManager,
-    event: StateEvent,
-    payload?: EventPayloads[keyof EventPayloads]
-) => void;
-
 // ============================================================================
 // Configuration & Dependencies
 // ============================================================================

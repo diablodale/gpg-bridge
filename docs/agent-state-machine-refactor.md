@@ -698,19 +698,19 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 
 **Phase 3.1a: Request-Proxy Type System Cleanup**
 
-- [ ] Remove unused discriminated union `StateEvent` type
-  - [ ] Delete entire discriminated union definition (lines ~50-67)
-  - [ ] Replace with string literal union matching actual event names
-- [ ] Remove unused `StateHandler` type
-  - [ ] Delete StateHandler type definition (line 67)
-  - [ ] EventEmitter pattern doesn't support typed handlers
-  - [ ] Vanilla EventEmitter `.on()` accepts `(...args: any[]) => void`
-  - [ ] Handlers are just methods, no formal signature enforcement
-- [ ] Add `EventPayloads` interface
-  - [ ] Create interface mapping event names to payload types
-  - [ ] Include all 14 events from request-proxy
-  - [ ] Use `undefined` for events with no payload
-- [ ] Add `StateTransitionTable` mapped type
+- [x] Remove unused discriminated union `StateEvent` type
+  - [x] Delete entire discriminated union definition (lines ~50-67)
+  - [x] Replace with string literal union matching actual event names
+- [x] Remove unused `StateHandler` type
+  - [x] Delete StateHandler type definition (line 67)
+  - [x] EventEmitter pattern doesn't support typed handlers
+  - [x] Vanilla EventEmitter `.on()` accepts `(...args: any[]) => void`
+  - [x] Handlers are just methods, no formal signature enforcement
+- [x] Add `EventPayloads` interface
+  - [x] Create interface mapping event names to payload types
+  - [x] Include all 14 events from request-proxy
+  - [x] Use `undefined` for events with no payload
+- [x] Add `StateTransitionTable` mapped type
   ```typescript
   type StateTransitionTable = {
       [K in SessionState]: {
@@ -718,55 +718,299 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
       };
   };
   ```
-- [ ] Update `transitionTable` type annotation
-  - [ ] Change from `Record<SessionState, Record<string, SessionState>>`
-  - [ ] To `const transitionTable: StateTransitionTable = { ... }`
-- [ ] Verify compilation
-  - [ ] Run `npm run compile` in request-proxy
-  - [ ] Fix any type errors (should be minimal - types now match reality)
-- [ ] Run request-proxy tests
-  - [ ] All tests must pass (no runtime changes, only type cleanup)
-- [ ] Update comments
-  - [ ] Document StateEvent as string literal union
-  - [ ] Document EventPayloads interface purpose
+- [x] Update `transitionTable` type annotation
+  - [x] Change from `Record<SessionState, Record<string, SessionState>>`
+  - [x] To `const STATE_TRANSITIONS: StateTransitionTable = { ... }`
+- [x] Verify compilation
+  - [x] Run `npm run compile` in request-proxy
+  - [x] Fix any type errors (should be minimal - types now match reality)
+- [x] Run request-proxy tests
+  - [x] All tests must pass (no runtime changes, only type cleanup)
+- [x] Update comments
+  - [x] Document StateEvent as string literal union
+  - [x] Document EventPayloads interface purpose
 
 **Phase 3.1b: Agent-Proxy Type System Cleanup**
 
-- [ ] Remove unused `StateHandler` type
-  - [ ] Delete StateHandler type definition (lines 122-126 in agentProxy.ts)
-  - [ ] EventEmitter pattern doesn't support typed handlers
-  - [ ] Type exists but is never referenced or enforced
-  - [ ] Dead code cleanup for consistency with request-proxy
-- [ ] Verify agent-proxy type definitions (should be correct after StateHandler removal)
-  - [ ] Confirm `StateEvent` is string literal union ✅
-  - [ ] Confirm `EventPayloads` interface exists ✅
-  - [ ] Confirm `StateTransitionTable` mapped type exists ✅
-  - [ ] Confirm event emission uses strings ✅
-- [ ] Verify compilation
-  - [ ] Run `npm run compile` in agent-proxy
-  - [ ] Should succeed (StateHandler was never used)
-- [ ] Run agent-proxy tests
-  - [ ] All tests must pass (no runtime changes, only type cleanup)
-- [ ] Document agent-proxy as reference implementation
-  - [ ] Pattern is correct for EventEmitter
-  - [ ] request-proxy now matches this pattern (after 3.1a)
+- [x] Remove unused `StateHandler` type
+  - [x] Delete StateHandler type definition (lines 122-126 in agentProxy.ts)
+  - [x] EventEmitter pattern doesn't support typed handlers
+  - [x] Type exists but is never referenced or enforced
+  - [x] Dead code cleanup for consistency with request-proxy
+- [x] Verify agent-proxy type definitions (should be correct after StateHandler removal)
+  - [x] Confirm `StateEvent` is string literal union ✅
+  - [x] Confirm `EventPayloads` interface exists ✅
+  - [x] Confirm `StateTransitionTable` mapped type exists ✅
+  - [x] Confirm event emission uses strings ✅
+- [x] Verify compilation
+  - [x] Run `npm run compile` in agent-proxy
+  - [x] Should succeed (StateHandler was never used)
+- [x] Run agent-proxy tests
+  - [x] All tests must pass (no runtime changes, only type cleanup)
+- [x] Document agent-proxy as reference implementation
+  - [x] Pattern is correct for EventEmitter
+  - [x] request-proxy now matches this pattern (after 3.1a)
 
 **Documentation Updates**
 
-- [ ] Update AGENTS.md architecture section
-  - [ ] Document EventEmitter string-based event pattern
-  - [ ] Explain why discriminated unions don't work with EventEmitter
-  - [ ] Explain why StateHandler types cannot be enforced by vanilla EventEmitter
-  - [ ] Document EventPayloads interface pattern (for documentation only)
-  - [ ] Document StateTransitionTable pattern
-  - [ ] Note: typed-emitter package would be needed for real handler type safety
-- [ ] Update this refactoring plan
-  - [ ] Mark Phase 3.1a complete when request-proxy cleaned up
-  - [ ] Mark Phase 3.1b complete when agent-proxy cleaned up
-  - [ ] Add notes about EventEmitter design patterns and limitations
+- [x] Update AGENTS.md architecture section
+  - [x] Document EventEmitter string-based event pattern
+  - [x] Explain why discriminated unions don't work with EventEmitter
+  - [x] Explain why StateHandler types cannot be enforced by vanilla EventEmitter
+  - [x] Document EventPayloads interface pattern (for documentation only)
+  - [x] Document StateTransitionTable pattern
+  - [x] Note: typed-emitter package would be needed for real handler type safety
+- [x] Update this refactoring plan
+  - [x] Mark Phase 3.1a complete when request-proxy cleaned up
+  - [x] Mark Phase 3.1b complete when agent-proxy cleaned up
+  - [x] Add notes about EventEmitter design patterns and limitations
 
 **Deliverable:** ✅ Both extensions use consistent EventEmitter-compatible types, all dead code removed
 **Target:** Type system alignment complete, ready for Phase 4
+
+**Status:** Complete - Dead code removed from both extensions, type systems aligned
+- request-proxy: Removed discriminated union StateEvent, removed StateHandler, added EventPayloads interface, added StateTransitionTable mapped type, renamed to STATE_TRANSITIONS, aligned formatting
+- agent-proxy: Removed StateHandler type
+- Compilation verified: ✅ Both extensions compile successfully
+- Tests verified: ✅ request-proxy 109 tests pass, agent-proxy 36 tests pass
+
+---
+
+### Phase 3.2: State Transition Validation (request-proxy only)
+**File:** `request-proxy/src/services/requestProxy.ts`
+
+**Objective:** Add runtime state transition validation to request-proxy, matching agent-proxy's proven pattern. Ensure STATE_TRANSITIONS table is actively used for validation, not just type safety.
+
+#### Findings
+
+**Inconsistency Discovered:**
+- **agent-proxy:** STATE_TRANSITIONS table is actively used for runtime validation via `transition()` method
+- **request-proxy:** STATE_TRANSITIONS table defined but never referenced - potential dead code
+
+**agent-proxy Implementation (lines 270-286):**
+```typescript
+private transition(event: StateEvent): void {
+    const allowedTransitions = STATE_TRANSITIONS[this.state];
+    const nextState = allowedTransitions?.[event];
+
+    if (!nextState) {
+        const error = new Error(
+            `Invalid transition: ${this.state} + ${event} (no transition defined)`
+        );
+        log(this.config, `[${this.sessionId}] ${error.message}`);
+        throw error;
+    }
+
+    this.setState(nextState, event);
+}
+
+private setState(newState: SessionState, event: StateEvent): void {
+    const oldState = this.state;
+    this.state = newState;
+    log(this.config, `[${this.sessionId}] ${oldState} → ${newState} (event: ${event})`);
+}
+```
+
+**request-proxy Current Implementation:**
+```typescript
+// setState called directly without validation
+private setState(newState: SessionState): void {
+    const oldState = this.state;
+    this.state = newState;
+    // TODO add event which caused transition
+    log(this.config, `[${this.sessionId ?? 'pending'}] ${oldState} → ${newState}`);
+}
+```
+
+**Impact:**
+- request-proxy has no runtime validation of state transitions
+- Invalid transitions could occur without detection
+- STATE_TRANSITIONS table provides no benefit beyond compile-time type checking
+- Debugging is harder without event logging in state transitions
+
+#### Refactoring Approach
+
+**Strategy:** Mirror agent-proxy's proven pattern exactly
+
+1. **Add `transition()` method** to ClientSessionManager
+   - Validates (state, event) pair against STATE_TRANSITIONS
+   - Throws error if transition not defined
+   - Calls setState() with validated next state
+
+2. **Update `setState()` signature** to accept event parameter
+   - Add `event: StateEvent` parameter
+   - Log event that caused transition (resolve TODO)
+
+3. **Update all handlers** to use `transition()` instead of direct `setState()`
+   - Replace: `this.setState('NEXT_STATE')`
+   - With: `this.transition('EVENT_NAME')` (which calls setState internally)
+
+4. **Exception:** Handlers that emit events without state changes keep current pattern
+   - Example: `handleResponseOkOrErr` just logs, doesn't change state
+
+**Benefits:**
+- Runtime validation catches invalid transitions immediately
+- Better debugging: logs show which event caused each transition
+- Consistent architecture between both extensions
+- STATE_TRANSITIONS table becomes the single source of truth
+
+**Backward Compatibility:**
+- No changes to public API
+- No changes to event emission patterns
+- Tests continue to work unchanged (unless they were relying on invalid transitions)
+
+#### Implementation Tasks
+
+**Phase 3.2a: Add transition() method and update setState()**
+
+- [ ] Add `transition()` method to ClientSessionManager
+  ```typescript
+  /**
+   * Validate and execute state transition
+   * Throws if transition is invalid
+   */
+  private transition(event: StateEvent): void {
+      const allowedTransitions = STATE_TRANSITIONS[this.state];
+      const nextState = allowedTransitions?.[event];
+
+      if (!nextState) {
+          const error = new Error(
+              `Invalid transition: ${this.state} + ${event} (no transition defined)`
+          );
+          log(this.config, `[${this.sessionId ?? 'pending'}] ${error.message}`);
+          throw error;
+      }
+
+      this.setState(nextState, event);
+  }
+  ```
+
+- [ ] Update `setState()` signature to accept event parameter
+  ```typescript
+  private setState(newState: SessionState, event: StateEvent): void {
+      const oldState = this.state;
+      this.state = newState;
+      log(this.config, `[${this.sessionId ?? 'pending'}] ${oldState} → ${newState} (event: ${event})`);
+  }
+  ```
+
+**Phase 3.2b: Update event handlers to use transition()**
+
+- [ ] `handleClientSocketConnected()` 
+  - Replace: `this.setState('CLIENT_CONNECTED')`
+  - With: `this.transition('CLIENT_SOCKET_CONNECTED')`
+
+- [ ] `handleStartAgentConnect()`
+  - Replace: `this.setState('AGENT_CONNECTING')`
+  - With: `this.transition('START_AGENT_CONNECT')`
+
+- [ ] `handleAgentGreetingOk()`
+  - Replace: `this.setState('READY')`
+  - With: `this.transition('AGENT_GREETING_OK')`
+
+- [ ] `handleClientDataStart()`
+  - Replace: `this.setState('BUFFERING_COMMAND')`
+  - With: `this.transition('CLIENT_DATA_START')`
+
+- [ ] `handleClientDataComplete()`
+  - Replace: `this.setState('SENDING_TO_AGENT')`
+  - With: `this.transition('CLIENT_DATA_COMPLETE')`
+
+- [ ] `handleWriteOk()` - has conditional logic
+  - SENDING_TO_AGENT branch: `this.transition('WRITE_OK')`
+  - SENDING_TO_CLIENT branch: `this.transition('WRITE_OK')`
+
+- [ ] `handleAgentResponseComplete()`
+  - Replace: `this.setState('SENDING_TO_CLIENT')`
+  - With: `this.transition('AGENT_RESPONSE_COMPLETE')`
+
+- [ ] `handleResponseOkOrErr()`
+  - No state change - no changes needed
+  - Note: WRITE_OK handler will transition to READY
+
+- [ ] `handleResponseInquire()`
+  - Replace: `this.setState('BUFFERING_INQUIRE')`
+  - With: `this.transition('RESPONSE_INQUIRE')`
+
+- [ ] `handleErrorOccurred()`
+  - Replace: `this.setState('ERROR')`
+  - With: `this.transition('ERROR_OCCURRED')`
+
+- [ ] `handleCleanupStart()`
+  - Replace: `this.setState('CLOSING')`
+  - With: `this.transition('CLEANUP_START')`
+
+- [ ] `handleCleanupComplete()`
+  - Replace: `this.setState('DISCONNECTED')`
+  - With: `this.transition('CLEANUP_COMPLETE')`
+
+- [ ] `handleCleanupError()`
+  - Replace: `this.setState('FATAL')`
+  - With: `this.transition('CLEANUP_ERROR')`
+
+**Phase 3.2c: Verification**
+
+- [ ] Verify compilation
+  - Run `npm run compile` in request-proxy
+  - Should succeed with no errors
+
+- [ ] Run all tests
+  - Run `npm test` in request-proxy
+  - All 109 tests must pass
+  - If any fail, check for invalid transitions exposed by validation
+
+- [ ] Manual validation testing
+  - Start request-proxy in watch mode
+  - Test normal flow: connect → command → response → disconnect
+  - Check logs show event names in transitions
+  - Test error scenarios to ensure ERROR_OCCURRED transitions work
+
+**Phase 3.2d: Documentation**
+
+- [ ] Update AGENTS.md
+  - Document transition validation pattern
+  - Note that STATE_TRANSITIONS is the single source of truth
+  - Explain that invalid transitions throw errors (fail-fast)
+
+- [ ] Update this refactoring plan
+  - Mark Phase 3.2 complete
+  - Note any transition validation issues discovered during testing
+
+**Testing Strategy:**
+
+Existing tests should pass without modification because:
+1. request-proxy state machine was already correctly designed
+2. STATE_TRANSITIONS table already reflects the actual transitions
+3. Validation only adds error detection for invalid paths
+
+If tests fail:
+- Indicates a real bug (handler attempting invalid transition)
+- Fix by either updating handler logic or adding transition to STATE_TRANSITIONS
+- This is a feature, not a bug - we want to catch these issues!
+
+**Edge Cases to Consider:**
+
+1. **handleWriteOk() conditional logic:**
+   - Checks current state before transitioning
+   - Both branches should have valid transitions defined
+   - SENDING_TO_AGENT → WRITE_OK → WAITING_FOR_AGENT ✓
+   - SENDING_TO_CLIENT → WRITE_OK → READY ✓
+
+2. **handleClientDataPartial() state checks:**
+   - Checks current state to determine command vs inquire
+   - No state transition - no changes needed
+   - Just processing logic, not state machine logic
+
+3. **Error handling:**
+   - ERROR_OCCURRED event accepted from multiple states
+   - All should have ERROR_OCCURRED → ERROR in STATE_TRANSITIONS ✓
+
+4. **FATAL state:**
+   - Terminal state with no transitions out
+   - STATE_TRANSITIONS[FATAL] = {} ✓
+
+**Deliverable:** ✅ request-proxy has runtime transition validation matching agent-proxy architecture
+**Target:** Both extensions use identical state machine validation approach, ready for Phase 4
 
 ---
 

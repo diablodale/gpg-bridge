@@ -44,76 +44,103 @@ type SessionState =
 
 /**
  * State machine events (14 total)
+ * EventEmitter uses string event names, not discriminated union objects
  */
 type StateEvent =
-  | { type: 'CLIENT_SOCKET_CONNECTED' }
-  | { type: 'START_AGENT_CONNECT' }
-  | { type: 'AGENT_GREETING_OK'; greeting: string }
-  | { type: 'CLIENT_DATA_START'; data: Buffer }
-  | { type: 'CLIENT_DATA_PARTIAL'; data: Buffer }
-  | { type: 'CLIENT_DATA_COMPLETE'; data: string }
-  | { type: 'ERROR_OCCURRED'; error: string }
-  | { type: 'WRITE_OK' }
-  | { type: 'AGENT_RESPONSE_COMPLETE'; response: string }
-  | { type: 'RESPONSE_OK_OR_ERR'; response: string }
-  | { type: 'RESPONSE_INQUIRE'; response: string }
-  | { type: 'CLEANUP_START' }
-  | { type: 'CLEANUP_COMPLETE' }
-  | { type: 'CLEANUP_ERROR'; error: string };
+  | 'CLIENT_SOCKET_CONNECTED'
+  | 'START_AGENT_CONNECT'
+  | 'AGENT_GREETING_OK'
+  | 'CLIENT_DATA_START'
+  | 'CLIENT_DATA_PARTIAL'
+  | 'CLIENT_DATA_COMPLETE'
+  | 'ERROR_OCCURRED'
+  | 'WRITE_OK'
+  | 'AGENT_RESPONSE_COMPLETE'
+  | 'RESPONSE_OK_OR_ERR'
+  | 'RESPONSE_INQUIRE'
+  | 'CLEANUP_START'
+  | 'CLEANUP_COMPLETE'
+  | 'CLEANUP_ERROR';
 
 /**
- * State handler function type
+ * Event payload types
+ * Documents expected payload types for each event (for documentation/reference only)
+ * EventEmitter cannot enforce these at compile time
  */
-type StateHandler = (config: RequestProxyConfigWithExecutor, session: ClientSession, event: StateEvent) => Promise<SessionState>;
+export interface EventPayloads {
+    CLIENT_SOCKET_CONNECTED: undefined;
+    START_AGENT_CONNECT: undefined;
+    AGENT_GREETING_OK: { greeting: string };
+    CLIENT_DATA_START: { data: Buffer };
+    CLIENT_DATA_PARTIAL: { data: Buffer };
+    CLIENT_DATA_COMPLETE: { data: string };
+    ERROR_OCCURRED: { error: string };
+    WRITE_OK: undefined;
+    AGENT_RESPONSE_COMPLETE: { response: string };
+    RESPONSE_OK_OR_ERR: { response: string };
+    RESPONSE_INQUIRE: { response: string };
+    CLEANUP_START: undefined;
+    CLEANUP_COMPLETE: undefined;
+    CLEANUP_ERROR: { error: string };
+}
 
 /**
- * Transition table: (state, event type) → next state
- * Used for validation and routing
+ * State transition table type: (currentState, event) → nextState
+ * Validates all valid state transitions at compile time
  */
-const transitionTable: Record<SessionState, Record<string, SessionState>> = {
+type StateTransitionTable = {
+    [K in SessionState]: {
+        [E in StateEvent]?: SessionState;
+    };
+};
+
+/**
+ * Transition table defining all valid (state, event) → nextState mappings
+ */
+const STATE_TRANSITIONS: StateTransitionTable = {
   DISCONNECTED: {
-    'CLIENT_SOCKET_CONNECTED': 'CLIENT_CONNECTED',
+    CLIENT_SOCKET_CONNECTED: 'CLIENT_CONNECTED',
   },
   CLIENT_CONNECTED: {
-    'START_AGENT_CONNECT': 'AGENT_CONNECTING',
+    START_AGENT_CONNECT: 'AGENT_CONNECTING',
   },
   AGENT_CONNECTING: {
-    'AGENT_GREETING_OK': 'READY',
-    'ERROR_OCCURRED': 'ERROR',
+    AGENT_GREETING_OK: 'READY',
+    ERROR_OCCURRED: 'ERROR',
   },
   READY: {
-    'CLIENT_DATA_START': 'BUFFERING_COMMAND',
+    CLIENT_DATA_START: 'BUFFERING_COMMAND',
   },
   BUFFERING_COMMAND: {
-    'CLIENT_DATA_PARTIAL': 'BUFFERING_COMMAND',
-    'CLIENT_DATA_COMPLETE': 'SENDING_TO_AGENT',
-    'ERROR_OCCURRED': 'ERROR',
+    CLIENT_DATA_PARTIAL: 'BUFFERING_COMMAND',
+    CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
+    ERROR_OCCURRED: 'ERROR',
   },
   BUFFERING_INQUIRE: {
-    'CLIENT_DATA_PARTIAL': 'BUFFERING_INQUIRE',
-    'CLIENT_DATA_COMPLETE': 'SENDING_TO_AGENT',
-    'ERROR_OCCURRED': 'ERROR',
+    CLIENT_DATA_PARTIAL: 'BUFFERING_INQUIRE',
+    CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
+    ERROR_OCCURRED: 'ERROR',
   },
   SENDING_TO_AGENT: {
-    'WRITE_OK': 'WAITING_FOR_AGENT',
-    'ERROR_OCCURRED': 'ERROR',
+    WRITE_OK: 'WAITING_FOR_AGENT',
+    ERROR_OCCURRED: 'ERROR',
   },
   WAITING_FOR_AGENT: {
-    'AGENT_RESPONSE_COMPLETE': 'SENDING_TO_CLIENT',
-    'ERROR_OCCURRED': 'ERROR',
+    AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
+    ERROR_OCCURRED: 'ERROR',
   },
   SENDING_TO_CLIENT: {
-    'WRITE_OK': 'READY',
-    'ERROR_OCCURRED': 'ERROR',
-    'RESPONSE_OK_OR_ERR': 'READY',
-    'RESPONSE_INQUIRE': 'BUFFERING_INQUIRE',
+    WRITE_OK: 'READY',
+    ERROR_OCCURRED: 'ERROR',
+    RESPONSE_OK_OR_ERR: 'READY',
+    RESPONSE_INQUIRE: 'BUFFERING_INQUIRE',
   },
   ERROR: {
-    'CLEANUP_START': 'CLOSING',
+    CLEANUP_START: 'CLOSING',
   },
   CLOSING: {
-    'CLEANUP_COMPLETE': 'DISCONNECTED',
-    'CLEANUP_ERROR': 'FATAL',
+    CLEANUP_COMPLETE: 'DISCONNECTED',
+    CLEANUP_ERROR: 'FATAL',
   },
   FATAL: {
     // No transitions out of FATAL

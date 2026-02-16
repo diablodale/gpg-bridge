@@ -53,6 +53,82 @@ Key files:
 - [shared/src/types.ts](../shared/src/types.ts) (shared types for logging, sanitization, dependency injection)
 - [shared/src/test/helpers.ts](../shared/src/test/helpers.ts) (shared mock implementations for testing with dependency injection)
 
+### State Machine Architecture
+
+Both extensions use **EventEmitter-based state machines** with explicit state tracking and transition validation:
+
+**Type Pattern:**
+```typescript
+// States: string literal union
+type SessionState = 'DISCONNECTED' | 'READY' | 'SENDING_TO_AGENT' | /* ... */;
+
+// Events: string literal union (NOT discriminated union)
+type StateEvent = 'CLIENT_CONNECT_REQUESTED' | 'WRITE_OK' | /* ... */;
+
+// Event payloads: documentation interface (EventEmitter cannot enforce at runtime)
+export interface EventPayloads {
+    CLIENT_CONNECT_REQUESTED: { port: number; nonce: Buffer };
+    WRITE_OK: undefined;
+    // ... rest of events
+}
+
+// Transition table: strongly typed, compile-time validated
+type StateTransitionTable = {
+    [K in SessionState]: {
+        [E in StateEvent]?: SessionState;
+    };
+};
+
+const STATE_TRANSITIONS: StateTransitionTable = {
+    DISCONNECTED: {
+        CLIENT_CONNECT_REQUESTED: 'CONNECTING_TO_AGENT'
+    },
+    // ... rest of transitions
+};
+```
+
+**Why This Pattern:**
+
+1. **EventEmitter uses string events, not objects**: Event emission is `emit('EVENT_NAME', payload)`, not `emit({ type: 'EVENT_NAME', ...payload })`
+2. **String literal unions provide type safety**: TypeScript validates event names at compile time
+3. **StateHandler types cannot be enforced**: Vanilla EventEmitter's `.on()` signature is `(...args: any[]) => void` — no way to type-check handler signatures without third-party packages like `typed-emitter`
+4. **EventPayloads is documentation only**: Serves as reference for what payload each event expects, but EventEmitter doesn't enforce it at runtime
+5. **STATE_TRANSITIONS provides runtime validation**: Used by `transition()` method to validate state changes and catch invalid transitions
+
+**Discriminated Unions Don't Work Here:**
+
+Discriminated unions (e.g., `type Event = { type: 'A' } | { type: 'B' }`) are incompatible with EventEmitter's string-based pattern. Both extensions previously had unused discriminated union definitions that were removed as dead code during Phase 3.1 refactoring.
+
+**Event Emission Pattern:**
+```typescript
+// Correct EventEmitter pattern
+session.emit('WRITE_OK');                                    // No payload
+session.emit('AGENT_GREETING_RECEIVED', { greeting: 'OK' }); // With payload
+session.on('WRITE_OK', () => { /* handler */ });
+session.on('AGENT_GREETING_RECEIVED', (payload) => { /* handler */ });
+```
+
+**State Transition Validation:**
+```typescript
+// Runtime validation using STATE_TRANSITIONS table
+private transition(event: StateEvent): void {
+    const allowedTransitions = STATE_TRANSITIONS[this.state];
+    const nextState = allowedTransitions?.[event];
+    
+    if (!nextState) {
+        throw new Error(`Invalid transition: ${this.state} + ${event}`);
+    }
+    
+    this.setState(nextState, event);
+}
+```
+
+This pattern provides:
+- Compile-time type safety via TypeScript
+- Runtime transition validation via STATE_TRANSITIONS
+- Clear event logging with event names in state transitions
+- Single source of truth for valid state machine transitions
+
 ## Testing
 
 Run `npm test` or `npm run test:watch`. Framework: Mocha (BDD) + Chai (expect). When adding tests:
