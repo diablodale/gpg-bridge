@@ -1075,6 +1075,263 @@ private transition(event: StateEvent): void {
 
 ---
 
+### Phase 3.3: Fix request-proxy Socket Close State Machine Bypass
+**File:** `request-proxy/src/services/requestProxy.ts`
+
+**Problem Discovery:**
+
+During Phase 3.2 validation work, discovered that request-proxy's socket 'close' handler **bypasses the state machine entirely**:
+
+```typescript
+// Lines 585-596: Current buggy implementation
+clientSocket.on('close', () => {
+    log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed`);
+    // Clean up session
+    if (sessionManager.sessionId) {
+        sessionManager.config.commandExecutor.disconnectAgent(sessionManager.sessionId).catch((err) => {
+            log(sessionManager.config, `[${sessionManager.sessionId}] Disconnect error: ${extractErrorMessage(err)}`);
+        });
+    }
+});
+```
+
+**Issues:**
+1. ❌ **No state transition validation**: Socket close directly calls `disconnectAgent()` without emitting events
+2. ❌ **Orphaned session state**: Session manager remains in BUFFERING_COMMAND/READY/etc. forever
+3. ❌ **Missing transitions**: STATE_TRANSITIONS table has no way to handle spontaneous client disconnection
+4. ❌ **Inconsistent naming**: request-proxy uses `CLEANUP_START` event, agent-proxy uses `CLEANUP_REQUESTED`
+5. ❌ **Missing hadError payload**: agent-proxy CLEANUP_REQUESTED has `{hadError: boolean}`, request-proxy CLEANUP_START has no payload
+
+**Root Cause:**
+When client socket spontaneously closes (client crash, network issue, kill), the 'close' handler must:
+- Emit event to session manager's state machine
+- Allow transition validation to occur
+- Trigger proper state-driven cleanup
+
+**Current State Coverage:**
+Only ERROR state has cleanup transition:
+```typescript
+ERROR: {
+    CLEANUP_START: 'CLOSING'  // Only this!
+}
+```
+
+**Missing Transitions:**
+All socket-having states need spontaneous cleanup capability:
+- CLIENT_CONNECTED → (client drops before agent greeting)
+- AGENT_CONNECTING → (client drops during agent connection)
+- READY → (client drops while idle)
+- BUFFERING_COMMAND → (client drops mid-command)
+- BUFFERING_INQUIRE → (client drops mid-inquire)
+- SENDING_TO_AGENT → (client drops during agent write)
+- WAITING_FOR_AGENT → (client drops during agent response)
+- SENDING_TO_CLIENT → (client drops during response write)
+
+**Agent-Proxy Reference Implementation:**
+agent-proxy handles this correctly (lines 339-351):
+```typescript
+socket.once('close', (hadError: boolean) => {
+    log(this.config, `[${this.sessionId}] Socket closed (hadError=${hadError})`);
+
+    if (hadError) {
+        // Transmission error during socket I/O
+        this.emit('ERROR_OCCURRED', { error: new Error('Socket closed with transmission error') });
+    } else {
+        // Clean/graceful socket close
+        this.emit('CLEANUP_REQUESTED', { hadError: false });
+    }
+});
+```
+
+All agent-proxy socket-having states have CLEANUP_REQUESTED → CLOSING (lines 69-93):
+```typescript
+CONNECTING_TO_AGENT: { CLEANUP_REQUESTED: 'CLOSING' },
+READY: { CLEANUP_REQUESTED: 'CLOSING' },
+SENDING_TO_AGENT: { CLEANUP_REQUESTED: 'CLOSING' },
+WAITING_FOR_AGENT: { CLEANUP_REQUESTED: 'CLOSING' },
+ERROR: { CLEANUP_REQUESTED: 'CLOSING' }
+```
+
+**Refactoring Plan:**
+
+**Phase 3.3a: Rename Event and Add Payload Type**
+
+- [ ] Rename StateEvent: `CLEANUP_START` → `CLEANUP_REQUESTED`
+- [ ] Update EventPayloads interface:
+  ```typescript
+  CLEANUP_REQUESTED: { hadError: boolean };  // Was undefined for CLEANUP_START
+  ```
+- [ ] Update ERROR state transition:
+  ```typescript
+  ERROR: {
+      CLEANUP_REQUESTED: 'CLOSING'  // Was CLEANUP_START
+  }
+  ```
+
+**Phase 3.3b: Add Missing Transitions to STATE_TRANSITIONS**
+
+Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
+
+- [ ] CLIENT_CONNECTED
+  ```typescript
+  CLIENT_CONNECTED: {
+      START_AGENT_CONNECT: 'AGENT_CONNECTING',
+      ERROR_OCCURRED: 'ERROR',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops before agent greeting
+  }
+  ```
+
+- [ ] AGENT_CONNECTING
+  ```typescript
+  AGENT_CONNECTING: {
+      AGENT_GREETING_OK: 'READY',
+      ERROR_OCCURRED: 'ERROR',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops during agent connection
+  }
+  ```
+
+- [ ] READY
+  ```typescript
+  READY: {
+      CLIENT_DATA_START: 'BUFFERING_COMMAND',
+      ERROR_OCCURRED: 'ERROR',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops while idle
+  }
+  ```
+
+- [ ] BUFFERING_COMMAND
+  ```typescript
+  BUFFERING_COMMAND: {
+      CLIENT_DATA_PARTIAL: 'BUFFERING_COMMAND',
+      CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
+      ERROR_OCCURRED: 'ERROR',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops mid-command
+  }
+  ```
+
+- [ ] BUFFERING_INQUIRE
+  ```typescript
+  BUFFERING_INQUIRE: {
+      CLIENT_DATA_PARTIAL: 'BUFFERING_INQUIRE',
+      CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
+      ERROR_OCCURRED: 'ERROR',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops mid-inquire
+  }
+  ```
+
+- [ ] SENDING_TO_AGENT
+  ```typescript
+  SENDING_TO_AGENT: {
+      WRITE_OK: 'WAITING_FOR_AGENT',
+      ERROR_OCCURRED: 'ERROR',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops during agent write
+  }
+  ```
+
+- [ ] WAITING_FOR_AGENT
+  ```typescript
+  WAITING_FOR_AGENT: {
+      AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
+      ERROR_OCCURRED: 'ERROR',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops during agent response
+  }
+  ```
+
+- [ ] SENDING_TO_CLIENT
+  ```typescript
+  SENDING_TO_CLIENT: {
+      WRITE_OK: 'READY',
+      ERROR_OCCURRED: 'ERROR',
+      RESPONSE_OK_OR_ERR: 'READY',
+      RESPONSE_INQUIRE: 'BUFFERING_INQUIRE',
+      CLEANUP_REQUESTED: 'CLOSING'  // NEW: client drops during response write
+  }
+  ```
+
+**Phase 3.3c: Update Event Handler**
+
+- [ ] Rename handler method: `handleCleanupStart` → `handleCleanupRequested`
+- [ ] Update handler signature to accept payload:
+  ```typescript
+  private handleCleanupRequested(hadError: boolean): void {
+      this.transition('CLEANUP_REQUESTED');
+      log(this.config, `[${this.sessionId ?? 'pending'}] Starting cleanup (hadError=${hadError})`);
+      // ... existing cleanup logic ...
+  }
+  ```
+- [ ] Update event registration in constructor:
+  ```typescript
+  this.on('CLEANUP_REQUESTED', this.handleCleanupRequested.bind(this));
+  ```
+
+**Phase 3.3d: Fix Socket 'close' Handler**
+
+Replace direct cleanup with event emission:
+
+- [ ] Update clientSocket.on('close') handler (lines 585-596):
+  ```typescript
+  // 'close' fires when the socket is fully closed and resources are released
+  // hadError arg indicates if it closed because of an error
+  // event sequences:
+  // - OS error: 'error' -> 'close'
+  // - graceful remote shutdown: 'end' -> 'close'
+  // - local shutdown: socket.end() -> 'close'
+  // - local destroy without arg: socket.destroy() -> 'close'
+  clientSocket.on('close', (hadError: boolean) => {
+      log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed (hadError=${hadError})`);
+      
+      // Emit event to state machine for validated cleanup
+      if (hadError) {
+          // Transmission error during socket I/O
+          sessionManager.emit('ERROR_OCCURRED', 'Socket closed with transmission error');
+      } else {
+          // Clean/graceful socket close
+          sessionManager.emit('CLEANUP_REQUESTED', hadError);
+      }
+  });
+  ```
+
+**Phase 3.3e: Update handleErrorOccurred**
+
+- [ ] Update `handleErrorOccurred` to emit CLEANUP_REQUESTED:
+  ```typescript
+  private handleErrorOccurred(error: string): void {
+      this.transition('ERROR_OCCURRED');
+      log(this.config, `[${this.sessionId ?? 'pending'}] ${error}`);
+
+      // Start cleanup sequence
+      this.emit('CLEANUP_REQUESTED', true);  // hadError=true
+  }
+  ```
+
+**Phase 3.3f: Verification**
+
+- [ ] Compile request-proxy: `npm run compile`
+- [ ] Run all tests: `npm test` (expect all 109 tests to pass)
+- [ ] Verify transition validation works:
+  - Client drops in READY → CLEANUP_REQUESTED → CLOSING ✓
+  - Client drops in BUFFERING_COMMAND → CLEANUP_REQUESTED → CLOSING ✓
+  - Client drops in WAITING_FOR_AGENT → CLEANUP_REQUESTED → CLOSING ✓
+  - All socket-having states can transition to CLOSING via CLEANUP_REQUESTED ✓
+
+**Phase 3.3g: Documentation**
+
+- [ ] Update AGENTS.md: Document CLEANUP_REQUESTED pattern with hadError payload
+- [ ] Update this plan: Mark Phase 3.3 complete
+
+**Deliverable:** ✅ request-proxy socket 'close' handler properly integrated with state machine
+**Target:** Consistent event-driven cleanup matching agent-proxy architecture
+**Status:** Not started
+
+**Benefits:**
+1. ✅ **State machine integrity**: All state changes validated by STATE_TRANSITIONS
+2. ✅ **Consistent naming**: Both extensions use CLEANUP_REQUESTED
+3. ✅ **Proper payload**: hadError boolean distinguishes graceful vs error cleanup
+4. ✅ **Complete coverage**: All socket-having states can handle spontaneous disconnection
+5. ✅ **Fail-fast validation**: Invalid cleanup attempts caught immediately
+
+---
+
 ### Phase 4: State Handlers Implementation
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
