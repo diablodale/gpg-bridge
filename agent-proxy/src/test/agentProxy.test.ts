@@ -54,6 +54,19 @@ describe('AgentProxy', () => {
             const socket = mockSocketFactory.getLastSocket();
             expect(socket).to.exist;
 
+            // Verify connection was made to correct port from socket file
+            const connectionOptions = mockSocketFactory.lastConnectionOptions as { host: string; port: number };
+            expect(connectionOptions).to.exist;
+            expect(connectionOptions.port).to.equal(31415);
+            expect(connectionOptions.host).to.equal('localhost');
+
+            // Verify nonce was written to socket (first write should be the 16-byte nonce)
+            expect(socket!.data.length).to.be.greaterThan(0);
+            const writtenNonce = socket!.data[0];
+            expect(writtenNonce.length).to.equal(16);
+            const expectedNonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+            expect(writtenNonce.equals(expectedNonce)).to.be.true;
+
             // Simulate greeting from agent
             socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
 
@@ -793,64 +806,6 @@ describe('AgentProxy', () => {
             const responseBuffer = Buffer.from(cmdResult.response, 'latin1');
             expect(responseBuffer.length).to.be.greaterThan(256);
         });
-    });
-
-    describe('socket file parsing', () => {
-        it('should parse valid socket file (port, 16-byte nonce)', () => {
-            const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-            const socketFileContent = Buffer.concat([
-                Buffer.from('31415\n', 'utf-8'),
-                nonce
-            ]);
-            mockFileSystem.setFile(socketPath, socketFileContent);
-
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
-
-            // If parsing succeeded, connectAgent should work
-            expect(() => agentProxy.connectAgent()).to.not.throw();
-        });
-
-        it('should parse valid socket file format correctly', () => {
-            // Socket file parsing is tested in shared/src/test/protocol.test.ts
-            // This test verifies integration only
-            const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-            const socketFileContent = Buffer.concat([
-                Buffer.from('31415\n', 'utf-8'),
-                nonce
-            ]);
-            mockFileSystem.setFile(socketPath, socketFileContent);
-
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
-
-            // If parsing succeeded, connectAgent should work
-            expect(() => agentProxy.connectAgent()).to.not.throw();
-        });
-
-        // Socket file edge case validation is in shared/src/test/protocol.test.ts
-
-
-
-
     });
 
     describe('timeout handling', () => {

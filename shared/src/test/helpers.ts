@@ -332,6 +332,7 @@ export class MockCommandExecutor implements ICommandExecutor {
 export class MockSocketFactory implements ISocketFactory {
     public sockets: MockSocket[] = [];
     public connectError: Error | null = null;
+    public lastConnectionOptions: { host: string; port: number } | { path: string } | null = null;
     private connectDelay: number = 0;
     private nextWriteError: Error | null = null;
 
@@ -339,6 +340,7 @@ export class MockSocketFactory implements ISocketFactory {
         options: { host: string; port: number } | { path: string },
         connectListener?: () => void
     ): any {
+        this.lastConnectionOptions = options;
         const socket = new MockSocket();
         this.sockets.push(socket);
 
