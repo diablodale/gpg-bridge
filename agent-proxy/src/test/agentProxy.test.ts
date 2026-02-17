@@ -965,6 +965,33 @@ describe('AgentProxy', () => {
             expect(result.sessionId).to.exist;
             expect(result.greeting).to.include('OK');
         });
+
+        it('should handle socket close after bad nonce (GPG agent behavior)', async () => {
+            // Simulates GPG agent receiving invalid nonce and immediately closing socket
+            // Per gpg-agent source: check_nonce() calls assuan_sock_close() on bad nonce
+            mockSocketFactory.setCloseAfterFirstWrite();
+
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            try {
+                await agentProxy.connectAgent();
+                expect.fail('Should have failed due to socket close');
+            } catch (error: any) {
+                expect(error.message).to.match(/Session closed|closed/i);
+                expect(agentProxy.isRunning()).to.equal(false);
+                expect(agentProxy.getSessionCount()).to.equal(0);
+            }
+        });
     });
 
     describe('error paths', () => {
@@ -1546,6 +1573,143 @@ describe('AgentProxy', () => {
 
             // Session should be cleaned up
             expect(agentProxy.isRunning()).to.equal(false);
+        });
+    });
+
+    describe('Phase 7: Protocol Violations', () => {
+        // Note: Protocol violation guard exists in agentProxy.ts:767-772
+        // Testing specific transient states (SENDING_TO_AGENT, WAITING_FOR_AGENT, etc.)
+        // creates race conditions because state transitions complete synchronously.
+        // The guard is verified by code review. This test confirms it rejects invalid sessions.
+
+        it('should reject sendCommands on invalid sessionId', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Try to send command without connecting
+            try {
+                await agentProxy.sendCommands('nonexistent-session', 'VERSION\n');
+                expect.fail('Should have rejected invalid session');
+            } catch (error: any) {
+                expect(error.message).to.include('Invalid session');
+            }
+        });
+    });
+
+    describe('Phase 7: Greeting Validation', () => {
+        it('should accept greeting with just "OK\\n"', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+
+            // Send minimal valid greeting
+            socket!.emit('data', Buffer.from('OK\n'));
+
+            const result = await connectPromise;
+            expect(result.sessionId).to.exist;
+            expect(result.greeting).to.equal('OK\n');
+        });
+
+        // Note: GPG agent does NOT send ERR for bad nonce - it immediately closes socket
+        // See gpg-agent source: check_nonce() calls assuan_sock_close() on nonce failure
+        // Socket close behavior already tested in "Phase 3.3: Socket Close State Machine Integration"
+    });
+
+    describe('Phase 7: Socket Close Coverage Gaps', () => {
+        it('should handle socket error close in WAITING_FOR_AGENT state', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+
+            // Send command to transition to WAITING_FOR_AGENT
+            const cmdPromise = agentProxy.sendCommands(sessionId, 'VERSION\n');
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Socket closes with error while waiting for response
+            socket!.destroy(new Error('Connection lost'));
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Command should reject
+            try {
+                await cmdPromise;
+                expect.fail('Should have rejected due to socket error');
+            } catch (error: any) {
+                expect(error.message).to.match(/Connection lost|Session closed/);
+            }
+
+            // Verify error was logged
+            const errorLogs = logs.filter(log => log.includes('error') || log.includes('Connection lost'));
+            expect(errorLogs.length).to.be.greaterThan(0);
+        });
+
+        it('should handle socket error in CONNECTING_TO_AGENT state', async () => {
+            const logs: string[] = [];
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: (msg) => logs.push(msg),
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Configure socket factory to emit error on connection attempt
+            mockSocketFactory.setConnectError(new Error('Connection refused'));
+
+            // Connection should fail during socket connection phase
+            try {
+                await agentProxy.connectAgent();
+                expect.fail('Should have rejected due to socket error in CONNECTING_TO_AGENT');
+            } catch (error: any) {
+                expect(error.message).to.include('Connection to gpg-agent failed');
+            }
+
+            // Verify error was logged
+            const errorLogs = logs.filter(log => log.includes('Connection to gpg-agent failed'));
+            expect(errorLogs.length).to.be.greaterThan(0);
         });
     });
 

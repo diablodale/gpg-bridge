@@ -347,28 +347,12 @@ export class AgentSessionManager extends EventEmitter {
     /**
      * Handle AGENT_DATA_RECEIVED: complete response received (greeting or command response)
      * Transition: WAITING_FOR_AGENT → READY
-     * Validates greeting on first response only
      */
     private handleAgentDataReceived(payload: EventPayloads['AGENT_DATA_RECEIVED']): void {
-        const { response } = payload;
-        const isGreeting = this.greetingTimeout !== null;
-
-        // Validate greeting (first response only)
-        if (isGreeting) {
-            const greetingLine = response.trim();
-            if (!greetingLine.startsWith('OK')) {
-                log(this.config, `[${this.sessionId}] Invalid greeting: ${greetingLine}`);
-                this.emit('ERROR_OCCURRED', {
-                    error: new Error(`Invalid greeting from agent: ${greetingLine}`)
-                });
-                return;
-            }
-            log(this.config, `[${this.sessionId}] Connected successfully, ready for commands`);
-        } else {
-            log(this.config, `[${this.sessionId}] Response complete, ready for next command`);
-        }
-
+        // Note: GPG agent does NOT send ERR for bad nonce - it immediately closes socket
+        // See gpg-agent source: check_nonce() calls assuan_sock_close() on nonce failure
         this.transition('AGENT_DATA_RECEIVED');
+        log(this.config, `[${this.sessionId}] Response received, ready for next command`);
     }
 
     /**
@@ -659,7 +643,7 @@ export class AgentProxy {
     private readonly sessionTimeouts = {
         connection: 5000,
         greeting: 5000,
-        response: 30000
+        response: 30000     // BUGBUG due to pinentry and humans it is unknown and likely unwise to set this timeout
     };
 
     constructor(private config: AgentProxyConfig, deps?: Partial<AgentProxyDeps>) {

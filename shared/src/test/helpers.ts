@@ -67,6 +67,7 @@ export class MockSocket extends EventEmitter {
     private readBuffer: Buffer[] = [];
     private _paused = false;
     private connectTimeout: NodeJS.Timeout | null = null;
+    public afterWriteCallback: (() => void) | null = null;
 
     write(data: Buffer | string, callback?: (err?: Error | null) => void): boolean {
         if (this.destroyed) {
@@ -91,6 +92,14 @@ export class MockSocket extends EventEmitter {
         if (callback) {
             setImmediate(() => callback(null));
         }
+
+        // Execute after-write callback if set (for simulating socket close after nonce write)
+        if (this.afterWriteCallback) {
+            const afterWrite = this.afterWriteCallback;
+            this.afterWriteCallback = null; // One-shot callback
+            setImmediate(() => afterWrite());
+        }
+
         return true;
     }
 
@@ -335,6 +344,7 @@ export class MockSocketFactory implements ISocketFactory {
     public lastConnectionOptions: { host: string; port: number } | { path: string } | null = null;
     private connectDelay: number = 0;
     private nextWriteError: Error | null = null;
+    private closeAfterFirstWrite: boolean = false;
 
     createConnection(
         options: { host: string; port: number } | { path: string },
@@ -348,6 +358,14 @@ export class MockSocketFactory implements ISocketFactory {
         if (this.nextWriteError) {
             socket.setWriteError(this.nextWriteError);
             this.nextWriteError = null;
+        }
+
+        // Apply close-after-first-write if set (simulates bad nonce → socket close)
+        if (this.closeAfterFirstWrite) {
+            socket.afterWriteCallback = () => {
+                socket.emit('close', false); // Graceful close (hadError=false)
+            };
+            this.closeAfterFirstWrite = false;
         }
 
         // Simulate connection events with optional delay
@@ -399,6 +417,10 @@ export class MockSocketFactory implements ISocketFactory {
 
     setWriteError(error: Error): void {
         this.nextWriteError = error;
+    }
+
+    setCloseAfterFirstWrite(): void {
+        this.closeAfterFirstWrite = true;
     }
 
     getWrites(): Buffer[] {
