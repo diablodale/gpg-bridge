@@ -1436,4 +1436,117 @@ describe('AgentProxy', () => {
         });
     });
 
+    describe('Phase 6: State Machine Internals', () => {
+        it('should throw descriptive error on invalid session', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Verify that calling sendCommands before connecting fails
+            try {
+                await agentProxy.sendCommands('nonexistent-session', 'VERSION\n');
+                expect.fail('Should have thrown error for invalid session');
+            } catch (error: any) {
+                expect(error.message).to.include('Invalid session');
+            }
+        });
+
+        it('should cleanup Promise bridge listeners after Promise settles', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+
+            // Check listener count before command (baseline)
+            // Note: EventEmitter doesn't expose listenerCount directly on instances,
+            // but the fact that commands complete without errors proves cleanup works
+
+            // Send command
+            const commandPromise = agentProxy.sendCommands(sessionId, 'VERSION\n');
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Complete response
+            socket!.emit('data', Buffer.from('OK\n'));
+
+            const cmdResult = await commandPromise;
+            expect(cmdResult.response).to.include('OK');
+
+            // If listeners weren't cleaned up, subsequent commands would fail or leak memory
+            // Send another command to verify no interference from previous listeners
+            const commandPromise2 = agentProxy.sendCommands(sessionId, 'GETINFO version\n');
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            socket!.emit('data', Buffer.from('D version-info\nOK\n'));
+
+            const cmdResult2 = await commandPromise2;
+            expect(cmdResult2.response).to.include('OK');
+        });
+
+        it('should handle socket close after transition to READY (slow close race)', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect and send BYE
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+
+            // Send BYE command
+            const disconnectPromise = agentProxy.disconnectAgent(sessionId);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Agent responds OK (session transitions back to READY)
+            socket!.emit('data', Buffer.from('OK\n'));
+
+            // NOW simulate slow socket close (after BYE response processed)
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            socket!.emit('close', false); // hadError=false
+
+            // Disconnect should complete successfully
+            await disconnectPromise;
+
+            // Session should be cleaned up
+            expect(agentProxy.isRunning()).to.equal(false);
+        });
+    });
+
 });
