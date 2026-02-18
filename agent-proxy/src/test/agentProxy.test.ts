@@ -1872,4 +1872,593 @@ describe('AgentProxy', () => {
         });
     });
 
+    describe('Phase 8: Concurrent Sessions & Integration', () => {
+        it('should support multiple concurrent sessions with independent state machines', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect session 1
+            const connect1Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket1 = mockSocketFactory.getLastSocket();
+            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result1 = await connect1Promise;
+            const sessionId1 = result1.sessionId;
+
+            // Connect session 2
+            const connect2Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket2 = mockSocketFactory.getLastSocket();
+            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result2 = await connect2Promise;
+            const sessionId2 = result2.sessionId;
+
+            // Verify 2 sessions running
+            expect(agentProxy.getSessionCount()).to.equal(2);
+            expect(agentProxy.isRunning()).to.equal(true);
+
+            // Verify sessions are independent
+            expect(sessionId1).to.not.equal(sessionId2);
+            expect(socket1).to.not.equal(socket2);
+
+            // Send command to session 1
+            const write1Promise = socket1!.waitForWrite();
+            const cmd1Promise = agentProxy.sendCommands(sessionId1, 'VERSION\n');
+            await write1Promise;
+            socket1!.emit('data', Buffer.from('D 2.2.19\nOK\n'));
+            const cmd1Result = await cmd1Promise;
+            expect(cmd1Result.response).to.equal('D 2.2.19\nOK\n');
+
+            // Send command to session 2 while session 1 still active
+            const write2Promise = socket2!.waitForWrite();
+            const cmd2Promise = agentProxy.sendCommands(sessionId2, 'GETINFO version\n');
+            await write2Promise;
+            socket2!.emit('data', Buffer.from('D info\nOK\n'));
+            const cmd2Result = await cmd2Promise;
+            expect(cmd2Result.response).to.equal('D info\nOK\n');
+
+            // Both sessions still running
+            expect(agentProxy.getSessionCount()).to.equal(2);
+
+            // Cleanup session 1 - use same pattern as existing "should send BYE command" test
+            const bye1Promise = agentProxy.disconnectAgent(sessionId1);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket1!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket1!.emit('close', false);
+            await bye1Promise;
+            expect(agentProxy.getSessionCount()).to.equal(1);
+
+            // Cleanup session 2
+            const bye2Promise = agentProxy.disconnectAgent(sessionId2);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('close', false);
+            await bye2Promise;
+            expect(agentProxy.getSessionCount()).to.equal(0);
+            expect(agentProxy.isRunning()).to.equal(false);
+        });
+
+        it('should isolate sessions so error in one does not affect others', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect 2 sessions
+            const connect1Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket1 = mockSocketFactory.getLastSocket();
+            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result1 = await connect1Promise;
+            const sessionId1 = result1.sessionId;
+
+            const connect2Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket2 = mockSocketFactory.getLastSocket();
+            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result2 = await connect2Promise;
+            const sessionId2 = result2.sessionId;
+
+            expect(agentProxy.getSessionCount()).to.equal(2);
+
+            // Session 1 encounters socket error
+            socket1!.destroy();
+            socket1!.emit('close', true); // hadError = true
+
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Session 2 should still be operational
+            expect(agentProxy.getSessionCount()).to.equal(1);
+
+            const write2Promise = socket2!.waitForWrite();
+            const cmd2Promise = agentProxy.sendCommands(sessionId2, 'NOP\n');
+            await write2Promise;
+            socket2!.emit('data', Buffer.from('OK\n'));
+            const cmd2Result = await cmd2Promise;
+            expect(cmd2Result.response).to.equal('OK\n');
+
+            // Cleanup session 2
+            const bye2Promise = agentProxy.disconnectAgent(sessionId2);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('close', false);
+            await bye2Promise;
+            expect(agentProxy.getSessionCount()).to.equal(0);
+        });
+
+        it('should handle end-to-end flow with interactive operation', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const connectResult = await connectPromise;
+            const sessionId = connectResult.sessionId;
+
+            // Send non-interactive command
+            const write1Promise = socket!.waitForWrite();
+            const cmd1Promise = agentProxy.sendCommands(sessionId, 'GETINFO version\n');
+            await write1Promise;
+            socket!.emit('data', Buffer.from('D 2.2.19\nOK\n'));
+            const cmd1Result = await cmd1Promise;
+            expect(cmd1Result.response).to.equal('D 2.2.19\nOK\n');
+
+            // Send interactive PKSIGN command
+            const writeSignPromise = socket!.waitForWrite();
+            const signPromise = agentProxy.sendCommands(sessionId, 'PKSIGN\n');
+            await writeSignPromise;
+            socket!.emit('data', Buffer.from('S INQUIRE_MAXLEN 4096\nINQUIRE PIN\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Respond to inquiry
+            const writeInquiryPromise = socket!.waitForWrite();
+            const inquiryPromise = agentProxy.sendCommands(sessionId, 'D 1234\nEND\n');
+            await writeInquiryPromise;
+            socket!.emit('data', Buffer.from('D signature_data\nOK\n'));
+            const inquiryResult = await inquiryPromise;
+            expect(inquiryResult.response).to.equal('D signature_data\nOK\n');
+
+            const signResult = await signPromise;
+            expect(signResult.response).to.include('INQUIRE PIN');
+
+            // Disconnect
+            const byePromise = agentProxy.disconnectAgent(sessionId);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket!.emit('close', false);
+            await byePromise;
+            expect(agentProxy.getSessionCount()).to.equal(0);
+        });
+
+        it('should recover from agent connection failure for one session while keeping others', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect successful session
+            const connect1Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket1 = mockSocketFactory.getLastSocket();
+            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result1 = await connect1Promise;
+            const sessionId1 = result1.sessionId;
+
+            expect(agentProxy.getSessionCount()).to.equal(1);
+
+            // Attempt connection that fails - socket closes before greeting
+            const connect2Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket2 = mockSocketFactory.getLastSocket();
+            // Simulate socket closing immediately (connection refused or similar)
+            socket2!.end();
+
+            try {
+                await connect2Promise;
+                expect.fail('Should have thrown');
+            } catch (err: any) {
+                expect(err).to.exist;
+            }
+
+            // First session still operational
+            expect(agentProxy.getSessionCount()).to.equal(1);
+
+            const writeCmdPromise = socket1!.waitForWrite();
+            const cmdPromise = agentProxy.sendCommands(sessionId1, 'NOP\n');
+            await writeCmdPromise;
+            socket1!.emit('data', Buffer.from('OK\n'));
+            const cmdResult = await cmdPromise;
+            expect(cmdResult.response).to.equal('OK\n');
+
+            // Cleanup
+            const byePromise = agentProxy.disconnectAgent(sessionId1);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket1!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket1!.emit('close', false);
+            await byePromise;
+            expect(agentProxy.getSessionCount()).to.equal(0);
+        });
+
+        it('should allow disconnecting one session while another is actively sending commands', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect session 1
+            const connect1Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket1 = mockSocketFactory.getLastSocket();
+            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result1 = await connect1Promise;
+            const sessionId1 = result1.sessionId;
+
+            // Connect session 2
+            const connect2Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket2 = mockSocketFactory.getLastSocket();
+            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result2 = await connect2Promise;
+            const sessionId2 = result2.sessionId;
+
+            expect(agentProxy.getSessionCount()).to.equal(2);
+
+            // Start long-running command on session 1
+            const write1Promise = socket1!.waitForWrite();
+            const cmd1Promise = agentProxy.sendCommands(sessionId1, 'LONG_OPERATION\n');
+            await write1Promise;
+            // Don't respond yet - command is in progress
+
+            // While session 1 is waiting, disconnect session 2
+            const bye2Promise = agentProxy.disconnectAgent(sessionId2);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('close', false);
+            await bye2Promise;
+
+            // Session 1 should still be operational
+            expect(agentProxy.getSessionCount()).to.equal(1);
+
+            // Complete session 1's command
+            socket1!.emit('data', Buffer.from('D result\nOK\n'));
+            const cmd1Result = await cmd1Promise;
+            expect(cmd1Result.response).to.equal('D result\nOK\n');
+
+            // Cleanup session 1
+            const bye1Promise = agentProxy.disconnectAgent(sessionId1);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket1!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket1!.emit('close', false);
+            await bye1Promise;
+            expect(agentProxy.getSessionCount()).to.equal(0);
+        });
+
+        it('should handle rapid sequential session creation and cleanup cycles', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Create and cleanup 3 sessions in rapid succession
+            for (let i = 0; i < 3; i++) {
+                const connectPromise = agentProxy.connectAgent();
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                const socket = mockSocketFactory.getLastSocket();
+                socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+                const result = await connectPromise;
+                const sessionId = result.sessionId;
+
+                expect(agentProxy.getSessionCount()).to.equal(1);
+
+                // Send quick command
+                const writePromise = socket!.waitForWrite();
+                const cmdPromise = agentProxy.sendCommands(sessionId, 'NOP\n');
+                await writePromise;
+                socket!.emit('data', Buffer.from('OK\n'));
+                const cmdResult = await cmdPromise;
+                expect(cmdResult.response).to.equal('OK\n');
+
+                // Cleanup
+                const byePromise = agentProxy.disconnectAgent(sessionId);
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                socket!.emit('data', Buffer.from('OK\n'));
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                socket!.emit('close', false);
+                await byePromise;
+                expect(agentProxy.getSessionCount()).to.equal(0);
+            }
+
+            // All sessions cleaned up
+            expect(agentProxy.isRunning()).to.equal(false);
+        });
+
+        it('should maintain session state isolation during write errors', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect session 1
+            const connect1Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket1 = mockSocketFactory.getLastSocket();
+            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result1 = await connect1Promise;
+            const sessionId1 = result1.sessionId;
+
+            // Connect session 2
+            const connect2Promise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket2 = mockSocketFactory.getLastSocket();
+            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result2 = await connect2Promise;
+            const sessionId2 = result2.sessionId;
+
+            expect(agentProxy.getSessionCount()).to.equal(2);
+
+            // Inject write error on socket1
+            socket1!.setWriteError(new Error('Write failed'));
+
+            // Session 1 command should fail
+            try {
+                await agentProxy.sendCommands(sessionId1, 'TEST\n');
+                expect.fail('Should have thrown write error');
+            } catch (error: any) {
+                expect(error.message).to.match(/write|Write/i);
+            }
+
+            // Session 1 should be cleaned up due to error, session 2 remains
+            expect(agentProxy.getSessionCount()).to.equal(1);
+
+            // Session 2 should still work (different socket, no error)
+            const write2Promise = socket2!.waitForWrite();
+            const cmd2Promise = agentProxy.sendCommands(sessionId2, 'VERSION\n');
+            await write2Promise;
+            socket2!.emit('data', Buffer.from('D 2.2.19\nOK\n'));
+            const cmd2Result = await cmd2Promise;
+            expect(cmd2Result.response).to.equal('D 2.2.19\nOK\n');
+
+            // Cleanup session 2
+            const bye2Promise = agentProxy.disconnectAgent(sessionId2);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket2!.emit('close', false);
+            await bye2Promise;
+
+            // All sessions cleaned up
+            expect(agentProxy.getSessionCount()).to.equal(0);
+        });
+
+        it('should support full end-to-end workflow: connect, multiple operations, graceful disconnect', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Step 1: Connect
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+            expect(result.greeting).to.equal('OK GPG-Agent\n');
+
+            // Step 2: Initial handshake - get version
+            const write1Promise = socket!.waitForWrite();
+            const version1Promise = agentProxy.sendCommands(sessionId, 'GETINFO version\n');
+            await write1Promise;
+            socket!.emit('data', Buffer.from('D 2.2.19\nOK\n'));
+            const version1Result = await version1Promise;
+            expect(version1Result.response).to.equal('D 2.2.19\nOK\n');
+
+            // Step 3: Configure agent
+            const write2Promise = socket!.waitForWrite();
+            const config1Promise = agentProxy.sendCommands(sessionId, 'OPTION ttyname=/dev/tty\n');
+            await write2Promise;
+            socket!.emit('data', Buffer.from('OK\n'));
+            const config1Result = await config1Promise;
+            expect(config1Result.response).to.equal('OK\n');
+
+            // Step 4: Perform operation
+            const write3Promise = socket!.waitForWrite();
+            const op1Promise = agentProxy.sendCommands(sessionId, 'KEYINFO --list\n');
+            await write3Promise;
+            socket!.emit('data', Buffer.from('S KEYINFO 1234ABCD\nOK\n'));
+            const op1Result = await op1Promise;
+            expect(op1Result.response).to.include('KEYINFO');
+
+            // Step 5: Another operation
+            const write4Promise = socket!.waitForWrite();
+            const op2Promise = agentProxy.sendCommands(sessionId, 'SCD SERIALNO\n');
+            await write4Promise;
+            socket!.emit('data', Buffer.from('D serialnumber\nOK\n'));
+            const op2Result = await op2Promise;
+            expect(op2Result.response).to.include('serialnumber');
+
+            // Step 6: Graceful disconnect
+            const byePromise = agentProxy.disconnectAgent(sessionId);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket!.emit('data', Buffer.from('OK closing connection\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket!.emit('close', false);
+            await byePromise;
+
+            // Step 7: Verify complete cleanup
+            expect(agentProxy.isRunning()).to.equal(false);
+            expect(agentProxy.getSessionCount()).to.equal(0);
+        });
+
+        it('should handle cleanup failure and transition to terminal error state', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            // Connect session
+            const connectPromise = agentProxy.connectAgent();
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const socket = mockSocketFactory.getLastSocket();
+            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            const result = await connectPromise;
+            const sessionId = result.sessionId;
+
+            expect(agentProxy.getSessionCount()).to.equal(1);
+
+            // Inject destroy error to simulate cleanup failure
+            socket!.setDestroyError(new Error('Socket destroy failed'));
+
+            // Attempt disconnect - cleanup will fail during socket.destroy()
+            const disconnectPromise = agentProxy.disconnectAgent(sessionId);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            socket!.emit('data', Buffer.from('OK\n'));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            // Socket close will still fire despite destroy error
+            socket!.emit('close', false);
+
+            // disconnectAgent should reject due to cleanup failure
+            try {
+                await disconnectPromise;
+                expect.fail('Should have rejected due to cleanup failure');
+            } catch (error: any) {
+                expect(error).to.exist;
+                // Error message should indicate cleanup failure
+                expect(error.message).to.match(/destroy|cleanup/i);
+            }
+
+            // Session should still be removed from Map (no memory leak)
+            // Even though cleanup had errors, the session is gone
+            expect(agentProxy.getSessionCount()).to.equal(0);
+            expect(agentProxy.isRunning()).to.equal(false);
+        });
+
+        it('should generate unique sessionIds for all sessions', async () => {
+            const agentProxy = new AgentProxy(
+                {
+                    logCallback: mockLogConfig.logCallback,
+                    gpgAgentSocketPath: socketPath,
+                    statusBarCallback: undefined
+                },
+                {
+                    fileSystem: mockFileSystem,
+                    socketFactory: mockSocketFactory
+                }
+            );
+
+            const sessionIds = new Set<string>();
+
+            // Create 10 sessions sequentially and collect their IDs
+            for (let i = 0; i < 10; i++) {
+                const connectPromise = agentProxy.connectAgent();
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                const socket = mockSocketFactory.getLastSocket();
+                socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+                const result = await connectPromise;
+
+                sessionIds.add(result.sessionId);
+                // Only one session at a time in this sequential test
+                expect(agentProxy.getSessionCount()).to.equal(1);
+
+                // Cleanup session
+                const byePromise = agentProxy.disconnectAgent(result.sessionId);
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                socket!.emit('data', Buffer.from('OK\n'));
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                socket!.emit('close', false);
+                await byePromise;
+                expect(agentProxy.getSessionCount()).to.equal(0);
+            }
+
+            // All 10 sessionIds should be unique
+            expect(sessionIds.size).to.equal(10);
+
+            // Verify they're all valid UUID format (optional but good practice)
+            sessionIds.forEach(id => {
+                expect(id).to.be.a('string');
+                expect(id.length).to.be.greaterThan(0);
+                // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                expect(id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+            });
+        });
+    });
+
 });
