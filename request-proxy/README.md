@@ -6,7 +6,7 @@ VS Code extension that creates a Unix socket server on the remote GPG agent sock
 
 ### State Machine Overview
 
-The request proxy uses an **EventEmitter-based state machine** with 11 states and 13 events to manage GPG protocol forwarding. Each client connection runs an independent state machine, allowing concurrent GPG operations from multiple processes.
+The request proxy uses an **EventEmitter-based state machine** with 11 states and 12 events to manage GPG protocol forwarding. Each client connection runs an independent state machine, allowing concurrent GPG operations from multiple processes.
 
 #### States (11 Total)
 
@@ -35,8 +35,7 @@ Terminal states:
 - `CLIENT_DATA_COMPLETE` — Complete command (`\n`) or D-block (`END\n`) received
 
 **Agent Events** (from agent-proxy via VS Code commands):
-- `AGENT_GREETING_OK` — Agent greeting received successfully
-- `AGENT_RESPONSE_COMPLETE` — Complete response from agent received
+- `AGENT_RESPONSE_COMPLETE` — Complete response from agent received (including initial greeting)
 - `RESPONSE_OK_OR_ERR` — Agent response is OK or ERR (return to READY)
 - `RESPONSE_INQUIRE` — Agent response contains INQUIRE (buffer D-block)
 
@@ -55,17 +54,20 @@ Terminal states:
 DISCONNECTED
   ↓ CLIENT_SOCKET_CONNECTED
 CONNECTING_TO_AGENT
-  ↓ AGENT_GREETING_OK
-READY
-  ↓ CLIENT_DATA_START
-BUFFERING_COMMAND ←──────────────┐
-  ↓ CLIENT_DATA_COMPLETE         │
-SENDING_TO_AGENT                 │
-  ↓ WRITE_OK                     │
-WAITING_FOR_AGENT                │
-  ↓ AGENT_RESPONSE_COMPLETE      │
-SENDING_TO_CLIENT                │
-  └─ RESPONSE_OK_OR_ERR ─────────┘
+  ↓ AGENT_RESPONSE_COMPLETE (greeting)
+SENDING_TO_CLIENT
+  ↓ WRITE_OK
+READY ←───────────────────────────┐
+  ↓ CLIENT_DATA_START             │
+BUFFERING_COMMAND                 │
+  ↓ CLIENT_DATA_COMPLETE          │
+SENDING_TO_AGENT                  │
+  ↓ WRITE_OK                      │
+WAITING_FOR_AGENT                 │
+  ↓ AGENT_RESPONSE_COMPLETE       │
+SENDING_TO_CLIENT                 │
+  ├─ RESPONSE_OK_OR_ERR ──────────┤
+  └─ WRITE_OK ────────────────────┘
 
 INQUIRE Flow:
 SENDING_TO_CLIENT
@@ -81,6 +83,9 @@ SENDING_TO_CLIENT
 
 Error from any state:
   → ERROR_OCCURRED → ERROR → CLEANUP_REQUESTED → CLOSING → DISCONNECTED
+
+Cleanup failure:
+  → CLEANUP_ERROR → FATAL (permanent dead end, session removed from Map)
 ```
 
 ### Socket Close Handling
@@ -186,10 +191,11 @@ Each client connection is managed independently:
 **Per-Client Session:**
 1. Client connects → `CLIENT_SOCKET_CONNECTED` → `CONNECTING_TO_AGENT`
 2. Pause socket (prevent data loss during agent connection)
-3. Connect to agent-proxy → `AGENT_GREETING_OK` → `READY`
-4. Resume socket
-5. Process commands in loop: buffer → send → wait → respond
-6. Client disconnects → cleanup → remove from Map
+3. Connect to agent-proxy, receive greeting → `AGENT_RESPONSE_COMPLETE` → `SENDING_TO_CLIENT`
+4. Write greeting to client socket → `WRITE_OK` → `READY`
+5. Resume socket — client can now send commands
+6. Process commands in loop: buffer → send → wait → respond
+7. Client disconnects → cleanup → remove from Map
 
 **Concurrent Sessions:**
 - Multiple clients supported (independent state machines)
@@ -294,9 +300,9 @@ The request proxy communicates with agent-proxy via three VS Code commands:
 
 ### `_gpg-agent-proxy.connectAgent`
 
-**Called:** When client connects (AGENT_CONNECTING state)  
+**Called:** When client connects (`CONNECTING_TO_AGENT` state)  
 **Returns:** `{ sessionId: string; greeting: string }`  
-**Purpose:** Establish agent connection and get greeting to forward to client
+**Purpose:** Establish agent connection; greeting is forwarded to client via the normal `AGENT_RESPONSE_COMPLETE` path
 
 ### `_gpg-agent-proxy.sendCommands`
 

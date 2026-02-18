@@ -102,11 +102,14 @@ Discriminated unions (e.g., `type Event = { type: 'A' } | { type: 'B' }`) are in
 **Event Emission Pattern:**
 ```typescript
 // Correct EventEmitter pattern
-session.emit('WRITE_OK');                                    // No payload
-session.emit('AGENT_GREETING_RECEIVED', { greeting: 'OK' }); // With payload
+session.emit('WRITE_OK');                                       // No payload
+session.emit('AGENT_RESPONSE_COMPLETE', 'OK Pleased to meet you\n'); // With payload
 session.on('WRITE_OK', () => { /* handler */ });
-session.on('AGENT_GREETING_RECEIVED', (payload) => { /* handler */ });
+session.on('AGENT_RESPONSE_COMPLETE', (response) => { /* handler */ });
 ```
+
+Note: agent greeting is not a special-cased event. `connectAgent()` returns a greeting string
+which is emitted as `AGENT_RESPONSE_COMPLETE` and flows through the normal response path.
 
 **State Transition Validation:**
 

@@ -3,7 +3,7 @@
  *
  * Creates a Unix socket server on the GPG agent socket path.
  * Implements an 11-state finite state machine to handle GPG Assuan protocol:
- *   DISCONNECTED → CONNECTING_TO_AGENT → READY
+ *   DISCONNECTED → CONNECTING_TO_AGENT → SENDING_TO_CLIENT → READY
  *   READY ↔ BUFFERING_COMMAND → SENDING_TO_AGENT ↔ WAITING_FOR_AGENT ↔ SENDING_TO_CLIENT
  *   READY ↔ BUFFERING_INQUIRE → SENDING_TO_AGENT
  *   Any state → ERROR → CLOSING → DISCONNECTED or FATAL
@@ -42,12 +42,11 @@ type SessionState =
   | 'FATAL';
 
 /**
- * State machine events (13 total)
+ * State machine events (12 total)
  * EventEmitter uses string event names, not discriminated union objects
  */
 type StateEvent =
   | 'CLIENT_SOCKET_CONNECTED'
-  | 'AGENT_GREETING_OK'
   | 'CLIENT_DATA_START'
   | 'CLIENT_DATA_PARTIAL'
   | 'CLIENT_DATA_COMPLETE'
@@ -67,7 +66,6 @@ type StateEvent =
  */
 export interface EventPayloads {
     CLIENT_SOCKET_CONNECTED: undefined;
-    AGENT_GREETING_OK: { greeting: string };
     CLIENT_DATA_START: { data: Buffer };
     CLIENT_DATA_PARTIAL: { data: Buffer };
     CLIENT_DATA_COMPLETE: { data: string };
@@ -99,7 +97,7 @@ const STATE_TRANSITIONS: StateTransitionTable = {
     CLIENT_SOCKET_CONNECTED: 'CONNECTING_TO_AGENT',
   },
   CONNECTING_TO_AGENT: {
-    AGENT_GREETING_OK: 'READY',
+    AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
     ERROR_OCCURRED: 'ERROR',
     CLEANUP_REQUESTED: 'CLOSING',
   },
@@ -200,7 +198,6 @@ class ClientSessionManager extends EventEmitter {
 
         // Single-fire initialization events
         this.once('CLIENT_SOCKET_CONNECTED', this.handleClientSocketConnected.bind(this));
-        this.once('AGENT_GREETING_OK', this.handleAgentGreetingOk.bind(this));
 
         // Multi-fire data/command events (multiple writes and data chunks per session)
         this.on('CLIENT_DATA_START', this.handleClientDataStart.bind(this));
@@ -260,9 +257,11 @@ class ClientSessionManager extends EventEmitter {
             this.sessionId = result.sessionId;
             log(this.config, `[${this.sessionId}] Connected to GPG Agent Proxy`);
 
-            // Emit greeting event
+            // Treat agent greeting as the first AGENT_RESPONSE_COMPLETE, then resume socket
             if (result.greeting) {
-                this.emit('AGENT_GREETING_OK', result.greeting);
+                this.emit('AGENT_RESPONSE_COMPLETE', result.greeting);
+                // Resume socket now that greeting has been forwarded to the client
+                this.socket.resume();
             } else {
                 this.emit('ERROR_OCCURRED', 'Agent connect failed: No greeting received');
             }
@@ -270,15 +269,6 @@ class ClientSessionManager extends EventEmitter {
             const msg = extractErrorMessage(err);
             this.emit('ERROR_OCCURRED', `Agent connect failed: ${msg}`);
         }
-    }
-
-    private handleAgentGreetingOk(greeting: string): void {
-        this.transition('AGENT_GREETING_OK');
-        log(this.config, `[${this.sessionId}] Agent greeting: ${sanitizeForLog(greeting)}`);
-        this.writeToClient(greeting, `Sending greeting to client: ${sanitizeForLog(greeting)}`);
-
-        // Resume socket after greeting is sent - client can now send commands
-        this.socket.resume();
     }
 
     private handleClientDataStart(data: Buffer): void {
@@ -560,8 +550,8 @@ class ClientSessionManager extends EventEmitter {
  * 5. Each client connection: connect to agent → process commands → cleanup
  *
  * **State Machine:**
- * - 11 states: DISCONNECTED → CONNECTING_TO_AGENT → READY → buffering/sending cycle
- * - 13 events: client data, agent responses, writes, errors, cleanup
+ * - 11 states: DISCONNECTED → CONNECTING_TO_AGENT → SENDING_TO_CLIENT → READY → buffering/sending cycle
+ * - 12 events: client data, agent responses, writes, errors, cleanup
  * - Independent state machines per client (concurrent sessions supported)
  * - INQUIRE D-block buffering: handles GPG's interactive data requests
  * - Error consolidation: all errors → ERROR_OCCURRED → cleanup

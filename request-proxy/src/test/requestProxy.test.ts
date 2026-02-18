@@ -127,7 +127,7 @@ describe('RequestProxy', () => {
             expect(disconnectedToConnected.length).to.equal(1);
 
             const connectingToReady = logs.filter(log =>
-                log.includes('CONNECTING_TO_AGENT → READY') && log.includes('(event: AGENT_GREETING_OK)')
+                log.includes('CONNECTING_TO_AGENT → SENDING_TO_CLIENT') && log.includes('(event: AGENT_RESPONSE_COMPLETE)')
             );
             expect(connectingToReady.length).to.equal(1);
 
@@ -284,12 +284,12 @@ describe('RequestProxy', () => {
             // Verify all expected transitions occurred
             const expectedTransitions = [
                 'DISCONNECTED → CONNECTING_TO_AGENT',
-                'CONNECTING_TO_AGENT → READY',
+                'CONNECTING_TO_AGENT → SENDING_TO_CLIENT',
+                'SENDING_TO_CLIENT → READY',
                 'READY → BUFFERING_COMMAND',
                 'BUFFERING_COMMAND → SENDING_TO_AGENT',
                 'SENDING_TO_AGENT → WAITING_FOR_AGENT',
                 'WAITING_FOR_AGENT → SENDING_TO_CLIENT',
-                'SENDING_TO_CLIENT → READY'
             ];
 
             for (const transition of expectedTransitions) {
@@ -915,7 +915,7 @@ describe('RequestProxy', () => {
             await instance.stop();
         });
 
-        it('should write greeting to client socket upon AGENT_GREETING_OK', async () => {
+        it('should write greeting to client socket upon AGENT_RESPONSE_COMPLETE', async () => {
             const testGreeting = 'OK Pleased to meet you\n';
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-xyz',
