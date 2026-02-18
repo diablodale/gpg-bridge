@@ -32,6 +32,9 @@ Electron). Each extension gets a separate `test:integration` npm script and a de
 `.vscode-test-integration.mjs` config so integration tests do **not** run incidentally with
 `npm test`. The existing unit-test `src/test/suite/index.ts` runner is not reused for integration.
 
+The `.vscode-test-integration.mjs` config sets `env: { VSCODE_INTEGRATION_TEST: '1' }` so the
+extension can distinguish integration tests from unit tests at runtime.
+
 ### Build Infrastructure
 
 Both `agent-proxy/tsconfig.json` and `shared/tsconfig.json` have `rootDir: src` and only compile
@@ -58,6 +61,38 @@ Both `agent-proxy/tsconfig.json` and `shared/tsconfig.json` have `rootDir: src` 
 
 Integration tests in `agent-proxy` and `request-proxy` then import via
 `@gpg-relay/shared/test/integration`.
+
+### Extension Init Guard
+
+`isTestEnvironment()` in `shared/src/environment.ts` returns `true` under `@vscode/test-electron`,
+causing `detectGpg4winPath()`, `detectAgentSocket()`, and `startAgentProxy()` to all bail out early.
+Integration tests need full initialization.
+
+Two changes are required:
+
+1. **Add `isIntegrationTestEnvironment()` to `shared/src/environment.ts`:**
+   ```typescript
+   export function isIntegrationTestEnvironment(): boolean {
+       return process.env.VSCODE_INTEGRATION_TEST === '1';
+   }
+   ```
+   Export it from `shared/src/index.ts`.
+
+2. **Update the guard in `agent-proxy/src/extension.ts` and `request-proxy/src/extension.ts`:**
+   ```typescript
+   // Before:
+   if (!isTestEnvironment()) { ... }
+
+   // After:
+   if (!isTestEnvironment() || isIntegrationTestEnvironment()) { ... }
+   ```
+   In `agent-proxy`: applied to `startAgentProxy()`, `detectGpg4winPath()`, and `detectAgentSocket()`.
+   In `request-proxy`: applied to the auto-start block in `activate()`.
+
+Result:
+- Unit tests (`npm test`): `isTestEnvironment()=true`, `isIntegrationTestEnvironment()=false` → skips init ✓
+- Integration tests (`npm run test:integration`): `isTestEnvironment()=true`, `isIntegrationTestEnvironment()=true` → full init ✓
+- Production: `isTestEnvironment()=false` → full init ✓
 
 ### Key Management Helper
 
@@ -101,30 +136,30 @@ pointing `@vscode/test-cli` at `test/integration/`.
 
 ```
 before()
-  - Create AgentProxy with real deps (no mocks):
-      - real net.createConnection
-      - real fs.readFileSync
-    AgentProxy.connectAgent() internally calls gpgconf.exe to discover the extra socket path.
+  - VSCODE_INTEGRATION_TEST=1 is set by .vscode-test-integration.mjs, so extension.ts
+    runs detectGpg4winPath() + detectAgentSocket() + startAgentProxy() on activation.
+    No manual initialization needed in tests.
   - Generate throwaway test key (no passphrase); store fingerprint
 
 after()
   - Delete test key
+  - Call 'gpg-agent-proxy.stop' command to reset extension state between suites
 ```
 
 ### Test Cases
 
 1. **Connect / greeting**
-   - `connectAgent()` resolves with `{ sessionId, greeting }`
+   - `vscode.commands.executeCommand('_gpg-agent-proxy.connectAgent')` resolves with `{ sessionId, greeting }`
    - `greeting` starts with `OK`
    - `sessionId` is a non-empty string
 
 2. **GETINFO version**
-   - `sendCommands(sessionId, 'GETINFO version\n')` resolves
+   - `vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands', sessionId, 'GETINFO version\n')` resolves
    - Response contains `S VERSION` line
    - Response ends with `OK`
 
 3. **KEYINFO --list**
-   - `sendCommands(sessionId, 'KEYINFO --list\n')` resolves
+   - `vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands', sessionId, 'KEYINFO --list\n')` resolves
    - Response contains one or more `S KEYINFO` lines
    - Response ends with `OK`
 
@@ -133,13 +168,13 @@ after()
    - Response starts with `ERR`
 
 5. **BYE / disconnectAgent**
-   - `disconnectAgent(sessionId)` resolves without throwing
+   - `vscode.commands.executeCommand('_gpg-agent-proxy.disconnectAgent', sessionId)` resolves without throwing
    - Subsequent `sendCommands(sessionId, ...)` rejects
 
 6. **Multiple concurrent sessions**
-   - Open 3 sessions via `connectAgent()` simultaneously
+   - Open 3 sessions via `connectAgent` simultaneously
    - Each receives an independent `sessionId` and an `OK` greeting
-   - Close all 3 cleanly via `disconnectAgent()`
+   - Close all 3 cleanly via `disconnectAgent`
 
 7. **Sign via PKSIGN flow** (tests real signing sequence with no-passphrase key)
 
@@ -174,7 +209,7 @@ after()
    - The hash sent in `SETHASH` is uppercase hex of a SHA-512 digest.
 
    **Test steps (using no-passphrase test key — no INQUIRE expected):**
-   1. `connectAgent()` → sessionId
+   1. `connectAgent` command → sessionId
    2. `sendCommands(sessionId, 'OPTION allow-pinentry-notify\n')` → `OK`
    3. `sendCommands(sessionId, 'OPTION agent-awareness=2.1.0\n')` → `OK`
    4. `sendCommands(sessionId, 'RESET\n')` → `OK`
@@ -192,9 +227,12 @@ after()
    - Force `sendCommands` with an unknown/invalid session ID → rejects
    - Verify a valid session opened before the error still sends commands correctly
 
-9. **Stale / unreachable socket file**
-   - Inject `MockFileSystem` with a socket file pointing at a non-existent TCP port
-   - `connectAgent()` rejects with a meaningful error message (not a silent hang)
+9. **Gpg4win not found or socket not found → start fails with clear error**
+   - Set VS Code workspace setting `gpgAgentProxy.gpg4winPath` to a nonexistent path
+   - Call `vscode.commands.executeCommand('gpg-agent-proxy.stop')` to reset state
+   - Call `vscode.commands.executeCommand('gpg-agent-proxy.start')` → rejects
+   - Confirm error message contains a meaningful description (not silent failure)
+   - Restore `gpg4winPath` setting to default; call `gpg-agent-proxy.start` to recover
 
 ---
 
@@ -386,7 +424,9 @@ npm run test:integration:phase3
 |---|---|
 | No passphrase on test keys | Eliminates pinentry interaction, enables fully automated non-interactive tests |
 | `test:integration` separate from `test` | Avoids running heavy I/O tests incidentally during normal unit test runs |
-| `gpgconf.exe` not called directly in tests | `AgentProxy.connectAgent()` discovers the extra socket internally; tests have no need to call `gpgconf.exe` separately |
+| Tests use VS Code commands, not direct `AgentProxy` | Extension activation calls `detectGpg4winPath()` + `detectAgentSocket()` + `startAgentProxy()` automatically; tests call `_gpg-agent-proxy.*` commands as `request-proxy` does in production |
+| `VSCODE_INTEGRATION_TEST=1` env var distinguishes integration from unit tests | `isTestEnvironment()` returns true for both; the new `isIntegrationTestEnvironment()` check allows integration tests to opt back into full extension initialization |
+| `isIntegrationTestEnvironment()` added to shared, not inlined | Keeps environment detection centralized and reusable across both extensions |
 | Phase 2 runs in dev container only | `request-proxy` is a remote-only extension; running it on Windows directly would violate its design constraint |
 | Phase 3 uses dev container (Ubuntu 22.04 LTS) | `request-proxy` is designed for remote environments; container provides clean isolated environment |
 | Phase 3 test key created inside container | Container `GNUPGHOME` is isolated from Windows keyring; keys must be explicitly exchanged |
