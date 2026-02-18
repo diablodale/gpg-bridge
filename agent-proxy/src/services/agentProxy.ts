@@ -223,10 +223,11 @@ export class AgentSessionManager extends EventEmitter {
             port: port
         });
 
-        this.setSocket(socket);
-
-        // Store nonce for sending after connection
+        // Store nonce for sending after socket async connection
         (this as any).pendingNonce = nonce;
+
+        // Set socket and wire events
+        this.setSocket(socket);
     }
 
     /**
@@ -352,6 +353,9 @@ export class AgentSessionManager extends EventEmitter {
         // See gpg-agent source: check_nonce() calls assuan_sock_close() on nonce failure
         this.transition('AGENT_DATA_RECEIVED');
         log(this.config, `[${this.sessionId}] Response received, ready for next command`);
+
+        // handleComplete (.once() in promise bridge) → calls resolve({ response })
+        // to resolve connectAgent() with greeting or sendCommands() with command response
     }
 
     /**

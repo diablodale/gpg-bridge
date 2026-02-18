@@ -99,7 +99,7 @@ const STATE_TRANSITIONS: StateTransitionTable = {
   CONNECTING_TO_AGENT: {
     AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
     ERROR_OCCURRED: 'ERROR',
-    CLEANUP_REQUESTED: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',               // Socket close hadError=false
   },
   READY: {
     CLIENT_DATA_START: 'BUFFERING_COMMAND',
@@ -110,36 +110,36 @@ const STATE_TRANSITIONS: StateTransitionTable = {
     CLIENT_DATA_PARTIAL: 'BUFFERING_COMMAND',
     CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
     ERROR_OCCURRED: 'ERROR',
-    CLEANUP_REQUESTED: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',               // Socket close hadError=false
   },
   BUFFERING_INQUIRE: {
     CLIENT_DATA_PARTIAL: 'BUFFERING_INQUIRE',
     CLIENT_DATA_COMPLETE: 'SENDING_TO_AGENT',
     ERROR_OCCURRED: 'ERROR',
-    CLEANUP_REQUESTED: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',               // Socket close hadError=false
   },
   SENDING_TO_AGENT: {
     AGENT_WRITE_COMPLETE: 'WAITING_FOR_AGENT',
     ERROR_OCCURRED: 'ERROR',
-    CLEANUP_REQUESTED: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',               // Socket close hadError=false
   },
   WAITING_FOR_AGENT: {
     AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
     ERROR_OCCURRED: 'ERROR',
-    CLEANUP_REQUESTED: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',               // Socket close hadError=false
   },
   SENDING_TO_CLIENT: {
     RESPONSE_OK_OR_ERR: 'READY',
     RESPONSE_INQUIRE: 'BUFFERING_INQUIRE',
     ERROR_OCCURRED: 'ERROR',
-    CLEANUP_REQUESTED: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',               // Socket close hadError=false
   },
   ERROR: {
-    CLEANUP_REQUESTED: 'CLOSING',
+    CLEANUP_REQUESTED: 'CLOSING',               // Always hadError=true from ERROR
   },
   CLOSING: {
     CLEANUP_COMPLETE: 'DISCONNECTED',
-    CLEANUP_ERROR: 'FATAL',
+    CLEANUP_ERROR: 'FATAL',                     // Unrecoverable cleanup failure
   },
   FATAL: {
     // No transitions out of FATAL

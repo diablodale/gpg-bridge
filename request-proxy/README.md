@@ -73,11 +73,7 @@ stateDiagram-v2
     
     CLOSING --> DISCONNECTED: CLEANUP_COMPLETE
     CLOSING --> FATAL: CLEANUP_ERROR
-    
-    note right of FATAL
-        Terminal state
-        Session removed from Map
-    end note
+    FATAL --> [*]
 ```
 
 ### Socket Close Handling
