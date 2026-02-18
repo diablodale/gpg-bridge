@@ -78,7 +78,7 @@ describe('AgentProxy', () => {
             expect(writtenNonce.equals(expectedNonce)).to.be.true;
 
             // Simulate greeting from agent
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await socketPromise;
             expect(result.sessionId).to.be.a('string');
@@ -104,7 +104,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await socketPromise;
             expect(result.sessionId).to.exist;
@@ -170,7 +170,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const connectResult = await connectPromise;
             const sessionId = connectResult.sessionId;
@@ -204,7 +204,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             let socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const session1 = await session1Promise;
 
@@ -213,7 +213,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const session2 = await session2Promise;
 
@@ -241,7 +241,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const connectResult = await connectPromise;
             const sessionId = connectResult.sessionId;
@@ -253,7 +253,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket!.emit('close', false); // hadError=false for graceful close
+            socket!.simulateClose(false); // Graceful close after BYE
 
             await disconnectPromise;
 
@@ -304,7 +304,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             let socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const session1 = await session1Promise;
             expect(agentProxy.isRunning()).to.equal(true);
@@ -314,7 +314,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket!.emit('close', false); // hadError=false for graceful close
+            socket!.simulateClose(false); // Graceful close after BYE
             await disconnectPromise;
 
             expect(agentProxy.isRunning()).to.equal(false);
@@ -339,7 +339,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -369,7 +369,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -400,7 +400,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -430,7 +430,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -460,7 +460,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -493,7 +493,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -531,7 +531,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -565,7 +565,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -595,7 +595,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -626,7 +626,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -665,7 +665,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -673,8 +673,7 @@ describe('AgentProxy', () => {
             const commandPromise = agentProxy.sendCommands(sessionId, 'VERSION\n');
             await new Promise((resolve) => setTimeout(resolve, 10));
 
-            socket!.emit('data', Buffer.from('D version_'));
-            socket!.emit('data', Buffer.from('data\nOK\n'));
+            await socket!.simulateChunkResponse(['D version_', 'data\nOK\n']);
 
             const cmdResult = await commandPromise;
             expect(cmdResult.response).to.equal('D version_data\nOK\n');
@@ -697,7 +696,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -705,10 +704,7 @@ describe('AgentProxy', () => {
             const commandPromise = agentProxy.sendCommands(sessionId, 'GETINFO\n');
             await new Promise((resolve) => setTimeout(resolve, 10));
 
-            socket!.emit('data', Buffer.from('S key'));
-            socket!.emit('data', Buffer.from('info '));
-            socket!.emit('data', Buffer.from('data\n'));
-            socket!.emit('data', Buffer.from('OK\n'));
+            await socket!.simulateChunkResponse(['S key', 'info ', 'data\n', 'OK\n']);
 
             const cmdResult = await commandPromise;
             expect(cmdResult.response).to.equal('S keyinfo data\nOK\n');
@@ -731,7 +727,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -764,7 +760,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -799,7 +795,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -922,7 +918,7 @@ describe('AgentProxy', () => {
             expect(socket!.data.length).to.be.greaterThan(0);
             expect(socket!.data[0].length).to.equal(16); // Nonce is 16 bytes
 
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
             await connectPromise;
         });
 
@@ -969,7 +965,7 @@ describe('AgentProxy', () => {
             const socket = mockSocketFactory.getLastSocket();
 
             // Emit greeting - connection should complete
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             expect(result.sessionId).to.exist;
@@ -1022,7 +1018,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1059,7 +1055,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent 2.2.19\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1143,7 +1139,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1175,7 +1171,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             await connectPromise;
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1208,7 +1204,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1245,7 +1241,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1290,7 +1286,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1307,7 +1303,7 @@ describe('AgentProxy', () => {
 
             // Manually emit close again - should not cause errors or duplicate cleanup
             // Note: .once() handler already removed, so this should be ignored
-            socket!.emit('close', false);
+            socket!.simulateClose(false);
             await new Promise((resolve) => setTimeout(resolve, 30));
 
             // Verify .once() prevented duplicate handling by checking session is still disconnected
@@ -1336,7 +1332,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             await connectPromise;
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1389,7 +1385,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             await connectPromise;
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1451,7 +1447,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1517,7 +1513,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1552,7 +1548,7 @@ describe('AgentProxy', () => {
             await writeCompletePromise;  // Wait for BYE to be written
             socket!.emit('data', Buffer.from('OK closing connection\n'));
             await byePromise;  // Wait for response processing
-            socket!.emit('close', false);
+            socket!.simulateClose(false);
         });
 
         it('should handle socket close after transition to READY (slow close race)', async () => {
@@ -1573,7 +1569,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1587,7 +1583,7 @@ describe('AgentProxy', () => {
 
             // NOW simulate slow socket close (after BYE response processed)
             await new Promise((resolve) => setTimeout(resolve, 50));
-            socket!.emit('close', false); // hadError=false
+            socket!.simulateClose(false);
 
             // Disconnect should complete successfully
             await disconnectPromise;
@@ -1677,7 +1673,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
@@ -1762,12 +1758,12 @@ describe('AgentProxy', () => {
 
             // Step 2: Agent sends greeting
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             // Step 3: Connection completes, session is READY
             const result = await connectPromise;
             const sessionId = result.sessionId;
-            expect(result.greeting).to.equal('OK GPG-Agent\n');
+            expect(result.greeting).to.equal('OK GPG-Agent 2.2.19\n');
 
             // Step 4: Send VERSION command
             const versionPromise = agentProxy.sendCommands(sessionId, 'VERSION\n');
@@ -1799,7 +1795,7 @@ describe('AgentProxy', () => {
 
             // Close socket (agent closes after BYE)
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket!.emit('close', false);
+            socket!.simulateClose(false);
 
             // Step 10: Verify cleanup
             expect(agentProxy.isRunning()).to.equal(false);
@@ -1830,11 +1826,11 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
 
             const result = await connectPromise;
             const sessionId = result.sessionId;
-            expect(result.greeting).to.equal('OK GPG-Agent\n');
+            expect(result.greeting).to.equal('OK GPG-Agent 2.2.19\n');
 
             // First command - with 6 second delay (simulates password prompt)
             const cmd1Promise = agentProxy.sendCommands(sessionId, 'SIGN doc1.txt\n');
@@ -1866,7 +1862,7 @@ describe('AgentProxy', () => {
             socket!.emit('data', Buffer.from('OK closing connection\n'));
             await byePromise;
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket!.emit('close', false);
+            socket!.simulateClose(false);
 
             expect(agentProxy.isRunning()).to.equal(false);
         });
@@ -1890,7 +1886,7 @@ describe('AgentProxy', () => {
             const connect1Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket1 = mockSocketFactory.getLastSocket();
-            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket1!.simulateGreeting();
             const result1 = await connect1Promise;
             const sessionId1 = result1.sessionId;
 
@@ -1898,7 +1894,7 @@ describe('AgentProxy', () => {
             const connect2Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket2 = mockSocketFactory.getLastSocket();
-            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket2!.simulateGreeting();
             const result2 = await connect2Promise;
             const sessionId2 = result2.sessionId;
 
@@ -1934,7 +1930,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket1!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket1!.emit('close', false);
+            socket1!.simulateClose(false);
             await bye1Promise;
             expect(agentProxy.getSessionCount()).to.equal(1);
 
@@ -1943,7 +1939,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket2!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket2!.emit('close', false);
+            socket2!.simulateClose(false);
             await bye2Promise;
             expect(agentProxy.getSessionCount()).to.equal(0);
             expect(agentProxy.isRunning()).to.equal(false);
@@ -1966,22 +1962,21 @@ describe('AgentProxy', () => {
             const connect1Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket1 = mockSocketFactory.getLastSocket();
-            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket1!.simulateGreeting();
             const result1 = await connect1Promise;
             const sessionId1 = result1.sessionId;
 
             const connect2Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket2 = mockSocketFactory.getLastSocket();
-            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket2!.simulateGreeting();
             const result2 = await connect2Promise;
             const sessionId2 = result2.sessionId;
 
             expect(agentProxy.getSessionCount()).to.equal(2);
 
             // Session 1 encounters socket error
-            socket1!.destroy();
-            socket1!.emit('close', true); // hadError = true
+            socket1!.simulateClose(true); // Transmission error (calls destroy with error)
 
             await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -2000,7 +1995,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket2!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket2!.emit('close', false);
+            socket2!.simulateClose(false);
             await bye2Promise;
             expect(agentProxy.getSessionCount()).to.equal(0);
         });
@@ -2022,7 +2017,7 @@ describe('AgentProxy', () => {
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
             const connectResult = await connectPromise;
             const sessionId = connectResult.sessionId;
 
@@ -2057,7 +2052,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket!.emit('close', false);
+            socket!.simulateClose(false);
             await byePromise;
             expect(agentProxy.getSessionCount()).to.equal(0);
         });
@@ -2079,7 +2074,7 @@ describe('AgentProxy', () => {
             const connect1Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket1 = mockSocketFactory.getLastSocket();
-            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket1!.simulateGreeting();
             const result1 = await connect1Promise;
             const sessionId1 = result1.sessionId;
 
@@ -2114,7 +2109,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket1!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket1!.emit('close', false);
+            socket1!.simulateClose(false);
             await byePromise;
             expect(agentProxy.getSessionCount()).to.equal(0);
         });
@@ -2136,7 +2131,7 @@ describe('AgentProxy', () => {
             const connect1Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket1 = mockSocketFactory.getLastSocket();
-            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket1!.simulateGreeting();
             const result1 = await connect1Promise;
             const sessionId1 = result1.sessionId;
 
@@ -2144,7 +2139,7 @@ describe('AgentProxy', () => {
             const connect2Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket2 = mockSocketFactory.getLastSocket();
-            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket2!.simulateGreeting();
             const result2 = await connect2Promise;
             const sessionId2 = result2.sessionId;
 
@@ -2161,7 +2156,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket2!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket2!.emit('close', false);
+            socket2!.simulateClose(false);
             await bye2Promise;
 
             // Session 1 should still be operational
@@ -2177,7 +2172,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket1!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket1!.emit('close', false);
+            socket1!.simulateClose(false);
             await bye1Promise;
             expect(agentProxy.getSessionCount()).to.equal(0);
         });
@@ -2200,7 +2195,7 @@ describe('AgentProxy', () => {
                 const connectPromise = agentProxy.connectAgent();
                 await new Promise((resolve) => setTimeout(resolve, 10));
                 const socket = mockSocketFactory.getLastSocket();
-                socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+                socket!.simulateGreeting();
                 const result = await connectPromise;
                 const sessionId = result.sessionId;
 
@@ -2219,7 +2214,7 @@ describe('AgentProxy', () => {
                 await new Promise((resolve) => setTimeout(resolve, 10));
                 socket!.emit('data', Buffer.from('OK\n'));
                 await new Promise((resolve) => setTimeout(resolve, 10));
-                socket!.emit('close', false);
+                socket!.simulateClose(false);
                 await byePromise;
                 expect(agentProxy.getSessionCount()).to.equal(0);
             }
@@ -2245,7 +2240,7 @@ describe('AgentProxy', () => {
             const connect1Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket1 = mockSocketFactory.getLastSocket();
-            socket1!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket1!.simulateGreeting();
             const result1 = await connect1Promise;
             const sessionId1 = result1.sessionId;
 
@@ -2253,7 +2248,7 @@ describe('AgentProxy', () => {
             const connect2Promise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket2 = mockSocketFactory.getLastSocket();
-            socket2!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket2!.simulateGreeting();
             const result2 = await connect2Promise;
             const sessionId2 = result2.sessionId;
 
@@ -2286,7 +2281,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket2!.emit('data', Buffer.from('OK\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket2!.emit('close', false);
+            socket2!.simulateClose(false);
             await bye2Promise;
 
             // All sessions cleaned up
@@ -2310,10 +2305,10 @@ describe('AgentProxy', () => {
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
             const result = await connectPromise;
             const sessionId = result.sessionId;
-            expect(result.greeting).to.equal('OK GPG-Agent\n');
+            expect(result.greeting).to.equal('OK GPG-Agent 2.2.19\n');
 
             // Step 2: Initial handshake - get version
             const write1Promise = socket!.waitForWrite();
@@ -2352,7 +2347,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
             socket!.emit('data', Buffer.from('OK closing connection\n'));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            socket!.emit('close', false);
+            socket!.simulateClose(false);
             await byePromise;
 
             // Step 7: Verify complete cleanup
@@ -2377,7 +2372,7 @@ describe('AgentProxy', () => {
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
             const socket = mockSocketFactory.getLastSocket();
-            socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+            socket!.simulateGreeting();
             const result = await connectPromise;
             const sessionId = result.sessionId;
 
@@ -2393,7 +2388,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             // Socket close will still fire despite destroy error
-            socket!.emit('close', false);
+            socket!.simulateClose(false);
 
             // disconnectAgent should reject due to cleanup failure
             try {
@@ -2431,7 +2426,7 @@ describe('AgentProxy', () => {
                 const connectPromise = agentProxy.connectAgent();
                 await new Promise((resolve) => setTimeout(resolve, 10));
                 const socket = mockSocketFactory.getLastSocket();
-                socket!.emit('data', Buffer.from('OK GPG-Agent\n'));
+                socket!.simulateGreeting();
                 const result = await connectPromise;
 
                 sessionIds.add(result.sessionId);
@@ -2443,7 +2438,7 @@ describe('AgentProxy', () => {
                 await new Promise((resolve) => setTimeout(resolve, 10));
                 socket!.emit('data', Buffer.from('OK\n'));
                 await new Promise((resolve) => setTimeout(resolve, 10));
-                socket!.emit('close', false);
+                socket!.simulateClose(false);
                 await byePromise;
                 expect(agentProxy.getSessionCount()).to.equal(0);
             }

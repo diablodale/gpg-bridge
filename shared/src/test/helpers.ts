@@ -197,6 +197,53 @@ export class MockSocket extends EventEmitter {
     }
 
     /**
+     * Simulate agent greeting message (convenience wrapper for emitDataDelayed with 0 delay).
+     * Commonly used in tests to simulate GPG agent responding with "OK GPG-Agent 2.2.19\n"
+     */
+    simulateGreeting(message: string = 'OK GPG-Agent 2.2.19\n'): void {
+        setImmediate(() => {
+            if (!this.destroyed) {
+                this.emit('data', Buffer.from(message, 'latin1'));
+            }
+        });
+    }
+
+    /**
+     * Simulate response arriving in multiple chunks (with small delay between each).
+     * Useful for testing chunk accumulation and response detection logic.
+     *
+     * @param chunks Array of chunk strings to emit sequentially
+     * @param delayBetweenChunksMs Delay in milliseconds between each chunk (default: 10ms)
+     * @returns Promise that resolves when all chunks have been emitted
+     */
+    async simulateChunkResponse(chunks: string[], delayBetweenChunksMs: number = 10): Promise<void> {
+        for (const chunk of chunks) {
+            await new Promise<void>((resolve) => {
+                setTimeout(() => {
+                    if (!this.destroyed) {
+                        this.emit('data', Buffer.from(chunk, 'latin1'));
+                    }
+                    resolve();
+                }, delayBetweenChunksMs);
+            });
+        }
+    }
+
+    /**
+     * Simulate socket close event with hadError parameter.
+     * Convenience wrapper for destroy() with clearer test intent.
+     *
+     * @param hadError Whether the close was due to a transmission error
+     */
+    simulateClose(hadError: boolean): void {
+        if (hadError) {
+            this.destroy(new Error('Simulated transmission error'));
+        } else {
+            this.end();
+        }
+    }
+
+    /**
      * Returns a promise that resolves when the next write() completes.
      * Useful for deterministic testing of socket operations that need to wait for write completion.
      */

@@ -686,7 +686,7 @@ describe('RequestProxy', () => {
         it('should emit CLIENT_DATA_START when READY state receives first data', async () => {
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-session',
-                greeting: 'OK GPG-Agent\n'
+                greeting: 'OK GPG-Agent 2.2.19\n'
             };
             mockCommandExecutor.setSendCommandsResponse('OK\n');
 
@@ -718,7 +718,7 @@ describe('RequestProxy', () => {
         it('should emit CLIENT_DATA_PARTIAL in BUFFERING_COMMAND with partial data', async () => {
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-session',
-                greeting: 'OK GPG-Agent\n'
+                greeting: 'OK GPG-Agent 2.2.19\n'
             };
 
             const instance = await startRequestProxy(
@@ -754,7 +754,7 @@ describe('RequestProxy', () => {
         it('should buffer D-block data when BUFFERING_INQUIRE receives first data', async () => {
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-session',
-                greeting: 'OK GPG-Agent\n'
+                greeting: 'OK GPG-Agent 2.2.19\n'
             };
             // First command triggers INQUIRE
             mockCommandExecutor.setSendCommandsResponse('INQUIRE PASSPHRASE\n');
@@ -794,7 +794,7 @@ describe('RequestProxy', () => {
         it('should accumulate multiple D lines in BUFFERING_INQUIRE state', async () => {
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-session',
-                greeting: 'OK GPG-Agent\n'
+                greeting: 'OK GPG-Agent 2.2.19\n'
             };
             mockCommandExecutor.setSendCommandsResponse('INQUIRE PASSPHRASE\n');
 
@@ -841,7 +841,7 @@ describe('RequestProxy', () => {
 
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-session',
-                greeting: 'OK GPG-Agent\n'
+                greeting: 'OK GPG-Agent 2.2.19\n'
             };
 
             const instance = await startRequestProxy(
@@ -1196,7 +1196,7 @@ describe('RequestProxy', () => {
         it('should buffer and process command sent in single chunk (baseline)', async () => {
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-session',
-                greeting: 'OK GPG-Agent\n'
+                greeting: 'OK GPG-Agent 2.2.19\n'
             };
             mockCommandExecutor.setSendCommandsResponse('OK\n');
 
@@ -1223,7 +1223,7 @@ describe('RequestProxy', () => {
         it('should handle partial data arrival in BUFFERING_COMMAND (multiple chunks before newline)', async () => {
             mockCommandExecutor.connectAgentResponse = {
                 sessionId: 'test-session',
-                greeting: 'OK GPG-Agent\n'
+                greeting: 'OK GPG-Agent 2.2.19\n'
             };
 
             const instance = await startRequestProxy(

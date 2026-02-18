@@ -17,7 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import { spawnSync } from 'child_process';
-import { log, encodeProtocolData, decodeProtocolData, sanitizeForLog, extractErrorMessage } from '@gpg-relay/shared';
+import { log, encodeProtocolData, decodeProtocolData, sanitizeForLog, extractErrorMessage, cleanupSocket, extractCommand, extractInquireBlock, detectResponseCompletion } from '@gpg-relay/shared';
 import type { LogConfig, ICommandExecutor, IFileSystem, IServerFactory } from '@gpg-relay/shared';
 import { VSCodeCommandExecutor } from './commandExecutor';
 
@@ -357,11 +357,16 @@ class ClientSessionManager extends EventEmitter {
         // Write response to client and emit appropriate event
         this.writeToClient(response, `Proxying agent response: ${sanitizeForLog(response)}`);
 
-        // Determine next event based on response type
-        if (/(^|\n)INQUIRE/.test(response)) {
+        // Determine next event based on response type using shared protocol parser
+        const completion = detectResponseCompletion(response);
+        if (completion.type === 'INQUIRE') {
             this.emit('RESPONSE_INQUIRE', response);
-        } else {
+        } else if (completion.type === 'OK' || completion.type === 'ERR') {
             this.emit('RESPONSE_OK_OR_ERR', response);
+        } else {
+            // Incomplete or invalid response - should not happen if agent behaves correctly
+            log(this.config, `[${this.sessionId}] Warning: Unexpected response format: ${sanitizeForLog(response)}`);
+            this.emit('RESPONSE_OK_OR_ERR', response); // Treat as OK/ERR to avoid blocking
         }
     }
 
@@ -402,18 +407,10 @@ class ClientSessionManager extends EventEmitter {
             this.sessionId = null;
         }
 
-        // cleanup socket and remove listeners because Javascript has no destructors :-(
-        // socket or client session manager may be in unexpected state with cleanup failure(s)
-        try {
-            this.socket.removeAllListeners();
-        } catch (err) {
-            cleanupError = cleanupError ?? err;
-        }
-        try {
-            this.socket.destroy();
-        } catch (err) {
-            cleanupError = cleanupError ?? err;
-        }
+        // Cleanup socket using shared utility because Javascript has no destructors :-(
+        const socketError = cleanupSocket(this.socket, this.config, oldSessionId ?? 'pending');
+        cleanupError = cleanupError ?? socketError;
+
         if (cleanupError) {
             this.emit('CLEANUP_ERROR', extractErrorMessage(cleanupError));
         } else {
@@ -473,14 +470,10 @@ class ClientSessionManager extends EventEmitter {
      * If complete, emit CLIENT_DATA_COMPLETE event
      */
     private checkCommandComplete(): void {
-        const delimiterIndex = this.buffer.indexOf('\n');
-        if (delimiterIndex !== -1) {
-            // Extract command including newline
-            const command = this.buffer.substring(0, delimiterIndex + 1);
-            this.buffer = this.buffer.substring(delimiterIndex + 1);
-
-            // Emit CLIENT_DATA_COMPLETE event
-            this.emit('CLIENT_DATA_COMPLETE', command);
+        const result = extractCommand(this.buffer);
+        if (result.extracted) {
+            this.buffer = result.remaining;
+            this.emit('CLIENT_DATA_COMPLETE', result.extracted);
         }
     }
 
@@ -489,14 +482,10 @@ class ClientSessionManager extends EventEmitter {
      * If complete, emit CLIENT_DATA_COMPLETE event
      */
     private checkInquireComplete(): void {
-        const delimiterIndex = this.buffer.indexOf('END\n');
-        if (delimiterIndex !== -1) {
-            // Extract D-block including END\n
-            const inquireData = this.buffer.substring(0, delimiterIndex + 4); // 'END\n' is 4 chars
-            this.buffer = this.buffer.substring(delimiterIndex + 4);
-
-            // Emit CLIENT_DATA_COMPLETE event
-            this.emit('CLIENT_DATA_COMPLETE', inquireData);
+        const result = extractInquireBlock(this.buffer);
+        if (result.extracted) {
+            this.buffer = result.remaining;
+            this.emit('CLIENT_DATA_COMPLETE', result.extracted);
         }
     }
 
@@ -538,8 +527,9 @@ class ClientSessionManager extends EventEmitter {
      */
     private checkPipelinedData(): void {
         if (this.buffer.length > 0) {
-            const delimiterIndex = this.buffer.indexOf('\n');
-            if (delimiterIndex !== -1) {
+            // Use shared command extraction to check for complete command
+            const result = extractCommand(this.buffer);
+            if (result.extracted) {
                 // Have complete command, emit CLIENT_DATA_START to process it
                 this.emit('CLIENT_DATA_START', Buffer.from([])); // Empty buffer since data already in this.buffer
             }

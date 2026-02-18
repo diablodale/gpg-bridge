@@ -6,6 +6,7 @@
  * This allows binary data (nonces, D blocks) to pass through string operations unchanged.
  */
 
+import type * as net from 'net';
 import { LogConfig } from './types';
 
 /**
@@ -117,4 +118,171 @@ export function parseSocketFile(data: Buffer): ParsedSocketFile {
     }
 
     return { port, nonce };
+}
+
+/**
+ * Result of response completion detection.
+ */
+export interface ResponseCompletion {
+    /** Whether the response is complete (ends with OK, ERR, or INQUIRE) */
+    complete: boolean;
+    /** The type of completion marker found, or null if incomplete */
+    type: 'OK' | 'ERR' | 'INQUIRE' | null;
+}
+
+/**
+ * Detect whether an Assuan protocol response is complete.
+ * A complete response must end with \n and have OK, ERR, or INQUIRE as the last non-empty line.
+ *
+ * Valid completion patterns:
+ * - "OK" or "OK <optional text>"
+ * - "ERR <error code> <optional text>"
+ * - "INQUIRE <prompt>"
+ *
+ * @param response Response string to check
+ * @returns Object indicating completion status and type
+ *
+ * @example
+ * detectResponseCompletion("OK\n") // { complete: true, type: 'OK' }
+ * detectResponseCompletion("ERR 67109139 No secret key\n") // { complete: true, type: 'ERR' }
+ * detectResponseCompletion("INQUIRE PASSPHRASE\n") // { complete: true, type: 'INQUIRE' }
+ * detectResponseCompletion("S PROGRESS...") // { complete: false, type: null }
+ */
+export function detectResponseCompletion(response: string): ResponseCompletion {
+    if (!response.endsWith('\n')) {
+        return { complete: false, type: null };
+    }
+
+    const lines = response.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        if (line.startsWith('OK ') || line === 'OK') {
+            return { complete: true, type: 'OK' };
+        }
+        if (line.startsWith('ERR ')) {
+            return { complete: true, type: 'ERR' };
+        }
+        if (line.startsWith('INQUIRE ')) {
+            return { complete: true, type: 'INQUIRE' };
+        }
+
+        // Found a non-empty line that's not a completion marker
+        return { complete: false, type: null };
+    }
+
+    // No non-empty lines found (empty string or only whitespace/newlines)
+    return { complete: false, type: null };
+}
+
+/**
+ * Safely cleanup a socket by removing listeners and destroying it.
+ * Uses first-error-wins pattern: returns the first error encountered, logs all errors.
+ *
+ * @param socket Socket to cleanup
+ * @param config Configuration with optional logging callback
+ * @param sessionId Session ID for logging context
+ * @returns First error encountered during cleanup, or null if cleanup succeeded
+ *
+ * @example
+ * const error = cleanupSocket(socket, config, sessionId);
+ * if (error) {
+ *     log(config, `[${sessionId}] Socket cleanup failed: ${error.message}`);
+ * }
+ */
+export function cleanupSocket(
+    socket: net.Socket,
+    config: LogConfig,
+    sessionId: string
+): Error | null {
+    let cleanupError: Error | null = null;
+
+    // Step 1: Remove all listeners (prevents event handlers from firing during destroy)
+    try {
+        socket.removeAllListeners();
+        log(config, `[${sessionId}] Socket listeners removed`);
+    } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        cleanupError = cleanupError ?? error;
+        log(config, `[${sessionId}] Error removing socket listeners: ${error.message}`);
+    }
+
+    // Step 2: Destroy the socket (closes connection and releases resources)
+    try {
+        socket.destroy();
+        log(config, `[${sessionId}] Socket destroyed`);
+    } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        cleanupError = cleanupError ?? error;
+        log(config, `[${sessionId}] Error destroying socket: ${error.message}`);
+    }
+
+    return cleanupError;
+}
+
+/**
+ * Result of command extraction from buffer.
+ */
+export interface CommandExtraction {
+    /** The extracted command (including delimiter), or null if incomplete */
+    extracted: string | null;
+    /** Remaining buffer content after extraction */
+    remaining: string;
+}
+
+/**
+ * Extract a complete command from a buffer (newline-delimited).
+ * Used by request-proxy to parse client commands from buffered data.
+ *
+ * A complete command ends with \n. If found, the command (including \n) is extracted
+ * and the remaining buffer is returned.
+ *
+ * @param buffer Buffer containing potential command data
+ * @returns Object with extracted command (or null) and remaining buffer
+ *
+ * @example
+ * const result = extractCommand("KEYINFO\nNOP\n");
+ * // { extracted: "KEYINFO\n", remaining: "NOP\n" }
+ *
+ * const partial = extractCommand("KEYINFO");
+ * // { extracted: null, remaining: "KEYINFO" }
+ */
+export function extractCommand(buffer: string): CommandExtraction {
+    const delimiterIndex = buffer.indexOf('\n');
+    if (delimiterIndex !== -1) {
+        return {
+            extracted: buffer.substring(0, delimiterIndex + 1),
+            remaining: buffer.substring(delimiterIndex + 1)
+        };
+    }
+    return { extracted: null, remaining: buffer };
+}
+
+/**
+ * Extract a complete INQUIRE D-block from buffer (ends with END\n).
+ * Used by request-proxy to parse client D-block responses during INQUIRE flow.
+ *
+ * A complete D-block ends with END\n. If found, the entire block (including END\n)
+ * is extracted and the remaining buffer is returned.
+ *
+ * @param buffer Buffer containing potential D-block data
+ * @returns Object with extracted D-block (or null) and remaining buffer
+ *
+ * @example
+ * const result = extractInquireBlock("D some data\nEND\n");
+ * // { extracted: "D some data\nEND\n", remaining: "" }
+ *
+ * const partial = extractInquireBlock("D some data\n");
+ * // { extracted: null, remaining: "D some data\n" }
+ */
+export function extractInquireBlock(buffer: string): CommandExtraction {
+    const delimiterIndex = buffer.indexOf('END\n');
+    if (delimiterIndex !== -1) {
+        return {
+            extracted: buffer.substring(0, delimiterIndex + 4), // 'END\n' is 4 chars
+            remaining: buffer.substring(delimiterIndex + 4)
+        };
+    }
+    return { extracted: null, remaining: buffer };
 }

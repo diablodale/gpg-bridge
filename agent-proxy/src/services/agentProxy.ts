@@ -12,7 +12,7 @@ import * as net from 'net';
 import * as fs from 'fs';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { log, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog } from '@gpg-relay/shared';
+import { log, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog, detectResponseCompletion, cleanupSocket } from '@gpg-relay/shared';
 import type { LogConfig, IFileSystem, ISocketFactory } from '@gpg-relay/shared';
 
 // ============================================================================
@@ -324,8 +324,9 @@ export class AgentSessionManager extends EventEmitter {
         log(this.config, `[${this.sessionId}] Accumulated ${this.buffer.length} bytes`);
 
         // Check if response is complete
-        if (this.isCompleteResponse(this.buffer)) {
-            log(this.config, `[${this.sessionId}] Complete response: ${sanitizeForLog(this.buffer)}`);
+        const completion = detectResponseCompletion(this.buffer);
+        if (completion.complete) {
+            log(this.config, `[${this.sessionId}] Complete response (${completion.type}): ${sanitizeForLog(this.buffer)}`);
 
             // Clear greeting timeout if set (only set for nonce authentication)
             if (this.agentDataTimeout) {
@@ -401,26 +402,9 @@ export class AgentSessionManager extends EventEmitter {
 
         let cleanupError: Error | null = null;
 
-        // Cleanup socket
+        // Cleanup socket using shared utility
         if (this.socket) {
-            try {
-                this.socket.removeAllListeners();
-                log(this.config, `[${this.sessionId}] Socket listeners removed`);
-            } catch (err) {
-                const error = err instanceof Error ? err : new Error(String(err));
-                cleanupError = cleanupError ?? error;
-                log(this.config, `[${this.sessionId}] Error removing socket listeners: ${error.message}`);
-            }
-
-            try {
-                this.socket.destroy();
-                log(this.config, `[${this.sessionId}] Socket destroyed`);
-            } catch (err) {
-                const error = err instanceof Error ? err : new Error(String(err));
-                cleanupError = cleanupError ?? error;
-                log(this.config, `[${this.sessionId}] Error destroying socket: ${error.message}`);
-            }
-
+            cleanupError = cleanupSocket(this.socket, this.config, this.sessionId);
             this.socket = null;
         }
 
@@ -453,30 +437,6 @@ export class AgentSessionManager extends EventEmitter {
 
         const { error } = payload;
         log(this.config, `[${this.sessionId}] Cleanup error: ${error.message} (FATAL state)`);
-    }
-
-    /**
-     * Check if response is complete
-     * Complete responses end with: OK, ERR, or INQUIRE
-     */
-    private isCompleteResponse(response: string): boolean {
-        if (!response.endsWith('\n')) {
-            return false;
-        }
-
-        const lines = response.split('\n');
-        for (let i = lines.length - 1; i >= 0; i--) {
-            const line = lines[i].trim();
-            if (!line) continue;
-
-            if (line.startsWith('OK ') || line === 'OK') return true;
-            if (line.startsWith('ERR ')) return true;
-            if (line.startsWith('INQUIRE ')) return true;
-
-            return false;
-        }
-
-        return false;
     }
 
     /**

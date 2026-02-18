@@ -3,7 +3,7 @@
  * These types are used by both agent-proxy and request-proxy extensions.
  */
 
-import * as net from 'net';
+import type * as net from 'net';
 
 /**
  * Configuration for logging callbacks.
