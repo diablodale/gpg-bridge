@@ -15,6 +15,10 @@
     "./test": {
       "types": "./out/test/helpers.d.ts",
       "default": "./out/test/helpers.js"
+    },
+    "./test/integration": {
+      "types": "./out/test/integration/index.d.ts",
+      "default": "./out/test/integration/index.js"
     }
   },
   "scripts": {

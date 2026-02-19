@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawnSync } from 'child_process';
 import { AgentProxy } from './services/agentProxy';
-import { isTestEnvironment } from '@gpg-relay/shared';
+import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-relay/shared';
 
 // Global agent proxy service instance
 let agentProxyService: AgentProxy | null = null;
@@ -45,7 +45,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// Detect Gpg4win and agent socket on startup
 	// Then start agent proxy
-	if (!isTestEnvironment()) {
+	// isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
+	// tests get full extension initialization (unit tests still skip init).
+	if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
 		try {
 			await detectGpg4winPath();
 			await startAgentProxy();
@@ -144,13 +146,14 @@ async function disconnectAgent(sessionId: string): Promise<void> {
  * Detect Gpg4win installation path
  */
 async function detectGpg4winPath(): Promise<void> {
-	if (isTestEnvironment()) {
+	if (isTestEnvironment() && !isIntegrationTestEnvironment()) {
 		return;
 	}
 	const config = vscode.workspace.getConfiguration('gpgAgentProxy');
 	const configPath = config.get<string>('gpg4winPath') || '';
 
-	// Check configured path first
+	// If a path is explicitly configured, use it exclusively — do not fall back to
+	// auto-detection.  An invalid configured path is a user error and should fail loudly.
 	if (configPath) {
 		const gpgconfPath = path.join(configPath, 'gpgconf.exe');
 		if (fs.existsSync(gpgconfPath)) {
@@ -158,6 +161,7 @@ async function detectGpg4winPath(): Promise<void> {
 			detectAgentSocket();
 			return;
 		}
+		throw new Error(`Gpg4win not found at configured path: ${configPath}`);
 	}
 
 	// Check 64-bit default locations
@@ -197,7 +201,7 @@ async function detectGpg4winPath(): Promise<void> {
  * Detect GPG agent socket path
  */
 function detectAgentSocket(): void {
-	if (isTestEnvironment()) {
+	if (isTestEnvironment() && !isIntegrationTestEnvironment()) {
 		return;
 	}
 	if (!detectedGpg4winPath) {
@@ -228,7 +232,7 @@ function detectAgentSocket(): void {
  * Start the agent proxy service
  */
 async function startAgentProxy(): Promise<void> {
-	if (isTestEnvironment()) {
+	if (isTestEnvironment() && !isIntegrationTestEnvironment()) {
 		return;
 	}
 	if (agentProxyService) {
@@ -265,6 +269,7 @@ async function startAgentProxy(): Promise<void> {
 		outputChannel.show(true);
 		vscode.window.showErrorMessage(`Failed to start agent proxy: ${errorMessage}`);
 		agentProxyService = null;
+		throw error; // propagate so callers (commands, tests) can observe failure
 	}
 }
 
@@ -279,6 +284,9 @@ async function stopAgentProxy(): Promise<void> {
 
 	outputChannel.appendLine('Stopping agent proxy...');
 	agentProxyService = null;
+	// Reset detected state so the next start re-detects (e.g. if Gpg4win path changed).
+	detectedGpg4winPath = null;
+	detectedAgentSocket = null;
 	probeSuccessful = false;
 
 	updateStatusBar();
@@ -292,7 +300,12 @@ async function stopAgentProxy(): Promise<void> {
 async function restartAgentProxy(): Promise<void> {
 	await stopAgentProxy();
 	await new Promise((resolve) => setTimeout(resolve, 500));
-	await startAgentProxy();
+	try {
+		await startAgentProxy();
+	} catch (error) {
+		// startAgentProxy already logged and showed the error; just re-throw
+		throw error;
+	}
 }
 
 /**

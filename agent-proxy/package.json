@@ -81,6 +81,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:integration": "tsc --build tsconfig.test.json && node out/test/integration/runTest.js",
     "package": "vsce package"
   },
   "dependencies": {

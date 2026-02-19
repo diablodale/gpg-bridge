@@ -13,7 +13,7 @@ import * as vscode from 'vscode';
 import { startRequestProxy } from './services/requestProxy';
 import { extractErrorMessage } from '@gpg-relay/shared';
 import { VSCodeCommandExecutor } from './services/commandExecutor';
-import { isTestEnvironment } from '@gpg-relay/shared';
+import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-relay/shared';
 
 let requestProxyInstance: Awaited<ReturnType<typeof startRequestProxy>> | null = null;
 
@@ -35,7 +35,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
 
         // Start request proxy on remote
-        if (!isTestEnvironment()) {
+        // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
+        // tests get full extension initialization (unit tests still skip init).
+        if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
             try {
                 await startRequestProxyHandler(outputChannel);
             } catch (err) {

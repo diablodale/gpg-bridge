@@ -90,8 +90,7 @@ process.env.GNUPGHOME = GNUPGHOME; // set before constructing GpgCli or calling 
 const cli = new GpgCli();
 
 async function main() {
-    cli.writeAgentConf(['disable-scdaemon', 'disable-ssh-support',
-                        'disable-win32-openssh-support', 'disable-putty-support']);
+    cli.writeAgentConf(['disable-scdaemon']); // only confirmed-valid conf option in GPG 2.4.x
     cli.launchAgent();
     try {
         await runTests({
@@ -206,12 +205,20 @@ class GpgCli {
 
     // Key lifecycle (called from Mocha before()/after(), inside extension host)
 
-    /** Write batch file and spawnSync gpg --batch --gen-key. */
+    /** Write batch file and spawnSync gpg --batch --gen-key.
+     * Uses explicit Key-Type: EDDSA + Subkey-Type: ECDH (not 'Key-Type: default',
+     * which resolves unreliably on some Gpg4win installations). */
     generateKey(name: string, email: string): void;
     /** spawnSync gpg --batch --yes --delete-secret-and-public-key <fingerprint>. */
     deleteKey(fingerprint: string): void;
     /** Parse gpg --with-colons --fingerprint <email> output; return fingerprint string. */
     getFingerprint(email: string): string;
+    /**
+     * Return the keygrip of the primary signing key matching email.
+     * Parses gpg --with-colons --with-keygrip --fingerprint output for the first grp: record.
+     * SIGKEY (Assuan protocol) requires a keygrip, not a fingerprint.
+     */
+    getKeygrip(email: string): string;
     /** spawnSync gpg --export --armor <fingerprint>; return raw armored public key. */
     exportPublicKey(fingerprint: string): string;
     /** Write keyData to temp file; spawnSync gpg --import <file>. */
@@ -323,8 +330,7 @@ and the test agent's socket is live.
   GNUPGHOME = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-'))  ← unique per run
   process.env.GNUPGHOME = GNUPGHOME
   cli = new GpgCli()
-  cli.writeAgentConf(['disable-scdaemon', 'disable-ssh-support',
-                      'disable-win32-openssh-support', 'disable-putty-support'])
+  cli.writeAgentConf(['disable-scdaemon'])   ← only confirmed-valid conf option in GPG 2.4.x
   cli.launchAgent()               ← gpgconf --launch gpg-agent (GNUPGHOME=<unique-temp-dir>)
   runTests({ extensionTestsEnv: { VSCODE_INTEGRATION_TEST: '1', GNUPGHOME } })
     → extension host starts; activate() runs with GNUPGHOME set
@@ -339,6 +345,7 @@ and the test agent's socket is live.
   - cli = new GpgCli()  (GNUPGHOME already in process.env via extensionTestsEnv)
   - cli.generateKey('Test User', 'test@example.com') → creates no-passphrase key in isolated keyring
   - fingerprint = cli.getFingerprint('test@example.com') → store for use in tests
+  - keygrip = cli.getKeygrip('test@example.com')       → required by SIGKEY (Assuan uses keygrip, not fingerprint)
 
 [Mocha after()]
   - cli.deleteKey(fingerprint)    ← removes key from isolated keyring before agent is killed
@@ -354,13 +361,13 @@ and the test agent's socket is live.
 
 2. **GETINFO version**
    - `vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands', sessionId, 'GETINFO version\n')` resolves
-   - Response contains `S VERSION` line
+   - Response contains a `D <version>` line (extra socket returns version as a data record, not `S VERSION` as on the main socket)
    - Response ends with `OK`
 
-3. **KEYINFO --list**
-   - `vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands', sessionId, 'KEYINFO --list\n')` resolves
-   - Response contains one or more `S KEYINFO` lines
-   - Response ends with `OK`
+3. **HAVEKEY — isolated agent has the test key** *(replaces KEYINFO; validates keyring isolation)*
+   - `sendCommands(sessionId, 'HAVEKEY <keygrip>\n')` resolves with `OK`
+   - Confirms the key generated in `before()` exists in the *isolated* agent's key store (`private-keys-v1.d/`)
+   - If isolation were broken (agent running against system GNUPGHOME), this returns `ERR ... No secret key`
 
 4. **Unknown command → ERR**
    - `sendCommands(sessionId, 'NOTACOMMAND\n')` resolves (does not reject)
@@ -377,23 +384,21 @@ and the test agent's socket is live.
 
 7. **Sign via PKSIGN flow** (tests real signing sequence with no-passphrase key)
 
-   Real-world command sequence observed from gpg-agent log (gpg-agent 2.4.8, Ed25519 key):
+   Real-world command sequence for extra socket (gpg-agent 2.4.8, Ed25519 key, no passphrase):
    ```
-   → OPTION allow-pinentry-notify
-   ← OK
    → OPTION agent-awareness=2.1.0
    ← OK
    → RESET
    ← OK
-   → SIGKEY <fingerprint>
+   → SIGKEY <keygrip>           ← keygrip (not fingerprint) — Assuan SIGKEY requires keygrip
    ← OK
    → SETKEYDESC <url-encoded description>
    ← OK
-   → SETHASH 10 <sha512-hex>        ← algo ID 10 = SHA-512 (libgcrypt GCRY_MD_SHA512)
+   → SETHASH 10 <sha512-hex>    ← algo ID 10 = SHA-512 (libgcrypt GCRY_MD_SHA512)
    ← OK
    → PKSIGN
    ← [with passphrase key]: INQUIRE PINENTRY_LAUNCHED <pid> <info...>
-      → END                          ← client ACKs pinentry notification with no data
+      → END                     ← client ACKs pinentry notification with no data
       ← D <binary signature bytes>
       ← OK
    ← [with no-passphrase key]: D <binary signature bytes>  ← INQUIRE skipped entirely
@@ -401,6 +406,9 @@ and the test agent's socket is live.
    ```
 
    **Critical notes:**
+   - `OPTION allow-pinentry-notify` is **forbidden on the extra socket** — the agent returns `ERR ... Forbidden`. Do not send it.
+   - `SIGKEY` takes a **keygrip**, not a fingerprint. These are different 40-char hex values.
+     Use `gpg --with-colons --with-keygrip` to obtain the keygrip; it appears in `grp:` records.
    - `SETHASH` uses a numeric libgcrypt algorithm ID, not a name string. `10` = SHA-512.
    - The `INQUIRE PINENTRY_LAUNCHED` is a **pinentry notification**, not a data request. The
      client replies with `END` only (no `D` lines). With a no-passphrase key, this INQUIRE
@@ -409,14 +417,13 @@ and the test agent's socket is live.
 
    **Test steps (using no-passphrase test key — no INQUIRE expected):**
    1. `connectAgent` command → sessionId
-   2. `sendCommands(sessionId, 'OPTION allow-pinentry-notify\n')` → `OK`
-   3. `sendCommands(sessionId, 'OPTION agent-awareness=2.1.0\n')` → `OK`
-   4. `sendCommands(sessionId, 'RESET\n')` → `OK`
-   5. `sendCommands(sessionId, 'SIGKEY <fingerprint>\n')` → `OK`
-   6. `sendCommands(sessionId, 'SETKEYDESC Test+key\n')` → `OK`
-   7. Compute SHA-512 of `Buffer.from('test data')` using Node `crypto.createHash('sha512')`; hex-encode uppercase
-   8. `sendCommands(sessionId, 'SETHASH 10 <sha512hex>\n')` → `OK`
-   9. `sendCommands(sessionId, 'PKSIGN\n')` → response contains `D <...>` and ends with `OK` (no INQUIRE with no-passphrase key)
+   2. `sendCommands(sessionId, 'OPTION agent-awareness=2.1.0\n')` → `OK`
+   3. `sendCommands(sessionId, 'RESET\n')` → `OK`
+   4. `sendCommands(sessionId, 'SIGKEY <keygrip>\n')` → `OK`  *(keygrip from `getKeygrip()`)*
+   5. `sendCommands(sessionId, 'SETKEYDESC Integration+Test+Signing\n')` → `OK`
+   6. Compute SHA-512 of `Buffer.from('test data')` using Node `crypto.createHash('sha512')`; hex-encode uppercase
+   7. `sendCommands(sessionId, 'SETHASH 10 <sha512hex>\n')` → `OK`
+   8. `sendCommands(sessionId, 'PKSIGN\n')` → response contains `D <...>` and ends with `OK` (no INQUIRE with no-passphrase key)
 
    **Separate test (verify INQUIRE PINENTRY_LAUNCHED handling — requires a passphrase-protected key or mock):**
    - This INQUIRE is a notification not a data request; client must reply `END\n` with no D-lines
@@ -426,12 +433,17 @@ and the test agent's socket is live.
    - Force `sendCommands` with an unknown/invalid session ID → rejects
    - Verify a valid session opened before the error still sends commands correctly
 
-9. **Gpg4win not found or socket not found → start fails with clear error**
-   - Set VS Code workspace setting `gpgAgentProxy.gpg4winPath` to a nonexistent path
-   - Call `vscode.commands.executeCommand('gpg-agent-proxy.stop')` to reset state
-   - Call `vscode.commands.executeCommand('gpg-agent-proxy.start')` → rejects
-   - Confirm error message contains a meaningful description (not silent failure)
-   - Restore `gpg4winPath` setting to default; call `gpg-agent-proxy.start` to recover
+9. **Bad Gpg4win path rejects start; restore config recovers proxy**
+   - Call `gpg-agent-proxy.stop` to reset detected state
+   - Set `gpgAgentProxy.gpg4winPath` to a nonexistent path via `vscode.workspace.getConfiguration('gpgAgentProxy').update(...)`
+   - Call `gpg-agent-proxy.start` → **rejects** (propagates after logging/showing error)
+     - `detectGpg4winPath` throws when the configured path has no `gpgconf.exe` — does **not** fall back to auto-detection; an explicit path is used exclusively
+     - `startAgentProxy` re-throws after `outputChannel.appendLine` + `vscode.window.showErrorMessage`
+   - Verify the rejection message matches `/gpg4win|not found|gpgconf/i`
+   - `connectAgent` also rejects (`agentProxyService` was never initialized)
+   - Restore config: `config.update('gpg4winPath', undefined, ...)` (in a `finally` block)
+   - Call `gpg-agent-proxy.start` → succeeds (auto-detection resumes)
+   - `connectAgent` succeeds; greeting starts with `OK`
 
 ---
 
@@ -518,7 +530,7 @@ here because it has no pre-launch lifecycle hook; `cli.launchAgent()` must run b
   GNUPGHOME = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-'))
   process.env.GNUPGHOME = GNUPGHOME
   cli = new GpgCli()
-  cli.writeAgentConf([...])     ← same 4 options as Phase 1
+  cli.writeAgentConf(['disable-scdaemon'])  ← only confirmed-valid conf option in GPG 2.4.x
   cli.generateKey('Test User', 'test@example.com')
   fingerprint = cli.getFingerprint('test@example.com')
   cli.launchAgent()
@@ -662,7 +674,7 @@ the Phase 2 unknowns first.
   GNUPGHOME = fs.mkdtempSync(...)   ← Windows-side isolated keyring
   process.env.GNUPGHOME = GNUPGHOME
   cli = new GpgCli()
-  cli.writeAgentConf([...])
+  cli.writeAgentConf(['disable-scdaemon'])
   cli.generateKey('Test User', 'test@example.com')
   fingerprint = cli.getFingerprint('test@example.com')
   cli.launchAgent()

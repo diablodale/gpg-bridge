@@ -1,0 +1,11 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        // Widen rootDir to cover test/integration/ output correctly.
+        // src/ is already compiled by the base tsconfig.json.
+        "rootDir": "test/integration",
+        "outDir": "out/test/integration"
+    },
+    // Override base include so only integration test files are (re-)compiled here.
+    "include": ["test/integration/**/*.ts"]
+}
