@@ -168,21 +168,14 @@ export interface RequestProxyInstance {
     stop(): Promise<void>;
 }
 
-interface ClientSession {
-    socket: net.Socket;
-    sessionId: string | null;
-    state: SessionState;
-    buffer: string;
-}
-
 /**
- * ClientSessionManager - Event-driven session manager (like NodeJS Socket)
+ * RequestSessionManager - Event-driven session manager (like NodeJS Socket)
  *
  * Manages state, buffer, and event handling for a single client connection.
  * Events drive state transitions and processing logic.
  * Handlers are registered for events (like socket.on('data', handler))
  */
-class ClientSessionManager extends EventEmitter implements ISessionManager {
+class RequestSessionManager extends EventEmitter implements ISessionManager {
     public readonly config: RequestProxyConfigWithExecutor;
     public socket: net.Socket;
     public sessionId: string | null = null;
@@ -570,7 +563,7 @@ class ClientSessionManager extends EventEmitter implements ISessionManager {
  * - Error consolidation: all errors → ERROR_OCCURRED → cleanup
  *
  * **Session Management:**
- * - Sessions stored in Map<net.Socket, ClientSessionManager>
+ * - Sessions stored in Map<net.Socket, RequestSessionManager>
  * - Each session: isolated state, buffer, agent sessionId
  * - Cleanup guarantees: socket destroyed, agent disconnected, session removed
  * - First-error-wins cleanup pattern (continues even if steps fail)
@@ -609,12 +602,12 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
     // Track all active sessions so stop() can destroy them before server.close().
     // server.close() only stops new connections; existing ones keep running indefinitely
     // unless destroyed explicitly — which would cause stop() to never call its callback.
-    const activeSessions = new Set<ClientSessionManager>();
+    const activeSessions = new Set<RequestSessionManager>();
 
     // Create the Unix socket server
     const server = serverFactory.createServer({ pauseOnConnect: true }, (clientSocket) => {
         // Create session manager (EventEmitter pattern like NodeJS Socket)
-        const sessionManager = new ClientSessionManager(fullConfig, clientSocket);
+        const sessionManager = new RequestSessionManager(fullConfig, clientSocket);
         activeSessions.add(sessionManager);
 
 

@@ -304,17 +304,17 @@ changes yet.
 
 Safe rename with no behaviour change. Isolated from Phase 3 to keep diffs readable.
 
-- [ ] **2.1** `request-proxy/src/services/requestProxy.ts`: rename class
+- [x] **2.1** `request-proxy/src/services/requestProxy.ts`: rename class
   `ClientSessionManager` → `RequestSessionManager` throughout (declaration + all
   internal references + JSDoc)
-- [ ] **2.2** Remove now-dead `ClientSession` interface (was a plain data bag never used
+- [x] **2.2** Remove now-dead `ClientSession` interface (was a plain data bag never used
   at runtime; replaced by `RequestSessionManager`)
-- [ ] **2.3** Update `request-proxy/src/test/requestProxy.test.ts`: rename all
-  `ClientSessionManager` references
-- [ ] **2.4** Compile full repo (`npm run compile`), run all tests (`npm test` +
+- [x] **2.3** Update `request-proxy/src/test/requestProxy.test.ts`: rename all
+  `ClientSessionManager` references (no references found — no-op)
+- [x] **2.4** Compile full repo (`npm run compile`), run all tests (`npm test` +
   `npm run test:integration`), verify clean
-- [ ] **2.5** Commit: `refactor(request-proxy): rename ClientSessionManager to RequestSessionManager`
-- [ ] **2.6** ✅ Phase gate: all tests green, committed — proceed to Phase 3
+- [x] **2.5** Commit: `refactor(request-proxy): rename ClientSessionManager to RequestSessionManager`
+- [x] **2.6** ✅ Phase gate: all tests green, committed — proceed to Phase 3
 
 ---
 
@@ -469,7 +469,7 @@ session has fully cleaned up and been removed from the Map.
 | Phase | Description | Status |
 |---|---|---|
 | 1 | `shared` + `agent-proxy`: optional `sessionId` hint | ✅ Complete |
-| 2 | Rename `ClientSessionManager` → `RequestSessionManager` | ⏳ Not started |
+| 2 | Rename `ClientSessionManager` → `RequestSessionManager` | ✅ Complete |
 | 3 | `RequestProxy` class replaces factory function | ⏳ Not started |
 | 4 | `extension.ts` uses `RequestProxy` | ⏳ Not started |
 | 5 | Tighten `ISessionManager.sessionId` | ⏳ Not started |
