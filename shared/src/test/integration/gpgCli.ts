@@ -19,6 +19,13 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
+/** Shape of errors thrown by execFileAsync for non-zero process exits. */
+interface ExecFileError {
+    code?: number | null;
+    stdout?: string;
+    stderr?: string;
+}
+
 export interface GpgCliOpts {
     /** Path to gpg binary. Defaults to 'gpg' (must be on PATH). */
     gpgPath?: string;
@@ -88,10 +95,11 @@ export class GpgCli {
                 maxBuffer: 1024 * 1024  // largest expected stdout: ~256 KB (decrypt test); 1 MB gives 4× headroom
             });
             return { exitCode: 0, stdout, stderr };
-        } catch (err: any) {
+        } catch (err: unknown) {
             // execFile rejects with numeric code + stdout/stderr on non-zero exit
-            if (typeof err.code === 'number' && typeof err.stdout === 'string') {
-                return { exitCode: err.code, stdout: err.stdout ?? '', stderr: err.stderr ?? '' };
+            const execErr = err as ExecFileError;
+            if (typeof execErr.code === 'number' && typeof execErr.stdout === 'string') {
+                return { exitCode: execErr.code, stdout: execErr.stdout, stderr: execErr.stderr ?? '' };
             }
             // Spawn error (timeout, ENOENT, etc.)
             throw err;
@@ -127,9 +135,9 @@ export class GpgCli {
                 env: this.env,
                 timeout: 10000
             });
-        } catch (err: any) {
+        } catch (err: unknown) {
             // gpgconf --kill returns non-zero when agent is already dead — that is fine.
-            if (typeof err.code === 'number') { return; }
+            if (typeof (err as ExecFileError).code === 'number') { return; }
             throw err;
         }
     }

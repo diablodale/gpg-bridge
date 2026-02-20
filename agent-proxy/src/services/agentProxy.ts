@@ -166,6 +166,7 @@ export class AgentSessionManager extends EventEmitter {
     private agentDataTimeout: NodeJS.Timeout | null = null;     // timeout for agent to respond, usually used for greeting response
     // No responseTimeout - commands can be interactive (password prompts via pinentry)
     private lastError: Error | null = null;  // Stores error for Promise bridges to retrieve
+    private pendingNonce: Buffer | null = null;  // Temporary nonce storage between connect request and socket connect
 
     constructor(
         sessionId: string,
@@ -224,7 +225,7 @@ export class AgentSessionManager extends EventEmitter {
         });
 
         // Store nonce for sending after socket async connection
-        (this as any).pendingNonce = nonce;
+        this.pendingNonce = nonce;
 
         // Set socket and wire events
         this.setSocket(socket);
@@ -244,7 +245,7 @@ export class AgentSessionManager extends EventEmitter {
             this.connectionTimeout = null;
         }
 
-        const nonce = (this as any).pendingNonce as Buffer;
+        const nonce = this.pendingNonce;
         if (!nonce) {
             this.emit('ERROR_OCCURRED', { error: new Error('Missing nonce after connection') });
             return;
@@ -253,7 +254,7 @@ export class AgentSessionManager extends EventEmitter {
         log(this.config, `[${this.sessionId}] Socket connected, ready to send nonce`);
 
         // Clean up pending nonce
-        delete (this as any).pendingNonce;
+        this.pendingNonce = null;
 
         // Send nonce as first data
         this.emit('CLIENT_DATA_RECEIVED', { commandBlock: nonce });
@@ -461,6 +462,13 @@ export class AgentSessionManager extends EventEmitter {
      */
     public getState(): SessionState {
         return this.state;
+    }
+
+    /**
+     * Get last stored error (for Promise bridges in AgentProxy to retrieve on cleanup)
+     */
+    public getLastError(): Error | null {
+        return this.lastError;
     }
 
     /**
@@ -696,7 +704,7 @@ export class AgentProxy {
                     // Cleanup session
                     this.sessions.delete(sessionId);
                     // Use stored error if available, otherwise generic message
-                    const error = (session as any).lastError ?? new Error('Session closed during connection');
+                    const error = session.getLastError() ?? new Error('Session closed during connection');
                     reject(error);
                 };
 
@@ -773,7 +781,7 @@ export class AgentProxy {
             const handleCleanup = () => {
                 session.removeListener('AGENT_DATA_RECEIVED', handleComplete);
                 // Use stored error if available, otherwise generic message
-                const error = (session as any).lastError ?? new Error('Session closed while waiting for command response');
+                const error = session.getLastError() ?? new Error('Session closed while waiting for command response');
                 reject(error);
             };
 

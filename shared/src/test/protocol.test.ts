@@ -94,7 +94,7 @@ describe('Protocol Utilities', () => {
         });
 
         it('extractErrorMessage handles error with code property', () => {
-            const error = { code: 'ECONNREFUSED', message: 'Connection refused' } as any;
+            const error: unknown = { code: 'ECONNREFUSED', message: 'Connection refused' };
             const result = extractErrorMessage(error);
             assert.ok(result.includes('Connection refused') || result.includes('ECONNREFUSED'));
         });
@@ -510,7 +510,7 @@ describe('Protocol Utilities', () => {
         it('should cleanup socket successfully when no errors', () => {
             const mockSocket = createMockSocket();
             const config = { logCallback: () => { /* silent */ } };
-            const error = cleanupSocket(mockSocket as any, config, 'test-session');
+            const error = cleanupSocket(mockSocket, config, 'test-session');
 
             assert.strictEqual(error, null, 'Should return null on successful cleanup');
             assert.strictEqual(mockSocket.removeCalled, true, 'Should call removeAllListeners');
@@ -520,7 +520,7 @@ describe('Protocol Utilities', () => {
         it('should return error when removeAllListeners throws', () => {
             const mockSocket = createMockSocket({ throwOnRemove: true });
             const config = { logCallback: () => { /* silent */ } };
-            const error = cleanupSocket(mockSocket as any, config, 'test-session');
+            const error = cleanupSocket(mockSocket, config, 'test-session');
 
             assert.ok(error instanceof Error, 'Should return Error instance');
             assert.ok(error?.message.includes('removeAllListeners'), 'Error should mention removeAllListeners');
@@ -531,7 +531,7 @@ describe('Protocol Utilities', () => {
         it('should return error when destroy throws', () => {
             const mockSocket = createMockSocket({ throwOnDestroy: true });
             const config = { logCallback: () => { /* silent */ } };
-            const error = cleanupSocket(mockSocket as any, config, 'test-session');
+            const error = cleanupSocket(mockSocket, config, 'test-session');
 
             assert.ok(error instanceof Error, 'Should return Error instance');
             assert.ok(error?.message.includes('destroy'), 'Error should mention destroy');
@@ -542,7 +542,7 @@ describe('Protocol Utilities', () => {
         it('should return first error when both operations throw (first-error-wins)', () => {
             const mockSocket = createMockSocket({ throwOnRemove: true, throwOnDestroy: true });
             const config = { logCallback: () => { /* silent */ } };
-            const error = cleanupSocket(mockSocket as any, config, 'test-session');
+            const error = cleanupSocket(mockSocket, config, 'test-session');
 
             assert.ok(error instanceof Error, 'Should return Error instance');
             assert.ok(error?.message.includes('removeAllListeners'), 'Should return first error (removeAllListeners)');
@@ -554,7 +554,7 @@ describe('Protocol Utilities', () => {
             const logs: string[] = [];
             const mockSocket = createMockSocket();
             const config = { logCallback: (msg: string) => logs.push(msg) };
-            cleanupSocket(mockSocket as any, config, 'test-123');
+            cleanupSocket(mockSocket, config, 'test-123');
 
             assert.ok(logs.some(l => l.includes('[test-123]') && l.includes('listeners removed')), 'Should log removeAllListeners success');
             assert.ok(logs.some(l => l.includes('[test-123]') && l.includes('destroyed')), 'Should log destroy success');
@@ -564,7 +564,7 @@ describe('Protocol Utilities', () => {
             const logs: string[] = [];
             const mockSocket = createMockSocket({ throwOnRemove: true, throwOnDestroy: true });
             const config = { logCallback: (msg: string) => logs.push(msg) };
-            cleanupSocket(mockSocket as any, config, 'test-456');
+            cleanupSocket(mockSocket, config, 'test-456');
 
             assert.ok(logs.some(l => l.includes('[test-456]') && l.includes('Error removing')), 'Should log removeAllListeners error');
             assert.ok(logs.some(l => l.includes('[test-456]') && l.includes('Error destroying')), 'Should log destroy error');
@@ -584,7 +584,7 @@ describe('Protocol Utilities', () => {
             };
 
             const config = { logCallback: () => { /* silent */ } };
-            const error = cleanupSocket(mockSocket as any, config, 'test-session');
+            const error = cleanupSocket(mockSocket, config, 'test-session');
 
             assert.ok(error instanceof Error, 'Should convert string to Error instance');
             assert.strictEqual(error.message, 'string error');

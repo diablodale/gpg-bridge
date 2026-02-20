@@ -191,8 +191,19 @@ export function detectResponseCompletion(response: string): ResponseCompletion {
  *     log(config, `[${sessionId}] Socket cleanup failed: ${error.message}`);
  * }
  */
+
+/**
+ * Minimal interface required for socket cleanup operations.
+ * Using a structural subset rather than net.Socket allows test code to pass
+ * lightweight mock objects without casting.
+ */
+export interface CleanableSocket {
+    removeAllListeners(): void;
+    destroy(): void;
+}
+
 export function cleanupSocket(
-    socket: net.Socket,
+    socket: CleanableSocket,
     config: LogConfig,
     sessionId: string
 ): Error | null {

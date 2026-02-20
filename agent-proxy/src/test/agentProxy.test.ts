@@ -129,8 +129,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.connectAgent();
                 expect.fail('Should have thrown');
-            } catch (error: any) {
-                expect(error.message).to.include('gpg-agent');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('gpg-agent');
             }
         });
 
@@ -277,8 +277,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.disconnectAgent('invalid-session-id');
                 expect.fail('Should have thrown');
-            } catch (error: any) {
-                expect(error.message).to.include('session');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('session');
             }
         });
     });
@@ -835,8 +835,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.connectAgent();
                 expect.fail('Should have timed out');
-            } catch (error: any) {
-                expect(error.message).to.match(/timeout|connection/i);
+            } catch (error: unknown) {
+                expect((error as Error).message).to.match(/timeout|connection/i);
                 expect(agentProxy.isRunning()).to.equal(false);
             }
         });
@@ -860,8 +860,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.connectAgent();
                 expect.fail('Should have timed out waiting for greeting');
-            } catch (error: any) {
-                expect(error.message).to.match(/timeout/i);
+            } catch (error: unknown) {
+                expect((error as Error).message).to.match(/timeout/i);
                 expect(agentProxy.isRunning()).to.equal(false);
             }
         });
@@ -886,7 +886,7 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.connectAgent();
                 expect.fail('Should have timed out');
-            } catch (error: any) {
+            } catch (error: unknown) {
                 // After timeout, session should be cleaned up
                 expect(agentProxy.isRunning()).to.equal(false);
                 expect(agentProxy.getSessionCount()).to.equal(0);
@@ -940,8 +940,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.connectAgent();
                 expect.fail('Should have failed on nonce write');
-            } catch (error: any) {
-                expect(error.message).to.include('Write failed');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('Write failed');
                 expect(agentProxy.isRunning()).to.equal(false);
             }
         });
@@ -992,8 +992,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.connectAgent();
                 expect.fail('Should have failed due to socket close');
-            } catch (error: any) {
-                expect(error.message).to.match(/Session closed|closed/i);
+            } catch (error: unknown) {
+                expect((error as Error).message).to.match(/Session closed|closed/i);
                 expect(agentProxy.isRunning()).to.equal(false);
                 expect(agentProxy.getSessionCount()).to.equal(0);
             }
@@ -1033,8 +1033,8 @@ describe('AgentProxy', () => {
             try {
                 await commandPromise;
                 expect.fail('Should have thrown socket error');
-            } catch (error: any) {
-                expect(error.message).to.include('Socket error');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('Socket error');
             }
         });
 
@@ -1067,8 +1067,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.sendCommands(sessionId, 'TEST\n');
                 expect.fail('Should have thrown write error');
-            } catch (error: any) {
-                expect(error.message).to.include('write');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('write');
             }
         });
 
@@ -1114,8 +1114,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.sendCommands('nonexistent-session-id', 'TEST\n');
                 expect.fail('Should have thrown for invalid session');
-            } catch (error: any) {
-                expect(error.message).to.include('session');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('session');
             }
         });
     });
@@ -1218,8 +1218,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.sendCommands(sessionId, 'TEST\n');
                 expect.fail('Should throw for closed session');
-            } catch (error: any) {
-                expect(error.message).to.include('session');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('session');
             }
         });
 
@@ -1262,7 +1262,7 @@ describe('AgentProxy', () => {
             try {
                 await sendPromise;
                 // May complete or may throw - both are valid depending on timing
-            } catch (error: any) {
+            } catch (error: unknown) {
                 // Expected if close happened before/during write
                 expect(error).to.exist;
             }
@@ -1424,7 +1424,7 @@ describe('AgentProxy', () => {
             try {
                 await connectPromise;
                 expect.fail('Should have rejected on early close');
-            } catch (error: any) {
+            } catch (error: unknown) {
                 expect(error).to.exist;
             }
         });
@@ -1462,7 +1462,7 @@ describe('AgentProxy', () => {
             // Immediately await promise - it's "handled" when rejection occurs
             try {
                 await sendPromise;
-            } catch (error: any) {
+            } catch (error: unknown) {
                 // Expected if socket closed before write completed
             }
 
@@ -1490,8 +1490,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.sendCommands('nonexistent-session', 'VERSION\n');
                 expect.fail('Should have thrown error for invalid session');
-            } catch (error: any) {
-                expect(error.message).to.include('Invalid session');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('Invalid session');
             }
         });
 
@@ -1616,8 +1616,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.sendCommands('nonexistent-session', 'VERSION\n');
                 expect.fail('Should have rejected invalid session');
-            } catch (error: any) {
-                expect(error.message).to.include('Invalid session');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('Invalid session');
             }
         });
     });
@@ -1694,8 +1694,8 @@ describe('AgentProxy', () => {
             try {
                 await cmdPromise;
                 expect.fail('Should have rejected due to socket error');
-            } catch (error: any) {
-                expect(error.message).to.match(/Connection lost|Session closed/);
+            } catch (error: unknown) {
+                expect((error as Error).message).to.match(/Connection lost|Session closed/);
             }
 
             // Verify error was logged
@@ -1724,8 +1724,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.connectAgent();
                 expect.fail('Should have rejected due to socket error in CONNECTING_TO_AGENT');
-            } catch (error: any) {
-                expect(error.message).to.include('Connection to gpg-agent failed');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('Connection to gpg-agent failed');
             }
 
             // Verify error was logged
@@ -2090,7 +2090,7 @@ describe('AgentProxy', () => {
             try {
                 await connect2Promise;
                 expect.fail('Should have thrown');
-            } catch (err: any) {
+            } catch (err: unknown) {
                 expect(err).to.exist;
             }
 
@@ -2261,8 +2261,8 @@ describe('AgentProxy', () => {
             try {
                 await agentProxy.sendCommands(sessionId1, 'TEST\n');
                 expect.fail('Should have thrown write error');
-            } catch (error: any) {
-                expect(error.message).to.match(/write|Write/i);
+            } catch (error: unknown) {
+                expect((error as Error).message).to.match(/write|Write/i);
             }
 
             // Session 1 should be cleaned up due to error, session 2 remains
@@ -2394,10 +2394,10 @@ describe('AgentProxy', () => {
             try {
                 await disconnectPromise;
                 expect.fail('Should have rejected due to cleanup failure');
-            } catch (error: any) {
+            } catch (error: unknown) {
                 expect(error).to.exist;
                 // Error message should indicate cleanup failure
-                expect(error.message).to.match(/destroy|cleanup/i);
+                expect((error as Error).message).to.match(/destroy|cleanup/i);
             }
 
             // Session should still be removed from Map (no memory leak)

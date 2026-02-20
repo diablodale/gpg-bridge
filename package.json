@@ -24,6 +24,7 @@
     "test:shared": "cd shared && npm test",
     "test:agent": "cd agent-proxy && npm test",
     "test:request": "cd request-proxy && npm test",
+    "test:integration": "cd agent-proxy && npm run test:integration && cd ../request-proxy && npm run test:integration",
     "test:watch": "cd shared && npm run test:watch",
     "clean": "rimraf -g \"agent-proxy/out\" \"request-proxy/out\" \"agent-proxy/gpg-agent-proxy-*.vsix\" \"request-proxy/gpg-request-proxy-*.vsix\" \"pack/gpg-windows-relay-*.vsix\" \"shared/out\" \"shared/**/*.d.ts\" \"shared/**/*.d.ts.map\""
   },

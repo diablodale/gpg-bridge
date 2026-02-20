@@ -66,6 +66,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:integration": "npm run test:integration:request-proxy && npm run test:integration:gpg-cli",
     "test:integration:request-proxy": "tsc --build tsconfig.test.json && node out/test/integration/requestProxyRunTest.js",
     "test:integration:gpg-cli": "tsc --build tsconfig.test.json && node out/test/integration/gpgCliRunTest.js",
     "package": "vsce package"

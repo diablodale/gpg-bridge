@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
+import * as net from 'net';
 import type { IFileSystem, ISocketFactory, ICommandExecutor, IServerFactory } from '../types';
 
 /**
@@ -14,7 +15,7 @@ import type { IFileSystem, ISocketFactory, ICommandExecutor, IServerFactory } fr
 export class MockFileSystem implements IFileSystem {
     private files: Map<string, Buffer> = new Map();
     private directories: Set<string> = new Set();
-    public callLog: Array<{ method: string; args: any[] }> = [];
+    public callLog: Array<{ method: string; args: unknown[] }> = [];
 
     existsSync(path: string): boolean {
         this.callLog.push({ method: 'existsSync', args: [path] });
@@ -278,10 +279,10 @@ export class MockServer extends EventEmitter {
     public listening = false;
     public connections: MockSocket[] = [];
     public listenPath: string | null = null;
-    private clientHandler: ((socket: MockSocket) => void) | null = null;
+    private clientHandler: ((socket: net.Socket) => void) | null = null;
     private pauseOnConnect: boolean;
 
-    constructor(options?: { pauseOnConnect?: boolean }, clientHandler?: (socket: MockSocket) => void) {
+    constructor(options?: { pauseOnConnect?: boolean }, clientHandler?: (socket: net.Socket) => void) {
         super();
         this.clientHandler = clientHandler || null;
         this.pauseOnConnect = options?.pauseOnConnect ?? false;
@@ -310,7 +311,7 @@ export class MockServer extends EventEmitter {
         }
         this.connections.push(socket);
         if (this.clientHandler) {
-            this.clientHandler(socket);
+            this.clientHandler(socket as unknown as net.Socket);
         }
         return socket;
     }
@@ -325,13 +326,13 @@ export class MockServer extends EventEmitter {
  */
 export class MockServerFactory implements IServerFactory {
     public servers: MockServer[] = [];
-    public clientHandler: ((socket: any) => void) | null = null;
+    public clientHandler: ((socket: net.Socket) => void) | null = null;
 
-    createServer(options?: { pauseOnConnect?: boolean }, clientHandler?: (socket: any) => void): any {
+    createServer(options?: net.ServerOpts, clientHandler?: (socket: net.Socket) => void): net.Server {
         const server = new MockServer(options, clientHandler);
         this.servers.push(server);
         this.clientHandler = clientHandler || null;
-        return server;
+        return server as unknown as net.Server;
     }
 
     getServers(): MockServer[] {
@@ -343,7 +344,7 @@ export class MockServerFactory implements IServerFactory {
  * Mock CommandExecutor - tracks command calls without VS Code runtime
  */
 export class MockCommandExecutor implements ICommandExecutor {
-    public calls: Array<{ method: string; args: any[] }> = [];
+    public calls: Array<{ method: string; args: unknown[] }> = [];
     public connectAgentResponse: { sessionId: string; greeting: string } = {
         sessionId: 'test-session-123',
         greeting: 'OK GPG-Agent (GnuPG) 2.2.19 running in restricted mode\n'
@@ -381,7 +382,7 @@ export class MockCommandExecutor implements ICommandExecutor {
         return this.calls.filter((call) => call.method === method).length;
     }
 
-    getCallArgs(method: string, callIndex: number = 0): any[] {
+    getCallArgs(method: string, callIndex: number = 0): unknown[] {
         const calls = this.calls.filter((call) => call.method === method);
         return calls[callIndex]?.args || [];
     }
@@ -421,7 +422,7 @@ export class MockSocketFactory implements ISocketFactory {
     createConnection(
         options: { host: string; port: number } | { path: string },
         connectListener?: () => void
-    ): any {
+    ): net.Socket {
         this.lastConnectionOptions = options;
         const socket = new MockSocket();
         this.sockets.push(socket);
@@ -468,7 +469,7 @@ export class MockSocketFactory implements ISocketFactory {
             });
         }
 
-        return socket;
+        return socket as unknown as net.Socket;
     }
 
     getSockets(): MockSocket[] {
