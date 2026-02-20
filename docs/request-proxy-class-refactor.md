@@ -261,16 +261,16 @@ Do not commit failing code. Do not begin Phase N+1 until Phase N is committed.
 Prerequisite for Phase 2. Minimal, backward-compatible changes. Nothing in request-proxy
 changes yet.
 
-- [ ] **1.1** `shared/src/types.ts`: add optional `sessionId?: string` to
+- [x] **1.1** `shared/src/types.ts`: add optional `sessionId?: string` to
   `ICommandExecutor.connectAgent()`
-- [ ] **1.2** `agent-proxy/src/services/agentProxy.ts`: update `AgentProxy.connectAgent(sessionId?: string)`
+- [x] **1.2** `agent-proxy/src/services/agentProxy.ts`: update `AgentProxy.connectAgent(sessionId?: string)`
   to use caller-supplied value when present, otherwise `uuidv4()`
-- [ ] **1.3** `agent-proxy/src/services/agentProxy.ts`: rename `dispose()` → `stop()` for
+- [x] **1.3** `agent-proxy/src/services/agentProxy.ts`: rename `dispose()` → `stop()` for
   symmetry with `RequestProxy.stop()` (synchronous rename only; async implementation
   deferred to Phase 6)
-- [ ] **1.4** `agent-proxy/src/extension.ts`: update `connectAgent` command handler
+- [x] **1.4** `agent-proxy/src/extension.ts`: update `connectAgent` command handler
   signature to forward optional `sessionId` arg from VS Code command payload
-- [ ] **1.5** `agent-proxy/src/extension.ts`: update `agentProxyService.dispose()` →
+- [x] **1.5** `agent-proxy/src/extension.ts`: update `agentProxyService.dispose()` →
   `await agentProxyService.stop()` call site in `stopAgentProxy()` — add `await` now so
   Phase 6's async upgrade requires no further call-site change (`await` on a sync `void`
   return is a harmless no-op)
@@ -282,19 +282,19 @@ changes yet.
   `error instanceof Error ? error.message : String(error)` patterns with
   `extractErrorMessage(error)` from `@gpg-relay/shared` (used correctly in request-proxy
   but never imported in agent-proxy)
-- [ ] **1.8** `request-proxy/src/services/commandExecutor.ts`: update
+- [x] **1.8** `request-proxy/src/services/commandExecutor.ts`: update
   `VSCodeCommandExecutor.connectAgent(sessionId?: string)` to accept and forward the
   hint as the first arg to `_gpg-agent-proxy.connectAgent`
-- [ ] **1.9** `shared/src/test/helpers.ts`: update `MockCommandExecutor.connectAgent(sessionId?: string)`
+- [x] **1.9** `shared/src/test/helpers.ts`: update `MockCommandExecutor.connectAgent(sessionId?: string)`
   to accept optional hint and record it in `calls` for test assertions
 - [ ] **1.10** `agent-proxy/src/extension.ts`: remove `gpg-agent-proxy.restart` command
   registration and the `restartAgentProxy()` function — `request-proxy` has no restart
   command and symmetry is the goal; a restart is just `stop()` + `start()` that callers
   can do explicitly if needed
-- [ ] **1.11** Compile full repo (`npm run compile`), run all tests (`npm test` +
+- [x] **1.11** Compile full repo (`npm run compile`), run all tests (`npm test` +
   `npm run test:integration`), verify clean
-- [ ] **1.12** Commit items 1.1, 1.2, 1.4, 1.8, 1.9: `feat(agent-proxy): accept optional sessionId hint in connectAgent`
-- [ ] **1.13** Commit items 1.3, 1.5: `refactor(agent-proxy): rename dispose() to stop()`
+- [x] **1.12** Commit items 1.1, 1.2, 1.4, 1.8, 1.9: `feat(agent-proxy): accept optional sessionId hint in connectAgent`
+- [x] **1.13** Commit items 1.3, 1.5: `refactor(agent-proxy): rename dispose() to stop()`
 - [ ] **1.14** Commit items 1.6, 1.7, 1.10: `refactor(agent-proxy): implement deactivate, use extractErrorMessage, remove restart`
 - [ ] **1.15** ✅ Phase gate: all tests green, all commits done — proceed to Phase 2
 
@@ -468,7 +468,7 @@ session has fully cleaned up and been removed from the Map.
 
 | Phase | Description | Status |
 |---|---|---|
-| 1 | `shared` + `agent-proxy`: optional `sessionId` hint | ⏳ Not started |
+| 1 | `shared` + `agent-proxy`: optional `sessionId` hint | 🔄 In progress |
 | 2 | Rename `ClientSessionManager` → `RequestSessionManager` | ⏳ Not started |
 | 3 | `RequestProxy` class replaces factory function | ⏳ Not started |
 | 4 | `extension.ts` uses `RequestProxy` | ⏳ Not started |
