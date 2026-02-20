@@ -299,9 +299,13 @@ Key implementation notes:
    payload (`Buffer.from('test data')`) using Node's `crypto.createHash('sha512')` and send that
    directly in the `SETHASH 10` command (libgcrypt algorithm ID `10` = SHA-512).
 
+2. **`extensionDependencies` in `request-proxy/package.json`:** Cross-host `extensionDependencies`
+   (workspace → ui) conirmed works. VS Code correctly loads `request-proxy` in the
+   remote extension host even when the `local.gpg-agent-proxy` dependency lives in the local host.
+
 ### Open Questions (Deferred)
 
-2. **Phase 3 keys** *(deferred until after Phase 1 is successfully implemented)*: Do you have a
+3. **Phase 3 keys** *(deferred until after Phase 1 is successfully implemented)*: Do you have a
    GPG key on the Windows keyring that can be exported into the container for sign/encrypt tests,
    or should the plan create a fresh key inside the container and re-import it to the Windows
    keyring as part of test setup?
@@ -448,6 +452,35 @@ and the test agent's socket is live.
 ---
 
 ## Phase 2 — `request-proxy` → `agent-proxy` → Real gpg-agent
+
+**Status: Test infrastructure implemented. Runner validation pending.**
+
+All test files, configs, and infrastructure are in place. What remains is validating the
+`--remote dev-container+<uri>` runner approach experimentally (see `runTest.ts` header for the
+four open unknowns). Run `cd request-proxy && npm run test:integration` once the container URI
+is confirmed.
+
+### Implementation summary
+
+- [request-proxy/test/integration/runTest.ts](../request-proxy/test/integration/runTest.ts) — custom runner with `--remote` launchArgs (URI TODO; see file header)
+- [request-proxy/test/integration/requestProxyIntegration.test.ts](../request-proxy/test/integration/requestProxyIntegration.test.ts) — 8 test cases
+- [request-proxy/test/integration/suite/index.ts](../request-proxy/test/integration/suite/index.ts) — Mocha entry point
+- [request-proxy/tsconfig.test.json](../request-proxy/tsconfig.test.json) — test compilation config
+- [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) — Phase 2 dev container (ubuntu-22.04, no gpg; Phase 3 gets its own container with gnupg2)
+- `request-proxy/package.json` — `test:integration` npm script added
+- `request-proxy/src/services/requestProxy.ts` — `RequestProxyInstance.socketPath: string` added
+- `request-proxy/src/extension.ts` — `_gpg-request-proxy.test.getSocketPath` command added (integration test mode only; returns active socket path so tests can connect via `AssuanSocketClient`)
+
+### Design notes (deviations from original plan)
+
+- Tests use the **auto-started proxy** (via `activate()` + `VSCODE_INTEGRATION_TEST=1`) rather than
+  starting a new instance in `before()`. This avoids importing `startRequestProxy` across the
+  `src/` → `test/integration/` module boundary (TypeScript path vs runtime path mismatch).
+- Socket path is discovered via `_gpg-request-proxy.test.getSocketPath` VS Code command (new) rather than
+  a hard-coded path, so the actual `gpgconf`-derived Linux socket path is used automatically.
+- `RequestProxyInstance` gains a `socketPath` field used by the command above.
+- `SIGKEY` in test 5 uses `TEST_KEY_KEYGRIP` (not fingerprint) — consistent with Phase 1 test 7 findings.
+- `OPTION allow-pinentry-notify` is NOT sent — it is forbidden on the extra socket (Phase 1 finding).
 
 **Constraint:** `request-proxy` is a remote-only extension (dev container/WSL/SSH). Phase 2 exercises
 the full proxy chain: client Unix socket → `request-proxy` (Linux) → VS Code command routing

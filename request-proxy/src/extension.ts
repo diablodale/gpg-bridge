@@ -9,6 +9,8 @@
  * via VS Code commands.
  */
 
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { startRequestProxy } from './services/requestProxy';
 import { extractErrorMessage } from '@gpg-relay/shared';
@@ -33,6 +35,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
             outputChannel
         );
+
+        // Integration test helper command — only registered when integration tests are running.
+        // Exposes the socket path the proxy is listening on so tests can connect via AssuanSocketClient.
+        if (isIntegrationTestEnvironment()) {
+            context.subscriptions.push(
+                vscode.commands.registerCommand('_gpg-request-proxy.test.getSocketPath', () => {
+                    return requestProxyInstance?.socketPath ?? null;
+                })
+            );
+        }
 
         // Start request proxy on remote
         // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
@@ -66,11 +78,16 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
 		const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
 		const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
 
-        // Start the request proxy with explicit commandExecutor (or let it use default)
+        // In integration test mode, bypass gpgconf and use a known temp socket path
+        // (gpgconf / gnupg2 is not installed in the Phase 2 container).
+        const getSocketPath = isIntegrationTestEnvironment()
+            ? async () => path.join(os.tmpdir(), `gpg-relay-test-${process.pid}.sock`)
+            : undefined;
         requestProxyInstance = await startRequestProxy({
             logCallback: logCallback
         }, {
-            commandExecutor: new VSCodeCommandExecutor()
+            commandExecutor: new VSCodeCommandExecutor(),
+            ...(getSocketPath ? { getSocketPath } : {})
         });
 
         outputChannel.appendLine('Request proxy is READY');

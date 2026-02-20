@@ -6,11 +6,17 @@ export default [
     },
     {
         files: ['**/*.ts'],
+        plugins: {
+            '@typescript-eslint': tseslint.plugin
+        },
         languageOptions: {
             parser: tseslint.parser,
             parserOptions: {
                 sourceType: 'module'
             }
+        },
+        rules: {
+            '@typescript-eslint/no-explicit-any': 'warn'
         }
     }
 ];

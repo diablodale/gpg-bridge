@@ -163,6 +163,8 @@ interface RequestProxyConfigWithExecutor extends RequestProxyConfig {
 }
 
 export interface RequestProxyInstance {
+    /** The Unix socket path this proxy is listening on. */
+    socketPath: string;
     stop(): Promise<void>;
 }
 
@@ -186,6 +188,7 @@ class ClientSessionManager extends EventEmitter {
     public sessionId: string | null = null;
     private state: SessionState = 'DISCONNECTED';
     private buffer: string = '';
+    private lastCommand: string = '';  // First token (verb) of the most recent command sent to agent (e.g. 'BYE')
 
     constructor(config: RequestProxyConfigWithExecutor, socket: net.Socket) {
         super();
@@ -304,6 +307,9 @@ class ClientSessionManager extends EventEmitter {
         this.transition('CLIENT_DATA_COMPLETE');
         log(this.config, `[${this.sessionId}] Data complete: ${sanitizeForLog(data)}`);
 
+        // Track first token of last command so BYE can trigger graceful close after OK/ERR response.
+        this.lastCommand = data.split(/\s/, 1)[0].toUpperCase();
+
         // Send to agent
         this.sendToAgent(data);
     }
@@ -336,6 +342,19 @@ class ClientSessionManager extends EventEmitter {
 
     private handleResponseOkOrErr(response: string): void {
         this.transition('RESPONSE_OK_OR_ERR');
+
+        // BYE: gpg-agent closes its TCP socket after sending 'OK closing connection'.
+        // Some clients like gpg itself wait for the socket to close before exiting.
+        // agent-proxy's session self-cleans silently after sendCommands() already resolved,
+        // so there is no cross-extension signal to rely on which causes clients like gpg
+        // to deadlock waiting on the socket to close. Therefore, request-proxy must initiate
+        // graceful close of the client Unix socket hereto prevent deadlock.
+        if (this.lastCommand === 'BYE') {
+            log(this.config, `[${this.sessionId}] BYE acknowledged — closing client socket`);
+            this.emit('CLEANUP_REQUESTED', false);
+            return;
+        }
+
         log(this.config, `[${this.sessionId}] Response OK/ERR processed, returning to READY`);
 
         // Check for pipelined data
@@ -587,10 +606,16 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
         fileSystem.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
     }
 
+    // Track all active sessions so stop() can destroy them before server.close().
+    // server.close() only stops new connections; existing ones keep running indefinitely
+    // unless destroyed explicitly — which would cause stop() to never call its callback.
+    const activeSessions = new Set<ClientSessionManager>();
+
     // Create the Unix socket server
     const server = serverFactory.createServer({ pauseOnConnect: true }, (clientSocket) => {
         // Create session manager (EventEmitter pattern like NodeJS Socket)
         const sessionManager = new ClientSessionManager(fullConfig, clientSocket);
+        activeSessions.add(sessionManager);
 
 
         // Attach socket event handlers
@@ -635,6 +660,10 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
             }
         });
 
+        // Remove from active set when the session finishes cleanup (any exit path)
+        sessionManager.once('CLEANUP_COMPLETE', () => activeSessions.delete(sessionManager));
+        sessionManager.once('CLEANUP_ERROR',    () => activeSessions.delete(sessionManager));
+
         // Start connection sequence - emit initial event and let handlers do the work
         log(fullConfig, 'Client connected to socket. Socket is paused while initiating connection to GPG Agent Proxy');
         sessionManager.emit('CLIENT_SOCKET_CONNECTED');
@@ -657,6 +686,8 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
             log(config, 'Request proxy listening');
 
             resolve({
+                socketPath,
+
                 /**
                  * Stop the request proxy server
                  *
@@ -681,6 +712,9 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
                  */
                 stop: async () => {
                     return new Promise((stopResolve) => {
+                        // Stop accepting new connections, then destroy all active sessions.
+                        // server.close() only calls its callback once all connections are gone;
+                        // without explicit cleanup it would hang on any open client socket.
                         server.close(() => {
                             try {
                                 fileSystem.unlinkSync(socketPath);
@@ -690,6 +724,12 @@ export async function startRequestProxy(config: RequestProxyConfig, deps?: Reque
                             log(config, 'Request proxy stopped');
                             stopResolve();
                         });
+
+                        // Emit CLEANUP_REQUESTED on every live session so their sockets
+                        // close, which unblocks server.close() above.
+                        for (const session of activeSessions) {
+                            session.emit('CLEANUP_REQUESTED', false);
+                        }
                     });
                 }
             });

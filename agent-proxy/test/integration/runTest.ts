@@ -58,9 +58,9 @@ async function main(): Promise<void> {
             }
         });
     } finally {
-        // Kill agent whether tests passed or failed. Ignore errors here — the agent
-        // may have already exited if a test explicitly killed it.
-        try { cli.killAgent(); } catch { /* agent may have already exited */ }
+        // Kill agent whether tests passed or failed.
+        // killAgent() already tolerates a dead agent; only throws if gpgconf fails to spawn.
+        cli.killAgent();
 
         // Validate again before deleting as a secondary safety net — the primary
         // check runs immediately after mkdtempSync above, but this catches any
