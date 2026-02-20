@@ -12,7 +12,7 @@ import * as net from 'net';
 import * as fs from 'fs';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { log, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog, detectResponseCompletion, cleanupSocket } from '@gpg-relay/shared';
+import { log, encodeProtocolData, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog, detectResponseCompletion, cleanupSocket } from '@gpg-relay/shared';
 import type { LogConfig, IFileSystem, ISocketFactory } from '@gpg-relay/shared';
 
 // ============================================================================
@@ -306,7 +306,15 @@ export class AgentSessionManager extends EventEmitter {
             return;
         }
 
-        this.socket.write(commandBlock, (error) => {
+        // Convert string commandBlocks to Buffer using encodeProtocolData (latin1) to preserve
+        // raw bytes (0–255). socket.write(string) defaults to UTF-8, which expands bytes 0x80–0xFF
+        // into 2-byte sequences — corrupting binary Assuan data such as the PKDECRYPT D-block
+        // ciphertext. The nonce is already a Buffer and does not need conversion.
+        const data: Buffer = Buffer.isBuffer(commandBlock)
+            ? commandBlock
+            : encodeProtocolData(commandBlock);
+
+        this.socket.write(data, (error) => {
             if (error) {
                 log(this.config, `[${this.sessionId}] Write failed: ${error.message}`);
                 this.emit('ERROR_OCCURRED', { error });

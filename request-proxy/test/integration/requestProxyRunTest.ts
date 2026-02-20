@@ -144,13 +144,13 @@ async function main(): Promise<void> {
     cli.writeAgentConf(['disable-scdaemon']);
 
     // Generate the test key on Windows before either extension host starts.
-    cli.generateKey('Integration Test User', 'integration-test@example.com');
-    const fingerprint = cli.getFingerprint('integration-test@example.com');
-    const keygrip = cli.getKeygrip('integration-test@example.com');
+    await cli.generateKey('Integration Test User', 'integration-test@example.com');
+    const fingerprint = await cli.getFingerprint('integration-test@example.com');
+    const keygrip = await cli.getKeygrip('integration-test@example.com');
 
     // Launch the gpg-agent BEFORE the extension hosts start so that agent-proxy's
     // activate() → detectAgentSocket() (calls gpgconf) already sees a live socket.
-    cli.launchAgent();
+    await cli.launchAgent();
 
     // Download (or reuse cached) VS Code binary, then pre-install the Dev Containers
     // extension into the test profile. resolveCliArgsFromVSCodeExecutablePath returns
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
             // Local Windows path would run tests in the local host where the Unix socket
             // doesn't exist. Remote URI ensures tests run alongside request-proxy in
             // the container where the Assuan Unix socket is created.
-            extensionTestsPath: `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}/request-proxy/out/test/integration/suite/index`,
+            extensionTestsPath: `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}/request-proxy/out/test/integration/suite/requestProxyIndex`,
 
             launchArgs: [
                 // Open the workspace using its in-container path. Passing workspaceRoot
@@ -216,7 +216,7 @@ async function main(): Promise<void> {
     } finally {
         // Kill agent whether tests passed or failed.
         // killAgent() already tolerates a dead agent; only throws if gpgconf fails to spawn.
-        cli.killAgent();
+        await cli.killAgent();
 
         // Validate again before deleting as a secondary safety net — the primary
         // check runs immediately after mkdtempSync above, but this catches any

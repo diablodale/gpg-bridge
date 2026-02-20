@@ -43,9 +43,9 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
 
         // Generate a no-passphrase test key in the isolated keyring.
         // gpg-agent is already running (launched by runTest.ts before the host started).
-        cli.generateKey('Integration Test User', 'integration-test@example.com');
-        fingerprint = cli.getFingerprint('integration-test@example.com');
-        keygrip = cli.getKeygrip('integration-test@example.com');
+        await cli.generateKey('Integration Test User', 'integration-test@example.com');
+        fingerprint = await cli.getFingerprint('integration-test@example.com');
+        keygrip = await cli.getKeygrip('integration-test@example.com');
     });
 
     after(async function () {
@@ -53,7 +53,7 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
         // Key deletion must happen while gpg-agent is still alive (runTest.ts kills it
         // after runTests() resolves, i.e. after this after() completes).
         if (fingerprint) {
-            try { cli.deleteKey(fingerprint); } catch { /* ignore if already deleted */ }
+            try { await cli.deleteKey(fingerprint); } catch { /* ignore if already deleted */ }
         }
         // Reset extension state so subsequent test runs start clean.
         try { await vscode.commands.executeCommand('gpg-agent-proxy.stop'); } catch { /* ignore */ }

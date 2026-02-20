@@ -462,9 +462,9 @@ is confirmed.
 
 ### Implementation summary
 
-- [request-proxy/test/integration/runTest.ts](../request-proxy/test/integration/runTest.ts) — custom runner with `--remote` launchArgs (URI TODO; see file header)
+- [request-proxy/test/integration/requestProxyRunTest.ts](../request-proxy/test/integration/requestProxyRunTest.ts) — custom runner with `--remote` launchArgs (see file header)
 - [request-proxy/test/integration/requestProxyIntegration.test.ts](../request-proxy/test/integration/requestProxyIntegration.test.ts) — 8 test cases
-- [request-proxy/test/integration/suite/index.ts](../request-proxy/test/integration/suite/index.ts) — Mocha entry point
+- [request-proxy/test/integration/suite/requestProxyIndex.ts](../request-proxy/test/integration/suite/requestProxyIndex.ts) — Mocha entry point
 - [request-proxy/tsconfig.test.json](../request-proxy/tsconfig.test.json) — test compilation config
 - [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) — Phase 2 dev container (ubuntu-22.04, no gpg; Phase 3 gets its own container with gnupg2)
 - `request-proxy/package.json` — `test:integration` npm script added
@@ -633,7 +633,7 @@ here because it has no pre-launch lifecycle hook; `cli.launchAgent()` must run b
 
 ---
 
-## Phase 3 — `gpg.exe` → `request-proxy` → `agent-proxy` → gpg-agent
+## Phase 3 — `gpg.exe` → `request-proxy` → `agent-proxy` → gpg-agent *(implemented)*
 
 **Constraint:** Phase 3 exercises the full end-to-end chain with a real `gpg` binary on Linux
 calling through the relay to the Windows gpg-agent. `gnupg2` must be installed in the remote;
@@ -677,7 +677,7 @@ await runTests({
         GNUPGHOME: LINUX_GNUPGHOME,    // Linux-side GNUPGHOME for gpg CLI + request-proxy
         WINDOWS_GNUPGHOME: GNUPGHOME,  // Windows-side GNUPGHOME for agent-proxy
         TEST_KEY_FINGERPRINT: fingerprint,
-        PUBKEY_EXPORT_PATH: `${CONTAINER_WORKSPACE}/...` // container-visible path to pubkey
+        PUBKEY_ARMORED_KEY: cli.exportPublicKey(fingerprint) // ASCII-armored public key string
     }
 });
 ```
@@ -696,9 +696,14 @@ await runTests({
 All test dependencies are declared in `devcontainer.json` — reproducible and isolated from any
 developer machine state.
 
-**Open question from Phase 2 carries over:** if `extensionTestsEnv` only reaches the remote
-host, then `WINDOWS_GNUPGHOME` never reaches `agent-proxy`. Phase 3 design depends on resolving
-the Phase 2 unknowns first.
+**Phase 2 env-propagation question resolved:** `extensionTestsEnv` reaches *only* the remote
+host. Agent-proxy (Windows) gets `GNUPGHOME` via `extensionTestsEnv` directly (Windows local
+extension host sees the parent VS Code process env, which includes `extensionTestsEnv`). The
+container's `GNUPGHOME` is a *static* Linux path (`/tmp/gpg-test-phase3`) declared in
+`devcontainer.json` `remoteEnv` — not forwarded from Windows. `PUBKEY_ARMORED_KEY` (ASCII-armored
+public key string) and `TEST_KEY_FINGERPRINT` are forwarded from `extensionTestsEnv` →
+`remoteEnv ${localEnv:...}`.
+See `.devcontainer/phase3/devcontainer.json` and `gpgCliRunTest.ts` for details.
 
 ### Setup / Teardown
 
@@ -711,19 +716,18 @@ the Phase 2 unknowns first.
   cli.generateKey('Test User', 'test@example.com')
   fingerprint = cli.getFingerprint('test@example.com')
   cli.launchAgent()
-  write cli.exportPublicKey(fingerprint) to well-known path accessible from container
-  runTests({ ..., extensionTestsEnv: { GNUPGHOME: '/tmp/gpg-test-integration',
-                                       WINDOWS_GNUPGHOME: GNUPGHOME,
+  pubkeyArmored = cli.exportPublicKey(fingerprint)  ← ASCII-armored string, no file needed
+  runTests({ ..., extensionTestsEnv: { GNUPGHOME (Windows path),
                                        TEST_KEY_FINGERPRINT: fingerprint,
-                                       PUBKEY_EXPORT_PATH: '<container-visible-path>' } })
+                                       PUBKEY_ARMORED_KEY: pubkeyArmored } })
   finally: cli.killAgent(); cli.deleteKey(fingerprint); rmSync(GNUPGHOME)
 
 [Mocha before() — remote (Linux) extension host]
   - fs.mkdirSync(process.env.GNUPGHOME, { recursive: true, mode: 0o700 })
-  - linuxCli = new GpgCli()   ← uses GNUPGHOME from env (Linux path)
-  - linuxCli.importPublicKey(fs.readFileSync(process.env.PUBKEY_EXPORT_PATH, 'latin1'))
+  - cli = new GpgCli()   ← uses GNUPGHOME from env (Linux path)
+  - cli.importPublicKey(process.env.PUBKEY_ARMORED_KEY)  ← no file read needed
   - fingerprint = process.env.TEST_KEY_FINGERPRINT
-  - Prepare test payload: Buffer.from('integration test payload')
+  - testDir = fs.mkdtempSync(...)
 
 [Mocha after()]
   - linuxCli.deleteKey(fingerprint)   ← remove public key from Linux GNUPGHOME
@@ -756,10 +760,18 @@ the Phase 2 unknowns first.
    - `spawnSync('gpg', ['--batch', '--decrypt', 'testfile.txt.gpg'])`
    - Decrypted plaintext matches original payload
 
-6. **Large file sign** (stress-tests D-block buffering)
-   - Generate 1 MB test file
+6. **Large file sign**
+   - Generate 256 KB random binary file
    - Sign it via `gpg --sign`
-   - Verify signature: exit code 0
+   - gpg hashes locally (SHA-256); only the ~32-byte hash is sent to gpg-agent via PKSIGN
+   - Exit code 0; `.gpg` packet exists
+   - (Note: 256 KB file does not traverse the proxy — tests large-input handling end-to-end)
+
+7. **Large file encrypt + decrypt round-trip**
+   - Generate 256 KB random binary file
+   - `gpg --encrypt` (bulk AES-256 done locally; only ECDH-wrapped session key ~100B sent via PKENCRYPT, if any)
+   - `gpg --decrypt` (PKDECRYPT inquiry sends ~100B encrypted session key through proxy; bulk decrypt is local)
+   - Decrypted bytes match original binary content (latin1 round-trip)
 
 ---
 
@@ -787,11 +799,12 @@ npm run test:integration
 If the automated `--remote dev-container+<uri>` approach proves unworkable, WSL is the next
 fallback (`--remote wsl+Ubuntu-22.04`), then manual "Reopen in Container" as last resort.
 
-### Phase 3 *(approach TBD — depends on Phase 2 findings)*
+### Phase 3 *(implemented)*
 ```powershell
 # 1. Build both extensions
 npm run compile
-# 2. Run integration tests
+# 2. Compile integration test files
+# 3. Run integration tests (gpgCliRunTest.ts fires VS Code in the phase3 dev container)
 cd request-proxy
 npm run test:integration:phase3
 ```
@@ -814,6 +827,10 @@ npm run test:integration:phase3
 | Phase 2/3 `extensionTestsEnv` propagation is an open unknown | If env vars only reach the remote host, `agent-proxy` (Windows local host) won't see `GNUPGHOME`; fallback options include a VS Code workspace setting override or a dedicated agent-proxy command that accepts a GNUPGHOME path — to be resolved experimentally after Phase 1 |
 | Phase 3 test key: private on Windows, only public exported to Linux | Linux `gpg` only needs the public key to address key operations by fingerprint; private key stays on Windows so all signing flows through `agent-proxy` to the real gpg-agent; public key is exported to a path accessible from the container |
 | Phase 2/3 fallback: manual "Reopen in Container" | If automated `--remote` in `launchArgs` proves unworkable, the fallback runs tests from a terminal inside the container after manually connecting VS Code Remote; Windows-side isolation remains unsolved in that path |
+| Phase 3 has its own `devcontainer.json` at `.devcontainer/phase3/devcontainer.json` | Phase 2 has no gpg binary; Phase 3 needs gnupg2. Separate configs prevent Phase 2 from accidentally pulling in the gpg install and keep the two test environments isolated. `runTest.ts` / `gpgCliRunTest.ts` each reference their own config file via the serialized URI object format. |
+| Phase 3 `GNUPGHOME` split: Windows path via `extensionTestsEnv`; Linux path static in `devcontainer.json` | `extensionTestsEnv` propagates to both Windows local host and remote host in VS Code's test setup. Agent-proxy (Windows) uses the Windows `GNUPGHOME` path it inherits from `extensionTestsEnv`. The container's gpg CLI and request-proxy use the static Linux path `/tmp/gpg-test-phase3` set in `remoteEnv` — no Windows path forwarded to Linux to avoid confusion. |
+| Phase 3 public key: passed as `PUBKEY_ARMORED_KEY` env var | `exportPublicKey()` already returns an ASCII-armored string. An Ed25519 armored public key is ~350 chars — well within the 32,767-char Win32 env var limit. Eliminates the intermediate file write, workspace bind mount dependency, container-visible path calculation, and cleanup step in the runner's `finally` block. `devcontainer.json` remoteEnv forwards it via `${localEnv:PUBKEY_ARMORED_KEY}`; `before()` calls `importPublicKey(process.env.PUBKEY_ARMORED_KEY)` directly. |
+| Phase 3 `gpg.conf` sets `trust-model always` in `before()` | The imported Windows public key has no explicit ownertrust. Without `trust-model always` gpg refuses to encrypt or shows warnings that cause non-zero exit codes. Written once into GNUPGHOME before any gpg call; cleaned up with GNUPGHOME in `after()`. |
 | `GpgCli` consolidates all `gpg`/`gpgconf` subprocess calls | Single place for binary path resolution, `GNUPGHOME` env injection, temp file creation, and error handling; no scattered `spawnSync` calls across test files |
 | `GpgCli` reads `GNUPGHOME` from `process.env`; `runTest.ts` sets it before first use | Eliminates ambiguous constructor param; `process.env.GNUPGHOME = GNUPGHOME` in `runTest.ts` is idiomatic for a runner script; same `new GpgCli()` call works in runner, extension host, and container |
 | `gpgTestEnvironment.ts` eliminated; logic inlined into `runTest.ts` | After `GpgCli` absorbed all subprocess and conf-file logic the remaining wrapper was two lines; inlining it allows a single `GpgCli` instance to be shared across `writeAgentConf`, `launchAgent`, and `killAgent` within the same try/finally |

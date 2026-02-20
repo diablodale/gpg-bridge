@@ -36,9 +36,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             outputChannel
         );
 
-        // Integration test helper command — only registered when integration tests are running.
-        // Exposes the socket path the proxy is listening on so tests can connect via AssuanSocketClient.
-        if (isIntegrationTestEnvironment()) {
+        // Integration test helper command — only registered when integration tests are running
+        // without a configured GNUPGHOME (Phase 2). Phase 2 tests connect to the proxy socket
+        // directly via AssuanSocketClient and need the socket path via this command.
+        // Phase 3 sets GNUPGHOME so gpg finds the socket at $GNUPGHOME/S.gpg-agent naturally;
+        // this command is not needed and must not be registered.
+        if (isIntegrationTestEnvironment() && !process.env.GNUPGHOME) {
             context.subscriptions.push(
                 vscode.commands.registerCommand('_gpg-request-proxy.test.getSocketPath', () => {
                     return requestProxyInstance?.socketPath ?? null;
@@ -78,9 +81,14 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
 		const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
 		const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
 
-        // In integration test mode, bypass gpgconf and use a known temp socket path
-        // (gpgconf / gnupg2 is not installed in the Phase 2 container).
-        const getSocketPath = isIntegrationTestEnvironment()
+        // In integration test mode without a configured GNUPGHOME, bypass gpgconf and
+        // use a known temp socket path. Phase 2 does not set GNUPGHOME in remoteEnv
+        // and must not invoke any gpg executables — tests connect to the socket via
+        // the _gpg-request-proxy.test.getSocketPath test helper command.
+        // Phase 3 sets GNUPGHOME=/tmp/gpg-test-phase3 via remoteEnv, so getSocketPath
+        // is left undefined and getLocalGpgSocketPath() runs normally (calls gpgconf),
+        // placing the socket at $GNUPGHOME/S.gpg-agent where gpg expects its agent.
+        const getSocketPath = (isIntegrationTestEnvironment() && !process.env.GNUPGHOME)
             ? async () => path.join(os.tmpdir(), `gpg-relay-test-${process.pid}.sock`)
             : undefined;
         requestProxyInstance = await startRequestProxy({

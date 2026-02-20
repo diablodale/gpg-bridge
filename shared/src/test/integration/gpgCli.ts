@@ -14,7 +14,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { spawnSync, SpawnSyncReturns } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 export interface GpgCliOpts {
     /** Path to gpg binary. Defaults to 'gpg' (must be on PATH). */
@@ -59,46 +62,44 @@ export class GpgCli {
     /**
      * Spawn binary with args; throw on non-zero exit or spawn error.
      * Used for all lifecycle operations where failure is unexpected.
+     * Async so it does not block the VS Code extension host event loop.
      */
-    private run(binary: string, args: string[]): GpgExecResult {
-        const result: SpawnSyncReturns<string> = spawnSync(binary, args, {
+    private async run(binary: string, args: string[]): Promise<GpgExecResult> {
+        const { stdout, stderr } = await execFileAsync(binary, args, {
             encoding: 'latin1',
             env: this.env,
-            timeout: 30000
+            timeout: 30000,
+            maxBuffer: 1024 * 1024  // largest expected stdout: ~256 KB (decrypt test); 1 MB gives 4× headroom
         });
-        if (result.error) {
-            throw new Error(`GpgCli: ${binary} spawn failed: ${result.error.message}`);
-        }
-        if (result.status !== 0) {
-            throw new Error(
-                `GpgCli: ${binary} ${args.join(' ')} exited ${result.status}: ${result.stderr ?? '(no stderr)'}`
-            );
-        }
-        return { exitCode: result.status ?? 0, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+        return { exitCode: 0, stdout, stderr };
     }
 
     /**
-     * Spawn binary with args; return result without throwing.
+     * Spawn binary with args; return result without throwing on non-zero exit.
      * Used for crypto ops where the caller needs to inspect exit code.
+     * Async so it does not block the VS Code extension host event loop.
      */
-    private runRaw(binary: string, args: string[]): GpgExecResult {
-        const result: SpawnSyncReturns<string> = spawnSync(binary, args, {
-            encoding: 'latin1',
-            env: this.env,
-            timeout: 30000
-        });
-        if (result.error) {
-            throw new Error(`GpgCli: ${binary} spawn failed: ${result.error.message}`);
+    private async runRaw(binary: string, args: string[]): Promise<GpgExecResult> {
+        try {
+            const { stdout, stderr } = await execFileAsync(binary, args, {
+                encoding: 'latin1',
+                env: this.env,
+                timeout: 30000,
+                maxBuffer: 1024 * 1024  // largest expected stdout: ~256 KB (decrypt test); 1 MB gives 4× headroom
+            });
+            return { exitCode: 0, stdout, stderr };
+        } catch (err: any) {
+            // execFile rejects with numeric code + stdout/stderr on non-zero exit
+            if (typeof err.code === 'number' && typeof err.stdout === 'string') {
+                return { exitCode: err.code, stdout: err.stdout ?? '', stderr: err.stderr ?? '' };
+            }
+            // Spawn error (timeout, ENOENT, etc.)
+            throw err;
         }
-        return {
-            exitCode: result.status ?? -1,
-            stdout: result.stdout ?? '',
-            stderr: result.stderr ?? ''
-        };
     }
 
     // -------------------------------------------------------------------------
-    // Agent lifecycle (called from runTest.ts, in runner process)
+    // Agent lifecycle (called from integration test runners, in runner process)
     // -------------------------------------------------------------------------
 
     /**
@@ -111,23 +112,26 @@ export class GpgCli {
     }
 
     /** Launch gpg-agent in daemon mode for this GNUPGHOME. */
-    launchAgent(): void {
-        this.run(this.gpgconfPath, ['--launch', 'gpg-agent']);
+    async launchAgent(): Promise<GpgExecResult> {
+        return this.run(this.gpgconfPath, ['--launch', 'gpg-agent']);
     }
 
     /**
      * Kill gpg-agent for this GNUPGHOME.
      * Does not throw if the agent is already dead (gracefully ignores exit code 2).
      */
-    killAgent(): void {
-        const result: SpawnSyncReturns<string> = spawnSync(
-            this.gpgconfPath, ['--kill', 'gpg-agent'],
-            { encoding: 'latin1', env: this.env, timeout: 10000 }
-        );
-        if (result.error) {
-            throw new Error(`GpgCli: gpgconf spawn failed: ${result.error.message}`);
+    async killAgent(): Promise<void> {
+        try {
+            await execFileAsync(this.gpgconfPath, ['--kill', 'gpg-agent'], {
+                encoding: 'latin1',
+                env: this.env,
+                timeout: 10000
+            });
+        } catch (err: any) {
+            // gpgconf --kill returns non-zero when agent is already dead — that is fine.
+            if (typeof err.code === 'number') { return; }
+            throw err;
         }
-        // gpgconf --kill returns non-zero when agent is already dead — that is fine.
     }
 
     // -------------------------------------------------------------------------
@@ -139,7 +143,7 @@ export class GpgCli {
      * Key types are specified explicitly (EDDSA + ECDH) rather than relying on
      * 'Key-Type: default', which resolves unreliably on some Gpg4win installations.
      */
-    generateKey(name: string, email: string): void {
+    async generateKey(name: string, email: string): Promise<void> {
         const batch = [
             '%no-protection',
             'Key-Type: EDDSA',
@@ -158,7 +162,7 @@ export class GpgCli {
         );
         try {
             fs.writeFileSync(tmpFile, batch, 'latin1');
-            this.run(this.gpgPath, ['--batch', '--gen-key', tmpFile]);
+            await this.run(this.gpgPath, ['--batch', '--gen-key', tmpFile]);
         } finally {
             try { fs.unlinkSync(tmpFile); } catch { /* tmp cleanup, ignore */ }
         }
@@ -168,16 +172,16 @@ export class GpgCli {
      * Delete a key (secret + public) by fingerprint.
      * Equivalent to: gpg --batch --yes --delete-secret-and-public-key <fingerprint>
      */
-    deleteKey(fingerprint: string): void {
-        this.run(this.gpgPath, ['--batch', '--yes', '--delete-secret-and-public-key', fingerprint]);
+    async deleteKey(fingerprint: string): Promise<GpgExecResult> {
+        return this.run(this.gpgPath, ['--batch', '--yes', '--delete-secret-and-public-key', fingerprint]);
     }
 
     /**
      * Return the fingerprint for the primary key matching email.
      * Parses `gpg --with-colons --fingerprint` output for the first `fpr:` record.
      */
-    getFingerprint(email: string): string {
-        const { stdout } = this.run(this.gpgPath, ['--with-colons', '--fingerprint', email]);
+    async getFingerprint(email: string): Promise<string> {
+        const { stdout } = await this.run(this.gpgPath, ['--with-colons', '--fingerprint', email]);
         for (const line of stdout.split('\n')) {
             if (line.startsWith('fpr:')) {
                 // Colon-delimited: fpr:::::::::<fingerprint>:
@@ -203,8 +207,8 @@ export class GpgCli {
      *
      * We return the first grp: record, which is always the primary (signing) key.
      */
-    getKeygrip(email: string): string {
-        const { stdout } = this.run(this.gpgPath, [
+    async getKeygrip(email: string): Promise<string> {
+        const { stdout } = await this.run(this.gpgPath, [
             '--with-colons', '--with-keygrip', '--fingerprint', email
         ]);
         for (const line of stdout.split('\n')) {
@@ -222,8 +226,8 @@ export class GpgCli {
      * Export the armored public key for a fingerprint.
      * Returns the ASCII-armored public key block.
      */
-    exportPublicKey(fingerprint: string): string {
-        const { stdout } = this.run(this.gpgPath, ['--export', '--armor', fingerprint]);
+    async exportPublicKey(fingerprint: string): Promise<string> {
+        const { stdout } = await this.run(this.gpgPath, ['--export', '--armor', fingerprint]);
         return stdout;
     }
 
@@ -231,14 +235,14 @@ export class GpgCli {
      * Import a public key from ASCII-armored or binary key data.
      * Writes keyData to a temp file and imports it; latin1 preserves binary material.
      */
-    importPublicKey(keyData: string): void {
+    async importPublicKey(keyData: string): Promise<void> {
         const tmpFile = path.join(
             this.gnupgHome,
             `gpg-import-${crypto.randomBytes(4).toString('hex')}.asc`
         );
         try {
             fs.writeFileSync(tmpFile, keyData, 'latin1');
-            this.run(this.gpgPath, ['--import', tmpFile]);
+            await this.run(this.gpgPath, ['--import', tmpFile]);
         } finally {
             try { fs.unlinkSync(tmpFile); } catch { /* tmp cleanup, ignore */ }
         }
@@ -249,27 +253,37 @@ export class GpgCli {
     // These return exit code rather than throwing so callers can assert on failure.
     // -------------------------------------------------------------------------
 
+    /** Return gpg version info; returns { exitCode, stdout, stderr }. */
+    async version(): Promise<GpgExecResult> {
+        return this.runRaw(this.gpgPath, ['--version']);
+    }
+
+    /** List keys in GNUPGHOME; returns { exitCode, stdout, stderr }. */
+    async listKeys(): Promise<GpgExecResult> {
+        return this.runRaw(this.gpgPath, ['--list-keys']);
+    }
+
     /** Sign inputPath; returns { exitCode, stdout, stderr }. */
-    signFile(inputPath: string, userId: string): GpgExecResult {
+    async signFile(inputPath: string, userId: string): Promise<GpgExecResult> {
         return this.runRaw(this.gpgPath, [
             '--batch', '--no-tty', '--sign', '--local-user', userId, inputPath
         ]);
     }
 
     /** Verify sigPath; returns { exitCode, stdout, stderr }. */
-    verifyFile(sigPath: string): GpgExecResult {
+    async verifyFile(sigPath: string): Promise<GpgExecResult> {
         return this.runRaw(this.gpgPath, ['--verify', sigPath]);
     }
 
     /** Encrypt inputPath to recipient; returns { exitCode, stdout, stderr }. */
-    encryptFile(inputPath: string, recipient: string): GpgExecResult {
+    async encryptFile(inputPath: string, recipient: string): Promise<GpgExecResult> {
         return this.runRaw(this.gpgPath, [
             '--batch', '--encrypt', '--recipient', recipient, inputPath
         ]);
     }
 
     /** Decrypt inputPath; returns { exitCode, stdout, stderr }. */
-    decryptFile(inputPath: string): GpgExecResult {
+    async decryptFile(inputPath: string): Promise<GpgExecResult> {
         return this.runRaw(this.gpgPath, ['--batch', '--decrypt', inputPath]);
     }
 }

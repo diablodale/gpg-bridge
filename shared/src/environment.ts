@@ -1,8 +1,16 @@
+/**
+ * Shared utilities for detecting the test environment, used by both the extension and test code.
+ */
+
+/**
+ * Returns true when running under a test runner, such as `mocha` or `@vscode/test-electron`.
+ *
+ * Used to skip or modify extension initialization that is unnecessary or disruptive for tests.
+ */
 export function isTestEnvironment(): boolean {
     const argv = process.argv.join(' ');
 
     return process.env.npm_lifecycle_event === 'test'
-        || process.env.VSCODE_TEST_MODE === '1'
         || argv.includes('extensionTestsPath')
         || argv.includes('vscode-test')
         || argv.includes('bootstrap-fork.js');
@@ -18,7 +26,7 @@ export function isTestEnvironment(): boolean {
  *
  * Logic table:
  *   Unit test:        isTestEnvironment()=true,  isIntegrationTestEnvironment()=false → skip init
- *   Integration test: isTestEnvironment()=true,  isIntegrationTestEnvironment()=true  → full init
+ *   Integration test: isTestEnvironment()=true,  isIntegrationTestEnvironment()=true  → partial init
  *   Production:       isTestEnvironment()=false, isIntegrationTestEnvironment()=false → full init
  */
 export function isIntegrationTestEnvironment(): boolean {

@@ -16,7 +16,7 @@
   },
   "engines": {
     "vscode": "^1.108.1",
-    "node": ">=20.0.0"
+    "node": ">=22.21.1"
   },
   "extensionKind": [
     "workspace"
@@ -66,7 +66,8 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
-    "test:integration": "tsc --build tsconfig.test.json && node out/test/integration/runTest.js",
+    "test:integration:request-proxy": "tsc --build tsconfig.test.json && node out/test/integration/requestProxyRunTest.js",
+    "test:integration:gpg-cli": "tsc --build tsconfig.test.json && node out/test/integration/gpgCliRunTest.js",
     "package": "vsce package"
   },
   "dependencies": {
