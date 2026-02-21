@@ -384,11 +384,8 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
         // Clear all timeouts
         this.clearAllTimeouts();
 
-        // Remove multi-fire event listeners to prevent them firing during cleanup
-        this.removeListener('CLIENT_DATA_RECEIVED', this.handleClientDataReceived);
-        this.removeListener('AGENT_WRITE_OK', this.handleAgentWriteOk);
-        this.removeListener('AGENT_DATA_CHUNK', this.handleAgentDataChunk);
-        this.removeListener('AGENT_DATA_RECEIVED', this.handleAgentDataReceived);
+        // Multi-fire event listeners are removed in handleCleanupRequested() which
+        // is called synchronously after this through the sync this.emit()
 
         // Emit CLEANUP_REQUESTED with hadError=true
         this.emit('CLEANUP_REQUESTED', { hadError: true });
@@ -408,14 +405,14 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
         // Clear all timeouts
         this.clearAllTimeouts();
 
-        // Remove multi-fire event listeners (may already be removed if ERROR_OCCURRED ran)
-        this.removeListener('CLIENT_DATA_RECEIVED', this.handleClientDataReceived);
-        this.removeListener('AGENT_WRITE_OK', this.handleAgentWriteOk);
-        this.removeListener('AGENT_DATA_CHUNK', this.handleAgentDataChunk);
-        this.removeListener('AGENT_DATA_RECEIVED', this.handleAgentDataReceived);
-
-        // Remove ERROR_OCCURRED listener (if not already fired via .once())
-        this.removeListener('ERROR_OCCURRED', this.handleErrorOccurred);
+        // Remove all operational event handlers before touching the socket.
+        // This prevents any in-flight or delayed socket events (e.g., a late 'connect'
+        // firing after destroy()) from reaching handlers and causing invalid transitions.
+        // CLEANUP_COMPLETE and CLEANUP_ERROR listeners are intentionally preserved.
+        const retain = new Set(['CLEANUP_COMPLETE', 'CLEANUP_ERROR']);
+        this.eventNames()
+            .filter(name => !retain.has(name as string))
+            .forEach(name => this.removeAllListeners(name));
 
         let cleanupError: Error | null = null;
 

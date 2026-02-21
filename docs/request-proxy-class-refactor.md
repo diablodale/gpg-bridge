@@ -323,7 +323,7 @@ Safe rename with no behaviour change. Isolated from Phase 3 to keep diffs readab
 Replace the `startRequestProxy()` factory function and `RequestProxyInstance` interface
 with a `RequestProxy` class.
 
-- [ ] **3.1** Add `RequestProxy` class to `requestProxy.ts`:
+- [x] **3.1** Add `RequestProxy` class to `requestProxy.ts`:
   - `private sessions: Map<string, RequestSessionManager>`
   - `private server: net.Server | null`
   - `private socketPath: string | null`
@@ -341,18 +341,19 @@ with a `RequestProxy` class.
   - `getSocketPath(): string | null`
   - `isRunning(): boolean`
   - `getSessionCount(): number`
-- [ ] **3.2** `RequestSessionManager`: update constructor to accept `sessionId: string`
+- [x] **3.2** `RequestSessionManager`: update constructor to accept `sessionId: string`
   as a third parameter and assign `this.sessionId = sessionId` at construction (replacing
   the current `sessionId: string | null = null` field initializer); then update
   `handleClientSocketConnected` to call `commandExecutor.connectAgent(this.sessionId)`
   passing the already-minted UUID as hint (UUID is set at construction, not assigned from
   `connectAgent()` result)
-- [ ] **3.3** Remove `RequestProxyInstance` interface (now dead)
-- [ ] **3.4** Remove `startRequestProxy()` export (replaced by `RequestProxy`)
-- [ ] **3.5** Compile full repo (`npm run compile`), run all tests (`npm test` +
+- [x] **3.3** Remove `RequestProxyInstance` interface (now dead)
+- [x] **3.4** `startRequestProxy()` kept as `@deprecated` backward-compat shim returning
+  `RequestProxy`; full removal deferred to Phase 4 (after extension.ts is migrated)
+- [x] **3.5** Compile full repo (`npm run compile`), run all tests (`npm test` +
   `npm run test:integration`), verify clean
-- [ ] **3.6** Commit: `feat(request-proxy): introduce RequestProxy class`
-- [ ] **3.7** ✅ Phase gate: all tests green, committed — proceed to Phase 4
+- [x] **3.6** Commit: `feat(request-proxy): introduce RequestProxy class`
+- [x] **3.7** ✅ Phase gate: all tests green, committed — proceed to Phase 4
 
 ---
 
@@ -470,7 +471,7 @@ session has fully cleaned up and been removed from the Map.
 |---|---|---|
 | 1 | `shared` + `agent-proxy`: optional `sessionId` hint | ✅ Complete |
 | 2 | Rename `ClientSessionManager` → `RequestSessionManager` | ✅ Complete |
-| 3 | `RequestProxy` class replaces factory function | ⏳ Not started |
+| 3 | `RequestProxy` class replaces factory function | ✅ Complete |
 | 4 | `extension.ts` uses `RequestProxy` | ⏳ Not started |
 | 5 | Tighten `ISessionManager.sessionId` | ⏳ Not started |
 | 6 | `AgentProxy.stop()` async with deterministic cleanup | ⏳ Not started |

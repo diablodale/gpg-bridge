@@ -19,6 +19,7 @@ import { EventEmitter } from 'events';
 import { spawnSync } from 'child_process';
 import { log, encodeProtocolData, decodeProtocolData, sanitizeForLog, extractErrorMessage, cleanupSocket, extractCommand, extractInquireBlock, detectResponseCompletion } from '@gpg-relay/shared';
 import type { LogConfig, ICommandExecutor, IFileSystem, IServerFactory, ISessionManager } from '@gpg-relay/shared';
+import { v4 as uuidv4 } from 'uuid';
 import { VSCodeCommandExecutor } from './commandExecutor';
 
 // ============================================================================
@@ -162,11 +163,6 @@ interface RequestProxyConfigWithExecutor extends RequestProxyConfig {
     commandExecutor: ICommandExecutor;
 }
 
-export interface RequestProxyInstance {
-    /** The Unix socket path this proxy is listening on. */
-    socketPath: string;
-    stop(): Promise<void>;
-}
 
 /**
  * RequestSessionManager - Event-driven session manager (like NodeJS Socket)
@@ -178,15 +174,16 @@ export interface RequestProxyInstance {
 class RequestSessionManager extends EventEmitter implements ISessionManager {
     public readonly config: RequestProxyConfigWithExecutor;
     public socket: net.Socket;
-    public sessionId: string | null = null;
+    public readonly sessionId: string;
     private state: SessionState = 'DISCONNECTED';
     private buffer: string = '';
     private lastCommand: string = '';  // First token (verb) of the most recent command sent to agent (e.g. 'BYE')
 
-    constructor(config: RequestProxyConfigWithExecutor, socket: net.Socket) {
+    constructor(config: RequestProxyConfigWithExecutor, socket: net.Socket, sessionId: string) {
         super();
         this.config = config;
         this.socket = socket;
+        this.sessionId = sessionId;
 
         // Register event handlers for session lifecycle
         // Use .once() for single-fire events, .on() for events that can fire multiple times
@@ -244,12 +241,12 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
 
     private async handleClientSocketConnected(): Promise<void> {
         this.transition('CLIENT_SOCKET_CONNECTED');
-        log(this.config, `[${this.sessionId ?? 'pending'}] Client socket connected, connecting to GPG Agent Proxy...`);
+        log(this.config, `[${this.sessionId}] Client socket connected, connecting to GPG Agent Proxy...`);
 
         try {
-            // Connect to agent-proxy and get greeting
-            const result = await this.config.commandExecutor.connectAgent();
-            this.sessionId = result.sessionId;
+            // Connect to agent-proxy, passing our pre-minted sessionId as a hint so
+            // both extensions log the same UUID for this end-to-end session.
+            const result = await this.config.commandExecutor.connectAgent(this.sessionId);
             log(this.config, `[${this.sessionId}] Connected to GPG Agent Proxy`);
 
             // Treat agent greeting as the first AGENT_RESPONSE_COMPLETE, then resume socket
@@ -361,7 +358,7 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
 
     private handleErrorOccurred(error: string): void {
         this.transition('ERROR_OCCURRED');
-        log(this.config, `[${this.sessionId ?? 'pending'}] ${error}`);
+        log(this.config, `[${this.sessionId}] ${error}`);
 
         // Start cleanup sequence
         this.emit('CLEANUP_REQUESTED', true);
@@ -369,25 +366,31 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
 
     private async handleCleanupRequested(hadError: boolean): Promise<void> {
         this.transition('CLEANUP_REQUESTED');
-        log(this.config, `[${this.sessionId ?? 'pending'}] Starting cleanup (hadError=${hadError})`);
+        log(this.config, `[${this.sessionId}] Starting cleanup (hadError=${hadError})`);
 
-        // Disconnect from agent if we have a session
+        // Remove all operational event handlers before the first await.
+        // Any in-flight async operations (connectAgent, sendCommands, writeToClient callbacks)
+        // may resume on the next microtask tick and emit events — those emissions must be
+        // silently ignored now that the session is in CLOSING state.
+        // CLEANUP_COMPLETE and CLEANUP_ERROR listeners are intentionally preserved.
+        const retain = new Set(['CLEANUP_COMPLETE', 'CLEANUP_ERROR']);
+        this.eventNames()
+            .filter(name => !retain.has(name as string))
+            .forEach(name => this.removeAllListeners(name));
+
+        // Disconnect from agent (sessionId is always set at construction)
         let cleanupError: unknown = null;
-        const oldSessionId = this.sessionId; // Store old sessionId for logging after cleanup
-        if (this.sessionId) {
-            try {
-                await this.config.commandExecutor.disconnectAgent(this.sessionId);
-                log(this.config, `[${this.sessionId}] Disconnected from agent`);
-            } catch (err) {
-                // socket or client session manager may be in unexpected state during cleanup failure
-                cleanupError = err;
-            }
-            this.buffer = '';
-            this.sessionId = null;
+        try {
+            await this.config.commandExecutor.disconnectAgent(this.sessionId);
+            log(this.config, `[${this.sessionId}] Disconnected from agent`);
+        } catch (err) {
+            // socket or session manager may be in unexpected state during cleanup failure
+            cleanupError = err;
         }
+        this.buffer = '';
 
         // Cleanup socket using shared utility because Javascript has no destructors :-(
-        const socketError = cleanupSocket(this.socket, this.config, oldSessionId ?? 'pending');
+        const socketError = cleanupSocket(this.socket, this.config, this.sessionId);
         cleanupError = cleanupError ?? socketError;
 
         if (cleanupError) {
@@ -398,18 +401,18 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
         try {
             this.removeAllListeners();
         } catch {
-            log(this.config, `[${oldSessionId ?? 'pending'}] Error: failed to remove session event listeners during cleanup`);
+            log(this.config, `[${this.sessionId}] Error: failed to remove session event listeners during cleanup`);
         }
     }
 
     private handleCleanupComplete(): void {
         this.transition('CLEANUP_COMPLETE');
-        log(this.config, `[${this.sessionId ?? 'pending'}] Cleanup complete`);
+        log(this.config, `[${this.sessionId}] Cleanup complete`);
     }
 
     private handleCleanupError(error: string): void {
         this.transition('CLEANUP_ERROR');
-        log(this.config, `[${this.sessionId ?? 'pending'}] Fatal cleanup error: ${error}`);
+        log(this.config, `[${this.sessionId}] Fatal cleanup error: ${error}`);
     }
 
     // ========================================================================
@@ -435,13 +438,13 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
             const error = new Error(
                 `Invalid transition: ${this.state} + ${event} (no transition defined)`
             );
-            log(this.config, `[${this.sessionId ?? 'pending'}] ${error.message}`);
+            log(this.config, `[${this.sessionId}] ${error.message}`);
             throw error;
         }
 
         const oldState = this.state;
         this.state = nextState;
-        log(this.config, `[${this.sessionId ?? 'pending'}] ${oldState} → ${nextState} (event: ${event})`);
+        log(this.config, `[${this.sessionId}] ${oldState} → ${nextState} (event: ${event})`);
     }
 
     /**
@@ -521,39 +524,34 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
 // ============================================================================
 
 /**
- * Start the Request Proxy server
+ * RequestProxy - VS Code extension service for request proxying
  *
- * Creates a Unix socket server on the GPG agent socket path and starts forwarding
- * GPG protocol operations to the agent-proxy extension on the Windows host.
- * Each client connection runs an independent EventEmitter-based state machine.
+ * Class-based replacement for the startRequestProxy() factory function.
+ * Manages a Unix socket server and a Map of active RequestSessionManager instances.
+ * Mirrors the AgentProxy class structure in agent-proxy.
  *
  * @param config - Configuration with optional logging callback
- * @param deps - Optional dependency injection for testing (commandExecutor, serverFactory, fileSystem, getSocketPath)
+ * @param deps - Optional dependency injection for testing
  *
- * @returns Promise resolving to RequestProxyInstance with stop() method
- *
- * @throws Error if GPG socket path cannot be determined (gpgconf not found)
- * @throws Error if socket already in use (another proxy running)
- * @throws Error if permission errors creating/binding socket
+ * @throws Error from start() if GPG socket path cannot be determined
+ * @throws Error from start() if socket already in use (another proxy running)
+ * @throws Error from start() if permission errors creating/binding socket
  *
  * @example
  * ```typescript
- * const instance = await startRequestProxy({
- *     logCallback: (msg) => console.log(msg)
- * }, {
- *     commandExecutor: new VSCodeCommandExecutor()
- * });
+ * const proxy = new RequestProxy({ logCallback: (msg) => console.log(msg) });
+ * await proxy.start();
  *
  * // Later: stop the server
- * await instance.stop();
+ * await proxy.stop();
  * ```
  *
- * **Flow:**
+ * **Flow (start):**
  * 1. Detects GPG socket path via `gpgconf --list-dirs agent-socket`
  * 2. Creates Unix socket server at detected path
  * 3. Sets socket permissions to 0o666 (world-writable for GPG access)
- * 4. Starts listening for client connections
- * 5. Each client connection: connect to agent → process commands → cleanup
+ * 4. Starts listening; each connection mints a UUID and creates a
+ *    RequestSessionManager with that sessionId so both extensions log the same id
  *
  * **State Machine:**
  * - 11 states: DISCONNECTED → CONNECTING_TO_AGENT → SENDING_TO_CLIENT → READY → buffering/sending cycle
@@ -563,8 +561,8 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
  * - Error consolidation: all errors → ERROR_OCCURRED → cleanup
  *
  * **Session Management:**
- * - Sessions stored in Map<net.Socket, RequestSessionManager>
- * - Each session: isolated state, buffer, agent sessionId
+ * - Sessions stored in Map<string, RequestSessionManager> keyed by pre-minted UUID
+ * - Each session: isolated state, buffer, sessionId set at construction
  * - Cleanup guarantees: socket destroyed, agent disconnected, session removed
  * - First-error-wins cleanup pattern (continues even if steps fail)
  *
@@ -572,164 +570,210 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
  * Use dependency injection to mock VS Code commands, socket server, and file system.
  * Enables testing without VS Code runtime or real sockets/files.
  */
-export async function startRequestProxy(config: RequestProxyConfig, deps?: RequestProxyDeps): Promise<RequestProxyInstance> {
-    // Initialize dependencies with defaults
-    const commandExecutor = deps?.commandExecutor ?? new VSCodeCommandExecutor();
-    const serverFactory = deps?.serverFactory ?? { createServer: net.createServer };
-    const fileSystem = deps?.fileSystem ?? { existsSync: fs.existsSync, mkdirSync: fs.mkdirSync, chmodSync: fs.chmodSync, unlinkSync: fs.unlinkSync };
-    const getSocketPath = deps?.getSocketPath ?? getLocalGpgSocketPath;
-    const usingMocks = !!(deps?.serverFactory || deps?.fileSystem);
+export class RequestProxy {
+    private readonly config: RequestProxyConfig;
+    private readonly commandExecutor: ICommandExecutor;
+    private readonly serverFactory: IServerFactory;
+    private readonly fileSystem: IFileSystem;
+    private readonly getSocketPathFn: () => Promise<string | null>;
+    private readonly usingMocks: boolean;
+    private sessions: Map<string, RequestSessionManager> = new Map();
+    private server: net.Server | null = null;
+    private _socketPath: string | null = null;
 
-    // Create full config with injected commandExecutor
-    const fullConfig: RequestProxyConfigWithExecutor = {
-        ...config,
-        commandExecutor
-    };
-
-    log(fullConfig, `[startRequestProxy] using mocked deps: ${usingMocks}`);
-    const socketPath = await getSocketPath();
-    if (!socketPath) {
-        throw new Error('Could not determine local GPG socket path. Is gpg installed? Try: gpgconf --list-dirs');
+    constructor(config: RequestProxyConfig, deps?: RequestProxyDeps) {
+        this.config = config;
+        this.commandExecutor = deps?.commandExecutor ?? new VSCodeCommandExecutor();
+        this.serverFactory = deps?.serverFactory ?? { createServer: net.createServer };
+        this.fileSystem = deps?.fileSystem ?? { existsSync: fs.existsSync, readFileSync: fs.readFileSync, mkdirSync: fs.mkdirSync, chmodSync: fs.chmodSync, unlinkSync: fs.unlinkSync };
+        this.getSocketPathFn = deps?.getSocketPath ?? getLocalGpgSocketPath;
+        this.usingMocks = !!(deps?.serverFactory || deps?.fileSystem);
     }
 
-    // Ensure parent directory exists
-    log(fullConfig, `Creating socket server at ${socketPath}`);
-    const socketDir = path.dirname(socketPath);
-    if (!fileSystem.existsSync(socketDir)) {
-        fileSystem.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
-    }
+    /** Backward-compat socket path accessor; Phase 4 migrates callers to getSocketPath() */
+    get socketPath(): string | null { return this._socketPath; }
 
-    // Track all active sessions so stop() can destroy them before server.close().
-    // server.close() only stops new connections; existing ones keep running indefinitely
-    // unless destroyed explicitly — which would cause stop() to never call its callback.
-    const activeSessions = new Set<RequestSessionManager>();
+    /** Socket path this proxy is listening on, or null if not started */
+    getSocketPath(): string | null { return this._socketPath; }
 
-    // Create the Unix socket server
-    const server = serverFactory.createServer({ pauseOnConnect: true }, (clientSocket) => {
-        // Create session manager (EventEmitter pattern like NodeJS Socket)
-        const sessionManager = new RequestSessionManager(fullConfig, clientSocket);
-        activeSessions.add(sessionManager);
+    /** True if the server is currently running */
+    isRunning(): boolean { return this.server !== null; }
 
+    /** Number of active client sessions */
+    getSessionCount(): number { return this.sessions.size; }
 
-        // Attach socket event handlers
+    /**
+     * Start the request proxy server.
+     *
+     * Resolves when the server is bound and listening. Rejects if the socket path
+     * cannot be determined, the socket is already in use, or permissions fail.
+     */
+    async start(): Promise<void> {
+        const fullConfig: RequestProxyConfigWithExecutor = {
+            ...this.config,
+            commandExecutor: this.commandExecutor,
+        };
 
-        // 'close' fires when the socket is fully closed and resources are released
-        // hadError arg indicates if it closed because of an error
-        // event sequences:
-        // - OS error: 'error' -> 'close'
-        // - graceful remote shutdown: 'end' -> 'close'
-        // - local shutdown: socket.end() -> 'close'
-        // - local destroy without arg: socket.destroy() -> 'close'
-        clientSocket.once('close', (hadError: boolean) => {
-            log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed (hadError=${hadError})`);
+        log(fullConfig, `[RequestProxy.start] using mocked deps: ${this.usingMocks}`);
 
-            // Emit event to state machine for validated cleanup
-            if (hadError) {
-                // Transmission error during socket I/O
-                sessionManager.emit('ERROR_OCCURRED', 'Socket closed with transmission error');
-            } else {
-                // Clean/graceful socket close
-                sessionManager.emit('CLEANUP_REQUESTED', hadError);
-            }
-        });
+        const socketPath = await this.getSocketPathFn();
+        if (!socketPath) {
+            throw new Error('Could not determine local GPG socket path. Is gpg installed? Try: gpgconf --list-dirs');
+        }
 
-        // 'error' fires when the OS reports a failure (ECONNRESET, EPIPE, etc.)
-        // or when the err arg of destroy() is used
-        // node does not automatically destroy the socket on 'error' event
-        // event sequences:
-        // - OS error: 'error' -> 'close'
-        // - local destroy with arg `socket.destroy(err)`: 'error' -> 'close'
-        clientSocket.once('error', (err: Error) => {
-            log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket error: ${err.message}`);
-            // Error event is logged; 'close' event will trigger cleanup
-        });
+        // Ensure parent directory exists
+        log(fullConfig, `Creating socket server at ${socketPath}`);
+        const socketDir = path.dirname(socketPath);
+        if (!this.fileSystem.existsSync(socketDir)) {
+            this.fileSystem.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+        }
 
-        // 'readable' fires when data is available to read from the socket
-        clientSocket.on('readable', () => {
-            let chunk: Buffer | null;
-            while ((chunk = clientSocket.read()) !== null) {
-                // Let session manager determine appropriate event based on current state
-                sessionManager.handleIncomingData(chunk);
-            }
-        });
+        this._socketPath = socketPath;
 
-        // Remove from active set when the session finishes cleanup (any exit path)
-        sessionManager.once('CLEANUP_COMPLETE', () => activeSessions.delete(sessionManager));
-        sessionManager.once('CLEANUP_ERROR',    () => activeSessions.delete(sessionManager));
+        // Create the Unix socket server
+        const server = this.serverFactory.createServer({ pauseOnConnect: true }, (clientSocket) => {
+            // Mint UUID now so both extensions log the same identifier for this session
+            const sessionId = uuidv4();
+            const session = new RequestSessionManager(fullConfig, clientSocket, sessionId);
+            this.sessions.set(sessionId, session);
 
-        // Start connection sequence - emit initial event and let handlers do the work
-        log(fullConfig, 'Client connected to socket. Socket is paused while initiating connection to GPG Agent Proxy');
-        sessionManager.emit('CLIENT_SOCKET_CONNECTED');
-    });
+            // Attach socket event handlers
 
-    // Handle server errors, only logging for now
-    server.on('error', (err: Error) => {
-        log(config, `Socket server error: ${err.message}`);
-    });
+            // 'close' fires when the socket is fully closed and resources are released
+            // hadError arg indicates if it closed because of an error
+            // event sequences:
+            // - OS error: 'error' -> 'close'
+            // - graceful remote shutdown: 'end' -> 'close'
+            // - local shutdown: socket.end() -> 'close'
+            // - local destroy without arg: socket.destroy() -> 'close'
+            clientSocket.once('close', (hadError: boolean) => {
+                log(session.config, `[${session.sessionId}] Client socket closed (hadError=${hadError})`);
 
-    return new Promise((resolve, reject) => {
-        server.listen(socketPath, () => {
-            // Make socket readable/writable by all users
-            try {
-                fileSystem.chmodSync(socketPath, 0o666);
-            } catch (err) {
-                log(config, `Warning: could not chmod socket: ${err}`);
-            }
-
-            log(config, 'Request proxy listening');
-
-            resolve({
-                socketPath,
-
-                /**
-                 * Stop the request proxy server
-                 *
-                 * Stops accepting new connections, disconnects all active sessions,
-                 * destroys all client sockets, closes the server, and removes the socket file.
-                 *
-                 * @returns Promise that resolves when server is fully stopped
-                 *
-                 * **Cleanup Flow:**
-                 * 1. Server stops accepting new connections
-                 * 2. All active sessions emit CLEANUP_REQUESTED
-                 * 3. Each session: disconnect agent, destroy socket, remove from Map
-                 * 4. Unix socket server closed
-                 * 5. Socket file deleted (errors ignored)
-                 *
-                 * **Guarantees:**
-                 * - All client sockets destroyed
-                 * - All agent sessions disconnected
-                 * - Socket listeners removed
-                 * - Socket file removed (best effort)
-                 * - First-error-wins pattern (cleanup continues if steps fail)
-                 */
-                stop: async () => {
-                    return new Promise((stopResolve) => {
-                        // Stop accepting new connections, then destroy all active sessions.
-                        // server.close() only calls its callback once all connections are gone;
-                        // without explicit cleanup it would hang on any open client socket.
-                        server.close(() => {
-                            try {
-                                fileSystem.unlinkSync(socketPath);
-                            } catch (err) {
-                                // Ignore
-                            }
-                            log(config, 'Request proxy stopped');
-                            stopResolve();
-                        });
-
-                        // Emit CLEANUP_REQUESTED on every live session so their sockets
-                        // close, which unblocks server.close() above.
-                        for (const session of activeSessions) {
-                            session.emit('CLEANUP_REQUESTED', false);
-                        }
-                    });
+                // Emit event to state machine for validated cleanup
+                if (hadError) {
+                    // Transmission error during socket I/O
+                    session.emit('ERROR_OCCURRED', 'Socket closed with transmission error');
+                } else {
+                    // Clean/graceful socket close
+                    session.emit('CLEANUP_REQUESTED', hadError);
                 }
             });
+
+            // 'error' fires when the OS reports a failure (ECONNRESET, EPIPE, etc.)
+            // or when the err arg of destroy() is used
+            // node does not automatically destroy the socket on 'error' event
+            // event sequences:
+            // - OS error: 'error' -> 'close'
+            // - local destroy with arg `socket.destroy(err)`: 'error' -> 'close'
+            clientSocket.once('error', (err: Error) => {
+                log(session.config, `[${session.sessionId}] Client socket error: ${err.message}`);
+                // Error event is logged; 'close' event will trigger cleanup
+            });
+
+            // 'readable' fires when data is available to read from the socket
+            clientSocket.on('readable', () => {
+                let chunk: Buffer | null;
+                while ((chunk = clientSocket.read()) !== null) {
+                    // Let session manager determine appropriate event based on current state
+                    session.handleIncomingData(chunk);
+                }
+            });
+
+            // Remove from sessions map when the session finishes cleanup (any exit path)
+            session.once('CLEANUP_COMPLETE', () => this.sessions.delete(sessionId));
+            session.once('CLEANUP_ERROR',    () => this.sessions.delete(sessionId));
+
+            // Start connection sequence - emit initial event and let handlers do the work
+            log(fullConfig, 'Client connected to socket. Socket is paused while initiating connection to GPG Agent Proxy');
+            session.emit('CLIENT_SOCKET_CONNECTED');
         });
 
-        server.on('error', reject);
-    });
+        this.server = server;
+
+        // Handle server errors, only logging for now
+        server.on('error', (err: Error) => {
+            log(this.config, `Socket server error: ${err.message}`);
+        });
+
+        return new Promise((resolve, reject) => {
+            server.listen(socketPath, () => {
+                // Make socket readable/writable by all users
+                try {
+                    this.fileSystem.chmodSync(socketPath, 0o666);
+                } catch (err) {
+                    log(this.config, `Warning: could not chmod socket: ${err}`);
+                }
+
+                log(this.config, 'Request proxy listening');
+                resolve();
+            });
+
+            server.on('error', reject);
+        });
+    }
+
+    /**
+     * Stop the request proxy server.
+     *
+     * Stops accepting new connections, disconnects all active sessions,
+     * destroys all client sockets, closes the server, and removes the socket file.
+     *
+     * @returns Promise that resolves when server is fully stopped
+     *
+     * **Cleanup Flow:**
+     * 1. Server stops accepting new connections
+     * 2. All active sessions emit CLEANUP_REQUESTED
+     * 3. Each session: disconnect agent, destroy socket, remove from Map
+     * 4. Unix socket server closed
+     * 5. Socket file deleted (errors ignored)
+     *
+     * **Guarantees:**
+     * - All client sockets destroyed
+     * - All agent sessions disconnected
+     * - Socket listeners removed
+     * - Socket file removed (best effort)
+     * - First-error-wins pattern (cleanup continues if steps fail)
+     */
+    async stop(): Promise<void> {
+        const server = this.server;
+        if (!server) {
+            return;
+        }
+        this.server = null;
+
+        return new Promise((stopResolve) => {
+            // Stop accepting new connections, then destroy all active sessions.
+            // server.close() only calls its callback once all connections are gone;
+            // without explicit cleanup it would hang on any open client socket.
+            server.close(() => {
+                if (this._socketPath) {
+                    try {
+                        this.fileSystem.unlinkSync(this._socketPath);
+                    } catch (err) {
+                        // Ignore
+                    }
+                }
+                log(this.config, 'Request proxy stopped');
+                stopResolve();
+            });
+
+            // Emit CLEANUP_REQUESTED on every live session so their sockets
+            // close, which unblocks server.close() above.
+            for (const session of this.sessions.values()) {
+                session.emit('CLEANUP_REQUESTED', false);
+            }
+        });
+    }
+}
+
+/**
+ * @deprecated Use RequestProxy class directly. This shim will be removed in Phase 4
+ * when extension.ts is updated. Kept for backward-compatibility.
+ */
+export async function startRequestProxy(config: RequestProxyConfig, deps?: RequestProxyDeps): Promise<RequestProxy> {
+    const proxy = new RequestProxy(config, deps);
+    await proxy.start();
+    return proxy;
 }
 
 /**
