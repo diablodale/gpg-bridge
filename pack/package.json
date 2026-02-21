@@ -25,7 +25,7 @@
     "local.gpg-bridge-request"
   ],
   "scripts": {
-    "package": "vsce package"
+    "vsix": "vsce package"
   },
   "devDependencies": {
     "@vscode/vsce": "^3.7.1"

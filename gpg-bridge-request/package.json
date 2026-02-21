@@ -61,9 +61,10 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run check-types && node esbuild.js --production",
     "compile": "tsc --build",
     "compile:integration": "tsc --build tsconfig.test.json",
+    "check-types": "tsc --noEmit",
     "watch": "tsc --build --watch",
     "pretest": "npm run compile && npm run lint",
     "pretest:integration": "npm run compile:integration && npm run lint:integration",
@@ -73,22 +74,21 @@
     "test:integration": "npm run test:integration:request-proxy && npm run test:integration:gpg-cli",
     "test:integration:request-proxy": "node out/test/integration/requestProxyRunTest.js",
     "test:integration:gpg-cli": "node out/test/integration/gpgCliRunTest.js",
-    "package": "vsce package"
-  },
-  "dependencies": {
-    "@gpg-bridge/shared": "file:../shared",
-    "uuid": "^9.0.1"
+    "vsix": "vsce package"
   },
   "devDependencies": {
+    "@gpg-bridge/shared": "file:../shared",
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/uuid": "^10.0.0",
+    "uuid": "^9.0.1",
     "@types/vscode": "^1.108.1",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
     "chai": "^4.5.0",
+    "esbuild": "^0.27.3",
     "eslint": "^9.39.2",
     "glob": "^13.0.1",
     "mocha": "^10.5.0",

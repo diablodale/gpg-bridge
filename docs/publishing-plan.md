@@ -176,10 +176,10 @@ refactor: rename project from gpg-windows-relay to gpg-bridge
 
 ---
 
-## Phase 2 — Fix VSIX Bundling
+## Phase 2 — Fix VSIX Bundling ✅ COMPLETE
 
 ### Goal
-Fix the broken `npm run package` command. Currently fails with:
+Fix the broken `npm run package` command. Previously failed with:
 ```
 ERROR invalid relative path: extension/../shared/node_modules/@types/chai/README.md
 ```
@@ -292,6 +292,13 @@ Repeat inspection for `gpg-bridge-request`.
 ```
 build: add esbuild bundling to fix vsce path traversal
 ```
+
+> **Implementation notes (deviations from plan):**
+> - `.vscodeignore` required 3 iterations beyond the planned `node_modules/**` addition.
+>   Final state also excludes: `esbuild.js`, `eslint.config.mjs`, `.vscode-test.cjs`,
+>   `**/tsconfig*.json` (catches `tsconfig.test.json`), and changed `out/test/**` →
+>   `out/**` + `!out/extension.js` to prevent stale tsc output from being included.
+> - Test gate (unit 124 + integration 24) all passed before commit.
 
 ---
 
