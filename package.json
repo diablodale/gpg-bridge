@@ -5,36 +5,30 @@
   "private": true,
   "scripts": {
     "compile": "npm run compile:shared && npm run compile:agent && npm run compile:request",
-    "compile:shared": "cd shared && npm run compile",
-    "compile:agent": "cd gpg-bridge-agent && npm run compile",
-    "compile:request": "cd gpg-bridge-request && npm run compile",
+    "compile:shared": "npm --prefix shared run compile",
+    "compile:agent": "npm --prefix gpg-bridge-agent run compile",
+    "compile:request": "npm --prefix gpg-bridge-request run compile",
     "postinstall": "npm run postinstall:shared && npm run postinstall:agent && npm run postinstall:request",
-    "postinstall:shared": "cd shared && npm install",
-    "postinstall:agent": "cd gpg-bridge-agent && npm install",
-    "postinstall:request": "cd gpg-bridge-request && npm install",
+    "postinstall:shared": "npm install --prefix shared",
+    "postinstall:agent": "npm install --prefix gpg-bridge-agent",
+    "postinstall:request": "npm install --prefix gpg-bridge-request",
     "watch": "npm run watch:shared & npm run watch:agent & npm run watch:request",
-    "watch:shared": "cd shared && npm run watch",
-    "watch:agent": "cd gpg-bridge-agent && npm run watch",
-    "watch:request": "cd gpg-bridge-request && npm run watch",
+    "watch:shared": "npm --prefix shared run watch",
+    "watch:agent": "npm --prefix gpg-bridge-agent run watch",
+    "watch:request": "npm --prefix gpg-bridge-request run watch",
     "package": "npm run package:agent && npm run package:request && npm run package:pack",
-    "package:agent": "cd gpg-bridge-agent && npm run vsix",
-    "package:request": "cd gpg-bridge-request && npm run vsix",
-    "package:pack": "cd pack && npm run vsix",
+    "package:agent": "npm --prefix gpg-bridge-agent run vsix",
+    "package:request": "npm --prefix gpg-bridge-request run vsix",
+    "package:pack": "npm --prefix pack run vsix",
     "test": "npm run test:shared && npm run test:agent && npm run test:request",
-    "test:shared": "cd shared && npm test",
-    "test:agent": "cd gpg-bridge-agent && npm test",
-    "test:request": "cd gpg-bridge-request && npm test",
-    "test:integration": "cd gpg-bridge-agent && npm run test:integration && cd ../gpg-bridge-request && npm run test:integration",
-    "test:watch": "cd shared && npm run test:watch",
-    "clean": "rimraf -g \"gpg-bridge-agent/out\" \"gpg-bridge-request/out\" \"gpg-bridge-agent/gpg-bridge-agent-*.vsix\" \"gpg-bridge-request/gpg-bridge-request-*.vsix\" \"pack/gpg-bridge-*.vsix\" \"shared/out\" \"shared/**/*.d.ts\" \"shared/**/*.d.ts.map\""
+    "test:shared": "npm --prefix shared test",
+    "test:agent": "npm --prefix gpg-bridge-agent test",
+    "test:request": "npm --prefix gpg-bridge-request test",
+    "test:integration": "npm --prefix gpg-bridge-agent run test:integration && npm --prefix gpg-bridge-request run test:integration",
+    "test:watch": "npm --prefix shared run test:watch",
+    "clean": "rimraf -g \"gpg-bridge-agent/out\" \"gpg-bridge-request/out\" \"gpg-bridge-agent/gpg-bridge-agent-*.vsix\" \"gpg-bridge-request/gpg-bridge-request-*.vsix\" \"pack/gpg-bridge-*.vsix\" \"shared/out\""
   },
   "devDependencies": {
-    "rimraf": "^5.0.0",
-    "mocha": "^10.5.0",
-    "@types/mocha": "^10.0.10"
-  },
-  "dependencies": {
-    "@types/node": "^25.2.1",
-    "typescript": "^5.9.3"
+    "rimraf": "^5.0.0"
   }
 }
