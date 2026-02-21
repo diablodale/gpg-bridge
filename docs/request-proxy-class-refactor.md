@@ -359,34 +359,34 @@ with a `RequestProxy` class.
 
 ### Phase 4 — `request-proxy/src/extension.ts`: use `RequestProxy`
 
-- [ ] **4.1** Rename variable `requestProxyInstance` → `requestProxyService` throughout the file
+- [x] **4.1** Rename variable `requestProxyInstance` → `requestProxyService` throughout the file
   and change its type from `Awaited<ReturnType<typeof startRequestProxy>> | null` →
   `RequestProxy | null`
-- [ ] **4.2** Replace `startRequestProxy({...}, {...})` call with
+- [x] **4.2** Replace `startRequestProxy({...}, {...})` call with
   `new RequestProxy({...}, {...})` then `await requestProxyService.start()`
-- [ ] **4.3** Replace `requestProxyInstance.stop()` calls with `requestProxyService.stop()`
-- [ ] **4.4** Replace `requestProxyInstance?.socketPath` with
+- [x] **4.3** Replace `requestProxyInstance.stop()` calls with `requestProxyService.stop()`
+- [x] **4.4** Replace `requestProxyInstance?.socketPath` with
   `requestProxyService?.getSocketPath()`
-- [ ] **4.5** Update import: replace `startRequestProxy` with `RequestProxy`
-- [ ] **4.6** Rename `startRequestProxyHandler` → `startRequestProxy` (collision gone now
+- [x] **4.5** Update import: replace `startRequestProxy` with `RequestProxy`
+- [x] **4.6** Rename `startRequestProxyHandler` → `startRequestProxy` (collision gone now
   that the service-layer export is `RequestProxy`, not `startRequestProxy`)
-- [ ] **4.7** Rename `stopRequestProxyHandler` → `stopRequestProxy` (matches
+- [x] **4.7** Rename `stopRequestProxyHandler` → `stopRequestProxy` (matches
   `stopAgentProxy` in agent-proxy)
-- [ ] **4.8** Promote `outputChannel` to module scope (mirrors `agent-proxy`):
+- [x] **4.8** Promote `outputChannel` to module scope (mirrors `agent-proxy`):
   - Declare `let outputChannel: vscode.OutputChannel` at module level (alongside
     `requestProxyService`)
   - Assign it at the top of `activate()` instead of using a local `const`
   - Remove the `outputChannel` parameter from `startRequestProxy()` and
     `stopRequestProxy()` — they reference the module-level variable directly
   - Update the two call sites inside `activate()` to not pass `outputChannel`
-- [ ] **4.9** `request-proxy/src/extension.ts`: fix `deactivate()` — currently calls
+- [x] **4.9** `request-proxy/src/extension.ts`: fix `deactivate()` — currently calls
   `requestProxyInstance.stop().catch(...)` without `return`, so VS Code cannot await it;
   replace with bare `return requestProxyService?.stop()` to match the pattern established
   in Phase 1.6 and allow VS Code to wait for full shutdown
-- [ ] **4.10** Compile full repo (`npm run compile`), run all tests (`npm test` +
+- [x] **4.10** Compile full repo (`npm run compile`), run all tests (`npm test` +
   `npm run test:integration`), verify clean
-- [ ] **4.11** Commit: `refactor(request-proxy): update extension to use RequestProxy class`
-- [ ] **4.12** ✅ Phase gate: all tests green, committed — proceed to Phase 5
+- [x] **4.11** Commit: `refactor(request-proxy): update extension to use RequestProxy class`
+- [x] **4.12** ✅ Phase gate: all tests green, committed — proceed to Phase 5
 
 ---
 
@@ -472,6 +472,6 @@ session has fully cleaned up and been removed from the Map.
 | 1 | `shared` + `agent-proxy`: optional `sessionId` hint | ✅ Complete |
 | 2 | Rename `ClientSessionManager` → `RequestSessionManager` | ✅ Complete |
 | 3 | `RequestProxy` class replaces factory function | ✅ Complete |
-| 4 | `extension.ts` uses `RequestProxy` | ⏳ Not started |
+| 4 | `extension.ts` uses `RequestProxy` | ✅ Complete |
 | 5 | Tighten `ISessionManager.sessionId` | ⏳ Not started |
 | 6 | `AgentProxy.stop()` async with deterministic cleanup | ⏳ Not started |

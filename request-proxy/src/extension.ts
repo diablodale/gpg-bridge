@@ -12,15 +12,16 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { startRequestProxy } from './services/requestProxy';
+import { RequestProxy } from './services/requestProxy';
 import { extractErrorMessage } from '@gpg-relay/shared';
 import { VSCodeCommandExecutor } from './services/commandExecutor';
 import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-relay/shared';
 
-let requestProxyInstance: Awaited<ReturnType<typeof startRequestProxy>> | null = null;
+let requestProxyService: RequestProxy | null = null;
+let outputChannel: vscode.OutputChannel;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-    const outputChannel = vscode.window.createOutputChannel('GPG Request Proxy');
+    outputChannel = vscode.window.createOutputChannel('GPG Request Proxy');
 
     try {
         outputChannel.appendLine(`Remote context (${vscode.env.remoteName}) activated`);
@@ -28,10 +29,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Register commands
         context.subscriptions.push(
             vscode.commands.registerCommand('gpg-request-proxy.start', async () => {
-                await startRequestProxyHandler(outputChannel);
+                await startRequestProxy();
             }),
             vscode.commands.registerCommand('gpg-request-proxy.stop', async () => {
-                await stopRequestProxyHandler(outputChannel);
+                await stopRequestProxy();
             }),
             outputChannel
         );
@@ -44,7 +45,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (isIntegrationTestEnvironment() && !process.env.GNUPGHOME) {
             context.subscriptions.push(
                 vscode.commands.registerCommand('_gpg-request-proxy.test.getSocketPath', () => {
-                    return requestProxyInstance?.socketPath ?? null;
+                    return requestProxyService?.getSocketPath() ?? null;
                 })
             );
         }
@@ -54,7 +55,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // tests get full extension initialization (unit tests still skip init).
         if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
             try {
-                await startRequestProxyHandler(outputChannel);
+                await startRequestProxy();
             } catch (err) {
                 // Error already logged by handler, but show output
                 outputChannel.show();
@@ -67,8 +68,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 }
 
-async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Promise<void> {
-    if (requestProxyInstance) {
+async function startRequestProxy(): Promise<void> {
+    if (requestProxyService) {
         outputChannel.appendLine('Request proxy already running');
         return;
     }
@@ -77,9 +78,9 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
         outputChannel.appendLine('Starting request proxy...');
 
         // Create a log callback that respects the debugLogging setting
-		const config = vscode.workspace.getConfiguration('gpgRequestProxy');
-		const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
-		const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
+        const config = vscode.workspace.getConfiguration('gpgRequestProxy');
+        const debugLogging = config.get<boolean>('debugLogging') || true;   // TODO remove forced debug logging
+        const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
 
         // In integration test mode without a configured GNUPGHOME, bypass gpgconf and
         // use a known temp socket path. Phase 2 does not set GNUPGHOME in remoteEnv
@@ -91,12 +92,13 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
         const getSocketPath = (isIntegrationTestEnvironment() && !process.env.GNUPGHOME)
             ? async () => path.join(os.tmpdir(), `gpg-relay-test-${process.pid}.sock`)
             : undefined;
-        requestProxyInstance = await startRequestProxy({
+        requestProxyService = new RequestProxy({
             logCallback: logCallback
         }, {
             commandExecutor: new VSCodeCommandExecutor(),
             ...(getSocketPath ? { getSocketPath } : {})
         });
+        await requestProxyService.start();
 
         outputChannel.appendLine('Request proxy is READY');
     } catch (error) {
@@ -108,16 +110,16 @@ async function startRequestProxyHandler(outputChannel: vscode.OutputChannel): Pr
     }
 }
 
-async function stopRequestProxyHandler(outputChannel: vscode.OutputChannel): Promise<void> {
-    if (!requestProxyInstance) {
+async function stopRequestProxy(): Promise<void> {
+    if (!requestProxyService) {
         outputChannel.appendLine('Request proxy is not running');
         return;
     }
 
     try {
         outputChannel.appendLine('Stopping request proxy...');
-        await requestProxyInstance.stop();
-        requestProxyInstance = null;
+        await requestProxyService.stop();
+        requestProxyService = null;
         outputChannel.appendLine('Request proxy stopped');
     } catch (error) {
         const message = extractErrorMessage(error);
@@ -126,12 +128,8 @@ async function stopRequestProxyHandler(outputChannel: vscode.OutputChannel): Pro
     }
 }
 
-export function deactivate() {
-    if (requestProxyInstance) {
-        requestProxyInstance.stop().catch((err) => {
-            console.error('Error deactivating request proxy:', err);
-        });
-    }
+export function deactivate(): Promise<void> | undefined {
+    return requestProxyService?.stop();
 }
 
 
