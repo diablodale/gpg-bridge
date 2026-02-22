@@ -77,10 +77,10 @@
     "configuration": {
       "title": "GPG Bridge Agent",
       "properties": {
-        "gpgBridgeAgent.gpg4winPath": {
+        "gpgBridgeAgent.gpgBinDir": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to Gpg4win's GnuPG bin directory containing `gpgconf.exe`. Leave empty to auto-detect.",
+          "markdownDescription": "Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\\Program Files\\GnuPG\\bin`). Leave empty to auto-detect.",
           "scope": "resource"
         },
         "gpgBridgeAgent.debugLogging": {

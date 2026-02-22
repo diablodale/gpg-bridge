@@ -1,7 +1,7 @@
 /**
  * GpgCli — Integration Test Helper
  *
- * Subprocess wrappers for gpg.exe / gpgconf.exe used by all integration test phases.
+ * Subprocess wrappers for gpg / gpgconf used by all integration test phases.
  *
  * GNUPGHOME is read from process.env.GNUPGHOME at construction time; throws if unset.
  * All subprocess calls inject GNUPGHOME explicitly so the correct isolated keyring is

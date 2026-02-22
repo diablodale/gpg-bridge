@@ -19,7 +19,7 @@ install the pack rather than this extension directly.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `gpgBridgeAgent.gpg4winPath` | *(auto-detect)* | Path to Gpg4win's GnuPG `bin` directory containing `gpgconf.exe`. Leave empty to auto-detect. |
+| `gpgBridgeAgent.gpgBinDir` | *(auto-detect)* | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\Program Files\GnuPG\bin`). Leave empty to auto-detect. |
 | `gpgBridgeAgent.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Agent** output channel |
 
 ## Commands

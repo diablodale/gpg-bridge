@@ -50,13 +50,13 @@ to preserve raw binary content (signatures, encrypted blocks, nonces) unchanged.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `gpgBridgeAgent.gpg4winPath` | *(auto-detect)* | Path to Gpg4win's GnuPG `bin` directory containing `gpgconf.exe`. Leave empty to let the extension find it automatically. |
+| `gpgBridgeAgent.gpgBinDir` | *(auto-detect)* | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\Program Files\GnuPG\bin`). Leave empty to auto-detect. |
 | `gpgBridgeAgent.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Agent** output channel |
 | `gpgBridgeRequest.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Request** output channel |
 
 ```json
 {
-  "gpgBridgeAgent.gpg4winPath": "C:\\Program Files\\GnuPG\\bin",
+  "gpgBridgeAgent.gpgBinDir": "C:\\Program Files\\GnuPG\\bin",
   "gpgBridgeAgent.debugLogging": false,
   "gpgBridgeRequest.debugLogging": false
 }

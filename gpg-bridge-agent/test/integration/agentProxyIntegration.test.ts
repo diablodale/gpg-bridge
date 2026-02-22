@@ -257,20 +257,20 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
     // -----------------------------------------------------------------------
     // 9. Bad Gpg4win path rejects start; restoring config recovers proxy
     // -----------------------------------------------------------------------
-    it('9. bad gpg4winPath rejects start; stop/start with valid config recovers proxy', async function () {
-        // --- Part A: bad config ---
-        // Stop the proxy first so detectedGpg4winPath/detectedAgentSocket are cleared
-        // and the next start must re-detect from scratch using the config value.
-        await vscode.commands.executeCommand('gpg-bridge-agent.stop');
+    it('9. bad gpgBinDir rejects start; stop/start with valid config recovers proxy', async function () {
+            // --- Part A: bad config ---
+            // Stop the proxy first so detectedGpgBinDir/resolvedAgentSocketPath are cleared
+            // and the next start must re-detect from scratch using the config value.
+            await vscode.commands.executeCommand('gpg-bridge-agent.stop');
 
-        const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
-        await config.update('gpg4winPath', 'C:\\nonexistent-gpg4win-path', vscode.ConfigurationTarget.Global);
+            const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
+            await config.update('gpgBinDir', 'C:\\nonexistent-gpg-bin-path', vscode.ConfigurationTarget.Global);
 
         try {
-            // start should reject because gpgconf.exe is not found at the configured path
+            // start should reject because gpgconf is not found at the configured path
             // and none of the default auto-detect locations have it either
             // (they do in practice, but the configured path takes precedence and causes a failure
-            //  because detectGpg4winPath() never sets detectedAgentSocket)
+            // because detectGpgBinDir() never sets resolvedAgentSocketPath)
             let startThrew = false;
             let startError = '';
             try {
@@ -279,8 +279,8 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
                 startThrew = true;
                 startError = err instanceof Error ? err.message : String(err);
             }
-            expect(startThrew, 'start should reject when Gpg4win is not found').to.be.true;
-            expect(startError, 'error should mention Gpg4win or path').to.match(/gpg4win|not found|gpgconf/i);
+            expect(startThrew, 'start should reject when GnuPG bin is not found').to.be.true;
+            expect(startError, 'error should mention GnuPG or path').to.match(/gnupg|gpgbin|not found|gpgconf/i);
 
             // connectAgent must also reject — agentProxyService was never initialized
             let connectThrew = false;
@@ -292,11 +292,11 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
             expect(connectThrew, 'connectAgent should reject when service failed to start').to.be.true;
         } finally {
             // Always restore the config, even if an assertion above fails
-            await config.update('gpg4winPath', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('gpgBinDir', undefined, vscode.ConfigurationTarget.Global);
         }
 
-        // --- Part B: recovery ---
-        // With the config restored to default, auto-detection should find Gpg4win again.
+            // --- Part B: recovery ---
+            // With the config restored to default, auto-detection should find GnuPG bin again.
         await vscode.commands.executeCommand('gpg-bridge-agent.start');
 
         // Give the start a moment to complete async initialization
