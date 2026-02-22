@@ -36,9 +36,9 @@ Every phase ends with a full test gate before committing to git.
 | `gpgAgentProxy.*` | `gpgBridgeAgent.*` | VS Code config keys |
 | `gpgRequestProxy.*` | `gpgBridgeRequest.*` | VS Code config keys |
 | `@gpg-relay/shared` | `@gpg-bridge/shared` | npm package name, all import paths |
-| `local` (publisher) | `diablodale` | all extension `package.json` publisher fields |
-| `local.gpg-agent-proxy` | `diablodale.gpg-bridge-agent` | `extensionDependencies`, `extensionPack` |
-| `local.gpg-request-proxy` | `diablodale.gpg-bridge-request` | `extensionPack` |
+| `local` (publisher) | `hidale` | all extension `package.json` publisher fields |
+| `local.gpg-agent-proxy` | `hidale.gpg-bridge-agent` | `extensionDependencies`, `extensionPack` |
+| `local.gpg-request-proxy` | `hidale.gpg-bridge-request` | `extensionPack` |
 | `github.com/diablodale/gpg-windows-relay` | `github.com/diablodale/gpg-bridge` | `repository.url`, `bugs.url` |
 
 `shared/` directory name stays — already generic.
@@ -79,7 +79,7 @@ correct names from the start and no rename needs to be repeated.
   all command IDs, config key prefix, `repository.url`, `bugs.url`,
   dependency `@gpg-relay/shared` → `@gpg-bridge/shared`
 - [gpg-bridge-request/package.json](../gpg-bridge-request/package.json): same, plus
-  `extensionDependencies` entry → `diablodale.gpg-bridge-agent`
+  `extensionDependencies` entry → `hidale.gpg-bridge-agent`
 - [shared/package.json](../shared/package.json): `name` → `@gpg-bridge/shared`
 - [pack/package.json](../pack/package.json): `name`, `displayName`, both `extensionPack`
   entries, `repository.url`, `bugs.url`
@@ -302,30 +302,28 @@ build: add esbuild bundling to fix vsce path traversal
 
 ---
 
-## Phase 3 — Publisher Identity
+## Phase 3 — Publisher Identity ✅ COMPLETE
 
 ### Goal
-Replace the placeholder `"local"` publisher with the real `diablodale` identity
+Replace the placeholder `"local"` publisher with the real `hidale` identity
 so cross-extension dependencies resolve correctly and marketplace publish works.
 
 ### Steps
 
-**3a.** Create marketplace publisher (manual, one-time):
-```powershell
-npx @vscode/vsce create-publisher diablodale
-```
-Or via browser: [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage) →
-Create publisher → link to GitHub account `diablodale`.
+**3a.** Create marketplace publisher (manual, one-time) ✅ COMPLETE:
+- Publisher ID: `hidale`, Display Name: `Dale Phurrough`
+- Created via browser: [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage) →
+  signed in with Microsoft account
 
 **3b.** In all three extension `package.json` files, update:
-- `"publisher": "local"` → `"publisher": "diablodale"`
+- `"publisher": "local"` → `"publisher": "hidale"`
 
 **3c.** `gpg-bridge-request/package.json` `extensionDependencies`:
-- `"local.gpg-agent-proxy"` → `"diablodale.gpg-bridge-agent"`
+- `"local.gpg-agent-proxy"` → `"hidale.gpg-bridge-agent"`
 
 **3d.** `pack/package.json` `extensionPack`:
-- `"local.gpg-agent-proxy"` → `"diablodale.gpg-bridge-agent"`
-- `"local.gpg-request-proxy"` → `"diablodale.gpg-bridge-request"`
+- `"local.gpg-agent-proxy"` → `"hidale.gpg-bridge-agent"`
+- `"local.gpg-request-proxy"` → `"hidale.gpg-bridge-request"`
 
 **3e.** Align `@types/node` across all workspaces. Currently diverged:
 - `gpg-bridge-agent`: `^22.19.9`
@@ -345,11 +343,11 @@ cd ../gpg-bridge-request && npm run test:integration
 ```
 
 Spot-check: re-run `npm run package:agent`, unzip the VSIX, confirm
-`extension/package.json` inside shows `"publisher": "diablodale"`.
+`extension/package.json` inside shows `"publisher": "hidale"`.
 
 ### Commit
 ```
-feat: set publisher identity to diablodale, align @types/node
+feat: set publisher identity to hidale, align @types/node
 ```
 
 ---
@@ -589,7 +587,7 @@ so the token is created at Azure DevOps — not on GitHub or the marketplace pag
 
 *Step 1 — Create the Azure DevOps PAT:*
 1. Sign into [dev.azure.com](https://dev.azure.com) with the Microsoft account
-   linked to the `diablodale` marketplace publisher
+   linked to the `hidale` marketplace publisher
 2. Top-right avatar → **Personal access tokens** → **New Token**
 3. Name: `vsce-publish` (or any descriptive label)
 4. Organization: `All accessible organizations`

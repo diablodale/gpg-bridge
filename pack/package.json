@@ -4,7 +4,7 @@
   "description": "Relays remote GPG protocols to Windows host running Gpg4win",
   "version": "0.0.1",
   "preview": true,
-  "publisher": "local",
+  "publisher": "hidale",
   "license": "See LICENSE file",
   "repository": {
     "type": "git",
@@ -21,8 +21,8 @@
     "Extension Packs"
   ],
   "extensionPack": [
-    "local.gpg-bridge-agent",
-    "local.gpg-bridge-request"
+    "hidale.gpg-bridge-agent",
+    "hidale.gpg-bridge-request"
   ],
   "scripts": {
     "vsix": "vsce package"
