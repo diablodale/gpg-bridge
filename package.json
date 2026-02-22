@@ -22,7 +22,7 @@
     "compile:shared": "npm --prefix shared run compile",
     "compile:agent": "npm --prefix gpg-bridge-agent run compile",
     "compile:request": "npm --prefix gpg-bridge-request run compile",
-    "postinstall": "npm run postinstall:shared && npm run postinstall:agent && npm run postinstall:request && npm run postinstall:pack && npm run icon:deploy",
+    "postinstall": "npm run postinstall:shared && npm run postinstall:agent && npm run postinstall:request && npm run postinstall:pack && npm run icon:deploy && node scripts/setup-hooks.js",
     "postinstall:shared": "npm install --prefix shared",
     "postinstall:agent": "npm install --prefix gpg-bridge-agent",
     "postinstall:request": "npm install --prefix gpg-bridge-request",
@@ -45,12 +45,19 @@
     "test:request": "npm --prefix gpg-bridge-request test",
     "test:integration": "npm --prefix gpg-bridge-agent run test:integration && npm --prefix gpg-bridge-request run test:integration",
     "test:watch": "npm --prefix shared run test:watch",
+    "lint": "npm run lint:shared && npm run lint:agent && npm run lint:request",
+    "lint:shared": "npm --prefix shared run lint",
+    "lint:agent": "npm --prefix gpg-bridge-agent run lint",
+    "lint:request": "npm --prefix gpg-bridge-request run lint",
     "icon": "npm run icon:render && npm run icon:deploy",
     "icon:render": "node -e \"const{Resvg}=require('@resvg/resvg-js');const fs=require('fs');const svg=fs.readFileSync('./assets/icon.svg');const png=new Resvg(svg,{fitTo:{mode:'width',value:256}}).render().asPng();fs.writeFileSync('./assets/icon.png',png);console.log('assets/icon.png written');\"",
     "icon:deploy": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('./assets/icon.png',d+'/icon.png');console.log(d+'/icon.png copied');});\"",
     "clean": "rimraf -g \"gpg-bridge-agent/out\" \"gpg-bridge-request/out\" \"gpg-bridge-agent/gpg-bridge-agent-*.vsix\" \"gpg-bridge-request/gpg-bridge-request-*.vsix\" \"pack/gpg-bridge-*.vsix\" \"shared/out\""
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
+    "@j178/prek": "^0.3.3",
     "@mermaid-js/mermaid-cli": "^11.12.0",
     "@resvg/resvg-js": "^2.6.2",
     "rimraf": "^5.0.0"

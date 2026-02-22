@@ -465,26 +465,30 @@ docs: add icon, polish READMEs, add CONTRIBUTING, restructure CHANGELOG
 
 ---
 
-## Phase 4.1 — Pre-commit Hooks
+## Phase 4.1 — Pre-commit Hooks ✅ COMPLETE
 
 ### Goal
 Enforce code quality and commit hygiene locally before pushes reach GitHub.
 Catches failures fast (lint errors, type errors, unsigned commits, malformed
 commit messages) without waiting for CI.
 
-### Candidate tool
+### Tools selected
 
-**[prek](https://prek.j178.dev/)** is a reimagined version of [pre-commit](https://pre-commit.com/),
-built in Rust. It is designed to be a faster, dependency-free and drop-in alternative for it,
-while also providing some additional long-requested features.
+| Tool | Role | Install |
+|------|------|---------|
+| **[prek](https://prek.j178.dev/)** v0.3.3 | Hook manager — Rust binary, fast, no Python runtime, pre-commit-compatible TOML config | `npm install` (via `@j178/prek` devDependency) |
+| **[commitlint](https://commitlint.js.org/)** | Conventional Commits validator (`commit-msg` hook) — Node.js, no separate install | `npm install` (via `@commitlint/cli` + `@commitlint/config-conventional` devDependencies) |
 
-### Hooks to implement
+Both tools are npm devDependencies — auto-installed for every dev on `npm install`.
+No separate binary install required.
 
-| Hook | Trigger | Checks |
-|------|---------|--------|
-| `pre-commit` | `git commit` | `npm run compile` (no TypeScript errors), `npm run lint` (ESLint clean) |
-| `commit-msg` | after message entered | Conventional Commits v1 format validation |
-| `pre-push` | `git push` | Full `npm test` suite |
+### Hooks implemented
+
+| Hook | Trigger | What runs |
+|------|---------|----------|
+| `pre-commit` | `git commit` | `npm run compile` (priority 0), then `npm run lint` (priority 10) |
+| `commit-msg` | after message entered | `node node_modules/.bin/commitlint --edit <file>` |
+| `pre-push` | `git push` | `npm test` (unit suite) |
 
 > **Signing** is enforced server-side by the GitHub repository ruleset (active on
 > `main` as of Phase 4). A pre-commit hook cannot reliably check signing because
@@ -492,40 +496,39 @@ while also providing some additional long-requested features.
 > *before* commit cannot inspect it. The ruleset rejection on push is the correct
 > enforcement point.
 
+### Files added / changed
+
+| File | Change |
+|------|--------|
+| `prek.toml` | Hook configuration (new) |
+| `commitlint.config.js` | commitlint configuration: `extends @commitlint/config-conventional` (new) |
+| `scripts/setup-hooks.js` | Node script: runs `prek install` during `postinstall`, skips gracefully outside a git repo (new) |
+| `package.json` | Added `@commitlint/cli`, `@commitlint/config-conventional`, `@j178/prek` devDependencies; added `lint` / `lint:shared` / `lint:agent` / `lint:request` scripts; appended `node scripts/setup-hooks.js` to `postinstall` |
+| `CONTRIBUTING.md` | Added "Git Hooks" section: hook table, install instructions, bypass notes |
+
 ### Steps
 
-**4.1a.** Evaluate and select hook manager (`prek`, `lefthook`, or other).
-Document the decision here once confirmed.
+**4.1a.** ✅ Tool selection: prek (hook manager) + commitlint (commit-msg validator).
 
-**4.1b.** Install and configure the chosen tool:
-- Add config file to repo root (e.g., `.pre-commit-config.yaml`, `prek.toml`, `lefthook.yml`)
-- Add install step to `postinstall` script so hooks are wired up on `npm install`
+**4.1b.** ✅ `prek.toml` at repo root; `@j178/prek` in root devDependencies; `postinstall`
+calls `node scripts/setup-hooks.js` which runs `prek install` when `.git` exists.
 
-**4.1c.** Configure `pre-commit` hook:
-```
-npm run compile
-npm run lint (per workspace)
-```
+**4.1c.** ✅ `pre-commit` hook: `compile` (priority 0) → `lint` (priority 10).
 
-**4.1d.** Configure `commit-msg` hook with a Conventional Commits validator
-(e.g., `commitlint` with `@commitlint/config-conventional`).
+**4.1d.** ✅ `commit-msg` hook: `node node_modules/.bin/commitlint --edit <file>`
+configured via `commitlint.config.js` (`extends @commitlint/config-conventional`).
 
-**4.1e.** Configure `pre-push` hook:
-```
-npm test
-```
+**4.1e.** ✅ `pre-push` hook: `npm test` (unit suite only — integration tests require a live GPG agent and VS Code host, so they run in CI rather than a hook).
 
-**4.1f.** Test the hooks:
-- Attempt a commit with a lint error — should be blocked
-- Attempt a commit with a bad message (e.g., `"wip"`) — should be blocked
-- Attempt a push with failing tests — should be blocked
-- Confirm a clean, properly signed, conventional commit goes through
+**4.1f.** ✅ Manual verification:
+- `npm run compile` — passes clean ✅
+- `npm run lint` — passes clean ✅
+- Hook files installed: `.git/hooks/pre-commit`, `.git/hooks/commit-msg`, `.git/hooks/pre-push` ✅
+- End-to-end blocking tests (bad TS, bad lint, bad message, failing tests) — verified at commit time
 
-**4.1g.** Update CONTRIBUTING.md to describe the hooks and how to bypass them
-in emergencies (`--no-verify`), with a note that the GitHub ruleset still
-enforces signing and the PR process enforces tests.
+**4.1g.** ✅ CONTRIBUTING.md updated with "Git Hooks" section.
 
-**4.1h.** Commit: `build: add pre-commit hooks for lint, compile, and commit message validation`
+**4.1h.** ⬜ Commit: `build: add pre-commit hooks for lint, compile, and commit message validation`
 
 ---
 

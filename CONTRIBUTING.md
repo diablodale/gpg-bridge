@@ -108,6 +108,40 @@ Produces `.vsix` files in each extension's directory.
 - **No `console.log`**: use the `log()` helper so output goes through the configured
   VS Code output channel.
 
+## Git Hooks
+
+This project uses [prek](https://prek.j178.dev/) to enforce quality gates locally
+before changes reach GitHub.
+
+| Hook | Trigger | What runs |
+|------|---------|----------|
+| `pre-commit` | `git commit` | `npm run compile` then `npm run lint` |
+| `commit-msg` | after message entered | `commitlint` validates Conventional Commits format |
+| `pre-push` | `git push` | `npm test` (unit suite) |
+
+### Installing hooks
+
+Hooks are installed automatically when you run `npm install` — including
+`commitlint`, which is a devDependency. To reinstall manually:
+
+```sh
+prek install
+```
+
+### Bypassing hooks
+
+In an emergency you can skip hooks with:
+
+```sh
+git commit --no-verify
+git push --no-verify
+```
+
+> ⚠️ Bypass sparingly. The GitHub repository ruleset still enforces commit
+> signing server-side, and the PR flow enforces `npm test` via CI.
+
+---
+
 ## Commit Conventions
 
 This project follows [Conventional Commits v1](https://www.conventionalcommits.org/en/v1.0.0/).
