@@ -42,13 +42,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	updateStatusBar();
 	statusBarItem.show();
 
-	// Detect GnuPG bin directory and agent socket on startup
-	// Then start agent proxy
+	// Start agent proxy (detects GnuPG bin dir and socket path internally).
 	// isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
 	// tests get full extension initialization (unit tests still skip init).
 	if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
 		try {
-			await detectGpgBinDir();
 			await startAgentProxy();
 
 			// Run sanity probe in background (fire-and-forget)
@@ -142,12 +140,10 @@ async function disconnectAgent(sessionId: string): Promise<void> {
 // ==============================================================================
 
 /**
- * Detect GnuPG bin directory
+ * Detect GnuPG bin directory.
+ * Throws if gpgconf.exe cannot be found.
  */
 async function detectGpgBinDir(): Promise<void> {
-	if (isTestEnvironment() && !isIntegrationTestEnvironment()) {
-		return;
-	}
 	const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
 	const configPath = config.get<string>('gpgBinDir') || '';
 
@@ -202,9 +198,6 @@ async function detectGpgBinDir(): Promise<void> {
  * Throws if the path cannot be resolved.
  */
 function resolveAgentSocketPath(): void {
-	if (isTestEnvironment() && !isIntegrationTestEnvironment()) {
-		return;
-	}
 	if (!detectedGpgBinDir) {
 		throw new Error('resolveAgentSocketPath() called before gpg bin dir was set');
 	}
