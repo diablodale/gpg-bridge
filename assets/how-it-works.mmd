@@ -1,0 +1,12 @@
+flowchart TB
+    subgraph win["Windows Host"]
+        gpg4win["Gpg4win (gpg-agent)"]
+        agent["GPG Bridge Agent (UI)"]
+        gpg4win <-->|"Assuan/TCP<br/>(S.gpg-agent.extra)"| agent
+    end
+    subgraph remote["Remote (container, ssh, ...)"]
+        request["GPG Bridge Request<br/>(workspace)"]
+        client["gpg client (git, gpg, ...)"]
+        request <-->|"Unix socket (S.gpg-agent)"| client
+    end
+    agent <-->|"VS Code command tunnel"| request

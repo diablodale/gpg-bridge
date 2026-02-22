@@ -1,6 +1,6 @@
 # GPG Bridge
 
-<img src="assets/icon.png" alt="GPG Bridge icon" width="96" align="right" />
+<img src="../assets/icon.png" alt="GPG Bridge icon" width="96" align="right" />
 
 <!-- Badges  update URLs after Phase 5 marketplace publish -->
 <!-- ![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/hidale.gpg-bridge) -->
@@ -35,20 +35,7 @@ Both proxies start automatically when VS Code opens — no manual start needed.
 
 ## How It Works
 
-```mermaid
-flowchart TB
-    subgraph win["Windows Host"]
-        gpg4win["Gpg4win (gpg-agent)"]
-        agent["GPG Bridge Agent (UI)"]
-        gpg4win <-->|"Assuan/TCP<br/>(S.gpg-agent.extra)"| agent
-    end
-    subgraph remote["Remote (container, ssh, ...)"]
-        request["GPG Bridge Request<br/>(workspace)"]
-        client["gpg client (git, gpg, ...)"]
-        request <-->|"Unix socket (S.gpg-agent)"| client
-    end
-    agent <-->|"VS Code command &quot;tunnel&quot;"| request
-```
+<img src="../assets/how-it-works.png" alt="Architecture diagram: gpg client in the remote connects via Unix socket to GPG Bridge Request; GPG Bridge Request tunnels via VS Code command to GPG Bridge Agent on Windows; GPG Bridge Agent connects to Gpg4win via Assuan/TCP." width="560" />
 
 The Agent extension reads Gpg4win's "extra" socket file location with `gpgconf`,
 authenticates with the nonce, and bridges the session over VS Code's built-in
@@ -118,10 +105,11 @@ UI context; the request must run in the remote workspace context. The pack bundl
 so users install one item.
 
 For detailed protocol and state machine documentation see:
-- [gpg-bridge-agent/README.md](https://github.com/diablodale/gpg-bridge/blob/main/gpg-bridge-agent/README.md)
-- [gpg-bridge-request/README.md](https://github.com/diablodale/gpg-bridge/blob/main/gpg-bridge-request/README.md)
-- [docs/gpg-agent-protocol.md](https://github.com/diablodale/gpg-bridge/blob/main/docs/gpg-agent-protocol.md)
+
+- [gpg-bridge-agent/README.md](../gpg-bridge-agent/README.md)
+- [gpg-bridge-request/README.md](../gpg-bridge-request/README.md)
+- [docs/gpg-agent-protocol.md](../docs/gpg-agent-protocol.md)
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/diablodale/gpg-bridge/blob/main/CONTRIBUTING.md) for dev setup, build, test, and commit guidelines.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for dev setup, build, test, and commit guidelines.

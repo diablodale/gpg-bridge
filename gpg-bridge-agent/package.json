@@ -91,6 +91,10 @@
       }
     }
   },
+  "vsce": {
+    "baseImagesUrl": "https://github.com/diablodale/gpg-bridge/raw/HEAD/gpg-bridge-agent/",
+    "baseContentUrl": "https://github.com/diablodale/gpg-bridge/blob/HEAD/gpg-bridge-agent/"
+  },
   "scripts": {
     "vscode:prepublish": "npm run check-types && node esbuild.js --production",
     "compile": "tsc --build",

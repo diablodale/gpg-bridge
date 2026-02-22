@@ -1,6 +1,6 @@
 ﻿# GPG Bridge Request
 
-<img src="assets/icon.png" alt="GPG Bridge Request icon" width="96" align="right" />
+<img src="../assets/icon.png" alt="GPG Bridge Request icon" width="96" align="right" />
 
 <!-- Badges — update URLs after Phase 5 marketplace publish -->
 <!-- ![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/hidale.gpg-bridge-request) -->
@@ -49,10 +49,10 @@ All socket I/O uses `latin1` encoding to preserve raw binary content unchanged.
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/diablodale/gpg-bridge/blob/main/CONTRIBUTING.md) for
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for
 build setup, test instructions, and commit conventions.
 
 For internal architecture details — state machine, INQUIRE D-block buffering, session
 management, and testing approach — see
-[docs/request-internals.md](https://github.com/diablodale/gpg-bridge/blob/main/docs/request-internals.md).
+[docs/request-internals.md](../docs/request-internals.md).
 

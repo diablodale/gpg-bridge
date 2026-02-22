@@ -51,6 +51,10 @@
       "description": "GPG Bridge relays cryptographic operations to the Windows GPG agent — installing in an untrusted workspace could expose signing keys to a malicious workspace."
     }
   },
+  "vsce": {
+    "baseImagesUrl": "https://github.com/diablodale/gpg-bridge/raw/HEAD/pack/",
+    "baseContentUrl": "https://github.com/diablodale/gpg-bridge/blob/HEAD/pack/"
+  },
   "scripts": {
     "vsix": "vsce package"
   },

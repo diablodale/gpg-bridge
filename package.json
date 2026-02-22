@@ -31,7 +31,10 @@
     "watch:shared": "npm --prefix shared run watch",
     "watch:agent": "npm --prefix gpg-bridge-agent run watch",
     "watch:request": "npm --prefix gpg-bridge-request run watch",
-    "prepackage": "npm run icon",
+    "prepackage": "npm run assets",
+    "assets": "npm run icon && npm run diagram",
+    "diagram": "npm run diagram:render",
+    "diagram:render": "mmdc -i assets/how-it-works.mmd -o assets/how-it-works.png -b transparent",
     "package": "npm run package:agent && npm run package:request && npm run package:pack",
     "package:agent": "npm --prefix gpg-bridge-agent run vsix",
     "package:request": "npm --prefix gpg-bridge-request run vsix",
@@ -48,6 +51,7 @@
     "clean": "rimraf -g \"gpg-bridge-agent/out\" \"gpg-bridge-request/out\" \"gpg-bridge-agent/gpg-bridge-agent-*.vsix\" \"gpg-bridge-request/gpg-bridge-request-*.vsix\" \"pack/gpg-bridge-*.vsix\" \"shared/out\""
   },
   "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.12.0",
     "@resvg/resvg-js": "^2.6.2",
     "rimraf": "^5.0.0"
   }

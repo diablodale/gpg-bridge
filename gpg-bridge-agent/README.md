@@ -1,6 +1,6 @@
 ﻿# GPG Bridge Agent
 
-<img src="assets/icon.png" alt="GPG Bridge Agent icon" width="96" align="right" />
+<img src="../assets/icon.png" alt="GPG Bridge Agent icon" width="96" align="right" />
 
 <!-- Badges — update URLs after Phase 5 marketplace publish -->
 <!-- ![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/hidale.gpg-bridge-agent) -->
@@ -46,10 +46,10 @@ the Command Palette (`Ctrl+Shift+P`) if you need to restart it.
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/diablodale/gpg-bridge/blob/main/CONTRIBUTING.md) for
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for
 build setup, test instructions, and commit conventions.
 
 For internal architecture details — state machine, public API, session management, and
 testing approach — see
-[docs/agent-internals.md](https://github.com/diablodale/gpg-bridge/blob/main/docs/agent-internals.md).
+[docs/agent-internals.md](../docs/agent-internals.md).
 
