@@ -1,21 +1,37 @@
 {
   "name": "gpg-bridge-monorepo",
-  "description": "GPG Bridge - Three extension pack for relaying GPG to Windows from remotes",
+  "description": "GPG Bridge - Extension pack for bridging GPG to Windows from remotes",
   "version": "0.0.1",
+  "license": "MIT",
+  "homepage": "https://github.com/diablodale/gpg-bridge",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diablodale/gpg-bridge.git"
+  },
   "private": true,
+  "keywords": [
+    "gpg",
+    "gnupg",
+    "bridge",
+    "assuan",
+    "git-signing",
+    "gpg4win"
+  ],
   "scripts": {
     "compile": "npm run compile:shared && npm run compile:agent && npm run compile:request",
     "compile:shared": "npm --prefix shared run compile",
     "compile:agent": "npm --prefix gpg-bridge-agent run compile",
     "compile:request": "npm --prefix gpg-bridge-request run compile",
-    "postinstall": "npm run postinstall:shared && npm run postinstall:agent && npm run postinstall:request",
+    "postinstall": "npm run postinstall:shared && npm run postinstall:agent && npm run postinstall:request && npm run postinstall:pack && npm run icon:deploy",
     "postinstall:shared": "npm install --prefix shared",
     "postinstall:agent": "npm install --prefix gpg-bridge-agent",
     "postinstall:request": "npm install --prefix gpg-bridge-request",
+    "postinstall:pack": "npm install --prefix pack",
     "watch": "npm run watch:shared & npm run watch:agent & npm run watch:request",
     "watch:shared": "npm --prefix shared run watch",
     "watch:agent": "npm --prefix gpg-bridge-agent run watch",
     "watch:request": "npm --prefix gpg-bridge-request run watch",
+    "prepackage": "npm run icon",
     "package": "npm run package:agent && npm run package:request && npm run package:pack",
     "package:agent": "npm --prefix gpg-bridge-agent run vsix",
     "package:request": "npm --prefix gpg-bridge-request run vsix",
@@ -26,9 +42,13 @@
     "test:request": "npm --prefix gpg-bridge-request test",
     "test:integration": "npm --prefix gpg-bridge-agent run test:integration && npm --prefix gpg-bridge-request run test:integration",
     "test:watch": "npm --prefix shared run test:watch",
+    "icon": "npm run icon:render && npm run icon:deploy",
+    "icon:render": "node -e \"const{Resvg}=require('@resvg/resvg-js');const fs=require('fs');const svg=fs.readFileSync('./assets/icon.svg');const png=new Resvg(svg,{fitTo:{mode:'width',value:256}}).render().asPng();fs.writeFileSync('./assets/icon.png',png);console.log('assets/icon.png written');\"",
+    "icon:deploy": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('./assets/icon.png',d+'/icon.png');console.log(d+'/icon.png copied');});\"",
     "clean": "rimraf -g \"gpg-bridge-agent/out\" \"gpg-bridge-request/out\" \"gpg-bridge-agent/gpg-bridge-agent-*.vsix\" \"gpg-bridge-request/gpg-bridge-request-*.vsix\" \"pack/gpg-bridge-*.vsix\" \"shared/out\""
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "rimraf": "^5.0.0"
   }
 }

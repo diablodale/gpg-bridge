@@ -1,18 +1,27 @@
 {
   "name": "gpg-bridge",
   "displayName": "GPG Bridge",
-  "description": "Relays remote GPG protocols to Windows host running Gpg4win",
+  "description": "Use Windows GPG keys via a bridge to Dev Containers, SSH, and WSL remotes. Sign git commits, verify signatures, and encrypt/decrypt files without any remote-side configuration.",
   "version": "0.0.1",
+  "icon": "icon.png",
   "preview": true,
   "publisher": "hidale",
-  "license": "See LICENSE file",
+  "author":{
+    "name": "Dale Phurrough"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/diablodale/gpg-bridge",
   "repository": {
     "type": "git",
-    "url": "https://github.com/diablodale/gpg-bridge"
+    "url": "https://github.com/diablodale/gpg-bridge.git"
   },
   "qna": false,
   "bugs": {
     "url": "https://github.com/diablodale/gpg-bridge/issues"
+  },
+  "galleryBanner": {
+    "color": "#E7E4E0",
+    "theme": "light"
   },
   "engines": {
     "vscode": "^1.108.1"
@@ -20,10 +29,28 @@
   "categories": [
     "Extension Packs"
   ],
+  "keywords": [
+    "gpg",
+    "gnupg",
+    "bridge",
+    "assuan",
+    "git-signing",
+    "gpg4win"
+  ],
   "extensionPack": [
     "hidale.gpg-bridge-agent",
     "hidale.gpg-bridge-request"
   ],
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "GPG Bridge requires Gpg4win on a Windows host and Node.js Unix socket APIs in the remote — neither is available in virtual workspaces."
+    },
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "GPG Bridge relays cryptographic operations to the Windows GPG agent — installing in an untrusted workspace could expose signing keys to a malicious workspace."
+    }
+  },
   "scripts": {
     "vsix": "vsce package"
   },

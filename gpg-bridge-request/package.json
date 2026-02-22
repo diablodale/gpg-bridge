@@ -3,16 +3,25 @@
   "displayName": "GPG Bridge Request",
   "description": "Remote request proxy component for GPG Bridge",
   "version": "0.0.1",
+  "icon": "icon.png",
   "preview": true,
   "publisher": "hidale",
-  "license": "See LICENSE file",
+  "author":{
+    "name": "Dale Phurrough"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/diablodale/gpg-bridge",
   "repository": {
     "type": "git",
-    "url": "https://github.com/diablodale/gpg-bridge"
+    "url": "https://github.com/diablodale/gpg-bridge.git"
   },
   "qna": false,
   "bugs": {
     "url": "https://github.com/diablodale/gpg-bridge/issues"
+  },
+  "galleryBanner": {
+    "color": "#E7E4E0",
+    "theme": "light"
   },
   "engines": {
     "vscode": "^1.108.1",
@@ -22,6 +31,16 @@
     "workspace"
   ],
   "api": "none",
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "GPG Bridge Request requires Unix domain socket creation via Node.js APIs, which are unavailable in browser-based virtual workspace extension hosts."
+    },
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "GPG Bridge can silently perform cryptographic signing operations on behalf of workspace processes. It must not run in untrusted workspaces."
+    }
+  },
   "extensionDependencies": [
     "hidale.gpg-bridge-agent"
   ],
@@ -31,8 +50,10 @@
   "keywords": [
     "gpg",
     "gnupg",
-    "proxy",
-    "assuan"
+    "bridge",
+    "assuan",
+    "git-signing",
+    "gpg4win"
   ],
   "activationEvents": [
     "onStartupFinished"

@@ -1,7 +1,21 @@
 {
   "name": "@gpg-bridge/shared",
-  "version": "1.0.0",
   "description": "Shared code for GPG Bridge extensions",
+  "version": "0.0.1",
+  "license": "MIT",
+  "homepage": "https://github.com/diablodale/gpg-bridge",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diablodale/gpg-bridge.git"
+  },
+  "keywords": [
+    "gpg",
+    "gnupg",
+    "bridge",
+    "assuan",
+    "git-signing",
+    "gpg4win"
+  ],
   "main": "out/index.js",
   "types": "out/index.d.ts",
   "files": [
@@ -28,11 +42,6 @@
     "lint": "eslint src",
     "test": "mocha --ui bdd out/test/**/*.test.js"
   },
-  "keywords": [
-    "gpg",
-    "assuan",
-    "protocol"
-  ],
   "devDependencies": {
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",

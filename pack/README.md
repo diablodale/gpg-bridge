@@ -1,4 +1,4 @@
-﻿# GPG Bridge
+# GPG Bridge
 
 <img src="assets/icon.png" alt="GPG Bridge icon" width="96" align="right" />
 
@@ -118,10 +118,10 @@ UI context; the request must run in the remote workspace context. The pack bundl
 so users install one item.
 
 For detailed protocol and state machine documentation see:
-- [gpg-bridge-agent/README.md](gpg-bridge-agent/README.md)
-- [gpg-bridge-request/README.md](gpg-bridge-request/README.md)
-- [docs/gpg-agent-protocol.md](docs/gpg-agent-protocol.md)
+- [gpg-bridge-agent/README.md](https://github.com/diablodale/gpg-bridge/blob/main/gpg-bridge-agent/README.md)
+- [gpg-bridge-request/README.md](https://github.com/diablodale/gpg-bridge/blob/main/gpg-bridge-request/README.md)
+- [docs/gpg-agent-protocol.md](https://github.com/diablodale/gpg-bridge/blob/main/docs/gpg-agent-protocol.md)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, build, test, and commit guidelines.
+See [CONTRIBUTING.md](https://github.com/diablodale/gpg-bridge/blob/main/CONTRIBUTING.md) for dev setup, build, test, and commit guidelines.

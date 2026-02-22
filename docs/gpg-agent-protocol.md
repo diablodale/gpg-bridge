@@ -1,5 +1,8 @@
 The GPG Agent protocol is a **simple, line‑oriented, ASCII text protocol**, very similar in spirit to SMTP/IMAP-style command/response exchanges. The official documentation is terse, but the behavior is well‑established because `gpg-connect-agent` itself is just a thin wrapper around this protocol.
 
+- [Assuan Protocol](https://www.gnupg.org/documentation/manuals/gnupg/Agent-Protocol.html) - GPG Agent Assuan protocol
+- [Assuan Manual](https://www.gnupg.org/documentation/manuals/assuan/) - Assuan developer details
+
 Below is a clear, practical breakdown of how to speak the protocol correctly so you can proxy it.
 
 ---

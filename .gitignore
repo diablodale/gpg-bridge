@@ -7,3 +7,8 @@ node_modules
 
 # all source should be typescript
 */src/**/*.js
+
+# icon is deployed from assets/ by npm run icon:deploy (runs automatically on postinstall)
+gpg-bridge-agent/icon.png
+gpg-bridge-request/icon.png
+pack/icon.png

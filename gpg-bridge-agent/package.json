@@ -3,16 +3,25 @@
   "displayName": "GPG Bridge Agent",
   "description": "Windows agent proxy component for GPG Bridge",
   "version": "0.0.1",
+  "icon": "icon.png",
   "preview": true,
   "publisher": "hidale",
-  "license": "See LICENSE file",
+  "author":{
+    "name": "Dale Phurrough"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/diablodale/gpg-bridge",
   "repository": {
     "type": "git",
-    "url": "https://github.com/diablodale/gpg-bridge"
+    "url": "https://github.com/diablodale/gpg-bridge.git"
   },
   "qna": false,
   "bugs": {
     "url": "https://github.com/diablodale/gpg-bridge/issues"
+  },
+  "galleryBanner": {
+    "color": "#E7E4E0",
+    "theme": "light"
   },
   "engines": {
     "vscode": "^1.108.1",
@@ -25,14 +34,26 @@
     "ui"
   ],
   "api": "none",
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "GPG Bridge requires direct filesystem access to GPG socket files and Gpg4win binaries. Virtual workspaces are not supported."
+    },
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "GPG Bridge can silently perform cryptographic signing operations on behalf of workspace processes. It must not run in untrusted workspaces."
+    }
+  },
   "categories": [
     "Other"
   ],
   "keywords": [
     "gpg",
     "gnupg",
-    "proxy",
-    "assuan"
+    "bridge",
+    "assuan",
+    "git-signing",
+    "gpg4win"
   ],
   "activationEvents": [
     "onStartupFinished"

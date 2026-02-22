@@ -352,7 +352,7 @@ feat: set publisher identity to hidale, align @types/node
 
 ---
 
-## Phase 4 — Quality Files
+## Phase 4 — Quality Files ✅ COMPLETE
 
 ### Goal
 Produce the assets required for a credible marketplace listing: icon, polished
@@ -406,19 +406,126 @@ ensuring it is **not** excluded (the default `.vscodeignore` does not exclude PN
 ```powershell
 npm run compile
 npm test
-cd gpg-bridge-agent  && npm run test:integration
-cd ../gpg-bridge-request && npm run test:integration
+npm run test:integration
 ```
-Also verify both VSIXs still build cleanly after icon and package.json changes:
+
+Build all three VSIXs (runs `prepackage` → icon render + deploy first):
 ```powershell
-npm run package:agent
-npm run package:request
+cd C:\njs\gpg-windows-relay
+npm run package
+```
+
+Inspect the packaged README from each VSIX to confirm vsce rewrote all relative
+URLs to correct absolute HTTPS GitHub raw URLs. The README inside the VSIX is the
+transformed version — this is what the marketplace renders:
+```powershell
+$pIcon = "icon"; $pSrc = 'src="(?!https://(raw\.githubusercontent\.com|github\.com)/diablodale/gpg-bridge/)'; $pHref = 'href="(?!https://(github\.com|img\.shields\.io))'; $pRel = '\]\((?!http)'
+@("gpg-bridge-agent\gpg-bridge-agent-0.0.1.vsix","gpg-bridge-request\gpg-bridge-request-0.0.1.vsix","pack\gpg-bridge-0.0.1.vsix") | ForEach-Object { Write-Host "`n=== $_ ===" -ForegroundColor Cyan; Copy-Item $_ _tmp.zip -Force; Expand-Archive _tmp.zip _vsix -Force; Remove-Item _tmp.zip; Write-Host "icon (expect github.com/diablodale/gpg-bridge/raw/HEAD/assets/icon.png):"; Select-String _vsix\extension\readme.md -Pattern $pIcon; Write-Host "bad src= (expect none):"; Select-String _vsix\extension\readme.md -Pattern $pSrc; Write-Host "bad href= (expect none):"; Select-String _vsix\extension\readme.md -Pattern $pHref; Write-Host "relative markdown links (expect none):"; Select-String _vsix\extension\readme.md -Pattern $pRel; Remove-Item _vsix -Recurse -Force }
+```
+
+Expected for icon: `src="https://github.com/diablodale/gpg-bridge/raw/HEAD/assets/icon.png"`.
+vsce uses the `github.com/.../raw/HEAD/...` form (not `raw.githubusercontent.com`); both
+hosts serve identical content. Any `src=` to the wrong repo, any remaining relative
+`href=` or `](`, or a wrong repo path is a packaging defect.
+
+Confirm required files are present in each VSIX and the vsixmanifest metadata is correct:
+```powershell
+@("gpg-bridge-agent\gpg-bridge-agent-0.0.1.vsix","gpg-bridge-request\gpg-bridge-request-0.0.1.vsix","pack\gpg-bridge-0.0.1.vsix") | ForEach-Object { Write-Host "`n=== $_ ===" -ForegroundColor Cyan; Copy-Item $_ _tmp.zip -Force; Expand-Archive _tmp.zip _vsix -Force; Remove-Item _tmp.zip; Write-Host "FILES:"; Get-ChildItem _vsix\extension -Name | Select-String "icon|readme|changelog|package"; Write-Host "MANIFEST:"; Get-Content _vsix\extension.vsixmanifest; Remove-Item _vsix -Recurse -Force }
+```
+
+Verify `capabilities` (`virtualWorkspaces`, `untrustedWorkspaces`) survived packaging —
+vsce does not warn on unknown or silently dropped `package.json` fields
+(pack has no capabilities block — agent and request only):
+```powershell
+@("gpg-bridge-agent\gpg-bridge-agent-0.0.1.vsix","gpg-bridge-request\gpg-bridge-request-0.0.1.vsix") | ForEach-Object { Write-Host "`n=== $_ ===" -ForegroundColor Cyan; Copy-Item $_ _tmp.zip -Force; Expand-Archive _tmp.zip _vsix -Force; Remove-Item _tmp.zip; Get-Content _vsix\extension\package.json | Select-String "virtualWorkspaces|untrustedWorkspaces"; Remove-Item _vsix -Recurse -Force }
 ```
 
 ### Commit
 ```
 docs: add icon, polish READMEs, add CONTRIBUTING, restructure CHANGELOG
 ```
+
+> **Implementation notes (deviations from plan):**
+> - Icon is 256×256 PNG (not 128×128 as originally planned) — larger source asset
+>   is more future-proof for HiDPI displays; vsce accepts any size.
+> - Icon source is `assets/icon.svg` (key-bridge-lock motif, Royal Blue `#3971ED` +
+>   Amber `#EDB539`). Rendered via `@resvg/resvg-js` (Rust-based, no Inkscape dependency).
+> - `icon.png` copies in extension folders are **gitignored** — `assets/icon.png` is
+>   the committed canonical PNG. Copies are deployed automatically via:
+>   - `npm run icon` (render + deploy, alias: `icon:render` + `icon:deploy`)
+>   - `postinstall` hook (deploys on `npm install`, so fresh clones work immediately)
+>   - `prepackage` hook (re-renders + deploys before every `npm run package`)
+> - Extension READMEs trimmed to marketplace-only content (Requirements, Configuration,
+>   Commands, How It Works, Contributing footer). Full developer reference migrated to
+>   `docs/agent-internals.md` and `docs/request-internals.md`.
+> - Badge URLs in all READMEs are commented placeholders — to be activated in Phase 5
+>   once the marketplace extensions are live.
+> - CHANGELOG hardcodes `[0.1.0] - TBD`; date to be filled in during Phase 5.
+> - Test gate: 124 unit tests passing; all three VSIXs package cleanly with `icon.png`.
+
+---
+
+## Phase 4.1 — Pre-commit Hooks
+
+### Goal
+Enforce code quality and commit hygiene locally before pushes reach GitHub.
+Catches failures fast (lint errors, type errors, unsigned commits, malformed
+commit messages) without waiting for CI.
+
+### Candidate tool
+
+**[prek](https://prek.j178.dev/)** is a reimagined version of [pre-commit](https://pre-commit.com/),
+built in Rust. It is designed to be a faster, dependency-free and drop-in alternative for it,
+while also providing some additional long-requested features.
+
+### Hooks to implement
+
+| Hook | Trigger | Checks |
+|------|---------|--------|
+| `pre-commit` | `git commit` | `npm run compile` (no TypeScript errors), `npm run lint` (ESLint clean) |
+| `commit-msg` | after message entered | Conventional Commits v1 format validation |
+| `pre-push` | `git push` | Full `npm test` suite |
+
+> **Signing** is enforced server-side by the GitHub repository ruleset (active on
+> `main` as of Phase 4). A pre-commit hook cannot reliably check signing because
+> the signature is applied by git itself during commit — any hook that runs
+> *before* commit cannot inspect it. The ruleset rejection on push is the correct
+> enforcement point.
+
+### Steps
+
+**4.1a.** Evaluate and select hook manager (`prek`, `lefthook`, or other).
+Document the decision here once confirmed.
+
+**4.1b.** Install and configure the chosen tool:
+- Add config file to repo root (e.g., `.pre-commit-config.yaml`, `prek.toml`, `lefthook.yml`)
+- Add install step to `postinstall` script so hooks are wired up on `npm install`
+
+**4.1c.** Configure `pre-commit` hook:
+```
+npm run compile
+npm run lint (per workspace)
+```
+
+**4.1d.** Configure `commit-msg` hook with a Conventional Commits validator
+(e.g., `commitlint` with `@commitlint/config-conventional`).
+
+**4.1e.** Configure `pre-push` hook:
+```
+npm test
+```
+
+**4.1f.** Test the hooks:
+- Attempt a commit with a lint error — should be blocked
+- Attempt a commit with a bad message (e.g., `"wip"`) — should be blocked
+- Attempt a push with failing tests — should be blocked
+- Confirm a clean, properly signed, conventional commit goes through
+
+**4.1g.** Update CONTRIBUTING.md to describe the hooks and how to bypass them
+in emergencies (`--no-verify`), with a note that the GitHub ruleset still
+enforces signing and the PR process enforces tests.
+
+**4.1h.** Commit: `build: add pre-commit hooks for lint, compile, and commit message validation`
 
 ---
 
@@ -434,10 +541,11 @@ three VSIX artifacts attached.
 
 ### Steps
 
-**5a.** Bump version to `0.1.0` in lockstep across all four `package.json` files:
+**5a.** Bump version to `0.1.0` in lockstep across all five `package.json` files:
 - `gpg-bridge-agent/package.json`
 - `gpg-bridge-request/package.json`
 - `pack/package.json`
+- `shared/package.json`
 - root `package.json`
 
 **5b.** Confirm `"preview"` is absent from all extension `package.json` files.
@@ -534,13 +642,24 @@ release-please which `package.json` files to bump (lockstep — all share one ve
     ".": {},
     "gpg-bridge-agent": {},
     "gpg-bridge-request": {},
-    "pack": {}
+    "pack": {},
+    "shared": {}
   },
-  "linked-versions": true
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "gpg-bridge",
+      "components": ["gpg-bridge-monorepo", "gpg-bridge-agent", "gpg-bridge-request", "gpg-bridge", "@gpg-bridge/shared"]
+    },
+    "sentence-case"
+  ]
 }
 ```
-`"linked-versions": true` keeps all four packages at the same version — matching
-the lockstep versioning policy established in Phase 5.
+The `linked-versions` plugin keeps all five packages at the same version — matching
+the lockstep versioning policy established in Phase 5. Component names are the npm
+`name` fields from each `package.json`: `gpg-bridge-monorepo` (root), `gpg-bridge-agent`,
+`gpg-bridge-request`, `gpg-bridge` (pack), and `@gpg-bridge/shared`.
+The `sentence-case` plugin capitalizes the leading word of each changelog entry.
 
 **6b.** Create `.release-please-manifest.json` at the repository root. This is
 release-please's state file — it records the current version of each package so
@@ -550,7 +669,8 @@ it knows what to bump from. After the Phase 5 publish it should be:
   ".": "0.1.0",
   "gpg-bridge-agent": "0.1.0",
   "gpg-bridge-request": "0.1.0",
-  "pack": "0.1.0"
+  "pack": "0.1.0",
+  "shared": "0.1.0"
 }
 ```
 
