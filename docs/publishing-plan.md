@@ -533,7 +533,7 @@ Fully offline — no GitHub API, no PR, no bot account required.
 
 ### Steps
 
-**4.2a.** Add `commit-and-tag-version` as a root devDependency and add release scripts:
+**4.2a.** ✅ Add `commit-and-tag-version` as a root devDependency and add release scripts:
 ```powershell
 cd c:\njs\gpg-windows-relay
 npm install --save-dev commit-and-tag-version
@@ -544,9 +544,13 @@ Add to root `package.json` `scripts`:
 "release:dry-run": "commit-and-tag-version --dry-run"
 ```
 
-**4.2b.** Add `commit-and-tag-version` configuration to the root `package.json` under
+**4.2b.** ✅ Add `commit-and-tag-version` configuration to the root `package.json` under
 a `"commit-and-tag-version"` key. This keeps all release tooling config in one file
 rather than a separate `.versionrc.json`.
+
+> **Deviation:** `commitlint` config was also migrated from `commitlint.config.js` into
+> `package.json` at the same time, adding a `type-enum` rule to enforce the same type list
+> used by `commit-and-tag-version`. `commitlint.config.js` now contains only a redirect comment.
 
 Add the following top-level key to root `package.json`:
 ```json
@@ -560,6 +564,12 @@ Add the following top-level key to root `package.json`:
   ],
   "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\nSee [Conventional Commits](https://conventionalcommits.org) for guidelines.",
   "bumpStrict": true,
+  "sign": true,
+  "noVerify": true,
+  "scripts": {
+    "postchangelog": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('CHANGELOG.md',d+'/CHANGELOG.md');console.log(d+'/CHANGELOG.md copied');})\"",
+    "precommit": "git add gpg-bridge-agent/CHANGELOG.md gpg-bridge-request/CHANGELOG.md pack/CHANGELOG.md"
+  },
   "types": [
     { "type": "feat",      "section": "Added"         },
     { "type": "feat",      "section": "Removed", "scope": "remove" },
@@ -614,7 +624,12 @@ after it do.
 Set-Content CHANGELOG.md "# Changelog`n`nAll notable changes to this project will be documented in this file.`nSee [Conventional Commits](https://conventionalcommits.org) for commit guidelines."
 
 # Generate CHANGELOG from v0.0.0..HEAD, bump all package.json files to 0.1.0, commit, tag
-npx commit-and-tag-version --release-as 0.1.0
+npm run release -- --release-as 0.1.0
+
+# Verify the release commit and tag are both GPG signed
+git log --show-signature -1
+git verify-tag v0.1.0
+
 git push --follow-tags
 ```
 All five `package.json` files are now at `0.1.0`, the `[0.1.0]` CHANGELOG section
@@ -650,15 +665,16 @@ git push --follow-tags
 This replaces the manual per-file version edits described in Phase 5 step 5a.
 
 **Phase 6 transition**: when `release-please` is active, remove `commit-and-tag-version`
-from devDependencies, delete `.versionrc.json`, and remove the `release`/`release:dry-run`
-scripts. All `v*` tags already in git history are immediately usable by `release-please`
-as its baseline — no other migration needed.
+from devDependencies, remove the `"commit-and-tag-version"` config block and the
+`release`/`release:dry-run` scripts from `package.json`. All `v*` tags already in git
+history are immediately usable by `release-please` as its baseline — no other migration needed.
 
 ### Files added / changed
 
 | File | Change |
 |------|--------|
-| `package.json` | `commit-and-tag-version` devDependency; `release` and `release:dry-run` scripts; `"commit-and-tag-version"` config block |
+| `package.json` | `commit-and-tag-version` devDependency; `release` and `release:dry-run` scripts; `"commit-and-tag-version"` config block (`bumpFiles`, `header`, `bumpStrict`, `sign`, `noVerify`, `scripts`, `types`); `"commitlint"` config block (moved from `commitlint.config.js`, with `type-enum` rule added) |
+| `commitlint.config.js` | config now lives in `package.json` |
 
 ### Verification gate
 
