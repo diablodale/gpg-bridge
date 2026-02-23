@@ -528,8 +528,6 @@ configured via `commitlint.config.js` (`extends @commitlint/config-conventional`
 
 **4.1g.** ✅ CONTRIBUTING.md updated with "Git Hooks" section.
 
-**4.1h.** ⬜ Commit: `build: add pre-commit hooks for lint, compile, and commit message validation`
-
 ---
 
 ## Phase 5 — First Publish (bootstrap)
