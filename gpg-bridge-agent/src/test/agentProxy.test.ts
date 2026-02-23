@@ -814,7 +814,7 @@ describe('AgentProxy', () => {
         });
     });
 
-    describe('timeout handling', () => {
+    describe('timeout handling (~15 seconds)', () => {
         it('should timeout after 5s on connection and cleanup', async function() {
             this.timeout(7000); // Allow time for 6s delay + test overhead
 
@@ -1734,10 +1734,10 @@ describe('AgentProxy', () => {
         });
     });
 
-    describe('Phase 7.1: Interactive Operations', () => {
+    describe('Phase 7.1: Interactive Operations (~25 seconds)', () => {
         it('should support long response delays for interactive operations (simulates password prompts)', async function() {
             // Set Mocha timeout to accommodate potential delays
-            this.timeout(30000); // 30 seconds
+            this.timeout(15000); // 15 seconds
 
             const logs: string[] = [];
             const agentProxy = new AgentProxy(
@@ -1770,7 +1770,7 @@ describe('AgentProxy', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             // Step 5: Agent responds after 10 second delay (simulates interactive operation)
-            await socket!.emitDataDelayed(Buffer.from('OK 2.2.19\n'), 15000);
+            await socket!.emitDataDelayed(Buffer.from('OK 2.2.19\n'), 10000);
 
             // Step 6: Get VERSION result
             const versionResult = await versionPromise;
@@ -1803,11 +1803,11 @@ describe('AgentProxy', () => {
         });
 
         it('should support multiple sequential commands with long delays', async function() {
-            // Set Mocha timeout to accommodate 2 x 6 second delays = ~12 seconds total
-            this.timeout(20000); // 20 seconds
+            // Set Mocha timeout to accommodate 2 x 5 second delays = ~10 seconds total
+            this.timeout(15000); // 15 seconds
 
             // Verifies that NO response timeout allows multiple interactive operations in sequence
-            const DELAY_MS = 6000; // 6 seconds - simulates real interactive operations
+            const DELAY_MS = 5000; // 5 seconds - simulates real interactive operations
 
             const agentProxy = new AgentProxy(
                 {
