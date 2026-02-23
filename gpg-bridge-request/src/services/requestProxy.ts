@@ -315,7 +315,7 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
         log(this.config, `[${this.sessionId}] Agent response: ${sanitizeForLog(response)}`);
 
         // Write response to client and emit appropriate event
-        this.writeToClient(response, `Proxying agent response: ${sanitizeForLog(response)}`);
+        this.writeToClient(response, `Write to client: ${sanitizeForLog(response)}`);
 
         // Determine next event based on response type using shared protocol parser
         const completion = detectResponseCompletion(response);
@@ -460,10 +460,20 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
     }
 
     /**
-     * Check if buffered inquire data is complete (ends with END\n)
-     * If complete, emit CLIENT_DATA_COMPLETE event
+     * Check if buffered inquire data is complete.
+     * Per Assuan protocol, a client response to INQUIRE is either:
+     *   - A D-block: one or more "D <data>\n" lines followed by "END\n"
+     *   - "CAN\n": cancel the current operation (client has no data / wants to abort)
+     * If complete, emit CLIENT_DATA_COMPLETE event.
      */
     private checkInquireComplete(): void {
+        // CAN is a single newline-terminated line — check it before extractInquireBlock
+        // which only matches the D-block+END pattern.
+        if (this.buffer.startsWith('CAN\n')) {
+            this.buffer = this.buffer.substring(4);
+            this.emit('CLIENT_DATA_COMPLETE', 'CAN\n');
+            return;
+        }
         const result = extractInquireBlock(this.buffer);
         if (result.extracted) {
             this.buffer = result.remaining;

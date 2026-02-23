@@ -2453,6 +2453,108 @@ describe('RequestProxy', () => {
 
             await instance.stop();
         });
+
+        it('should forward CAN to agent when client cancels an INQUIRE', async () => {
+            // Assuan protocol: client may respond to INQUIRE with CAN\n instead of D-block+END
+            // to cancel the operation. The agent typically responds with ERR.
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, createMockDeps());
+            await instance.start();
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Client cancels — agent responds with ERR (operation cancelled)
+            mockCommandExecutor.setSendCommandsResponse('ERR 67108949 Operation cancelled\n');
+            clientSocket.simulateDataReceived(Buffer.from('CAN\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Verify CAN was the second sendCommands call (index 1), commandBlock is arg[1]
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+            expect(mockCommandExecutor.getCallArgs('sendCommands', 1)[1]).to.equal('CAN\n');
+
+            // Verify ERR was forwarded to client
+            const written = clientSocket.getWrittenData().toString('latin1');
+            expect(written).to.include('ERR 67108949');
+
+            await instance.stop();
+        });
+
+        it('should handle CAN arriving split across multiple chunks', async () => {
+            // Validates that partial CAN\n data is accumulated correctly before emitting
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, createMockDeps());
+            await instance.start();
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // CAN arrives as two chunks: 'CA' then 'N\n'
+            mockCommandExecutor.setSendCommandsResponse('ERR 67108949 Operation cancelled\n');
+            clientSocket.simulateDataReceived(Buffer.from('CA', 'latin1'));  // partial — no newline yet
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            clientSocket.simulateDataReceived(Buffer.from('N\n', 'latin1')); // completes CAN\n
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(2);
+            expect(mockCommandExecutor.getCallArgs('sendCommands', 1)[1]).to.equal('CAN\n');
+
+            await instance.stop();
+        });
+
+        it('should handle pipelined command immediately following CAN', async () => {
+            // If client sends CAN\nNEXT_CMD\n in one buffer, the CAN goes to the agent
+            // and NEXT_CMD is queued as pipelined data, processed on return to READY.
+            mockCommandExecutor.connectAgentResponse = {
+                sessionId: 'test-session',
+                greeting: 'OK\n'
+            };
+
+            const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, createMockDeps());
+            await instance.start();
+
+            const server = mockServerFactory.getServers()[0];
+            const clientSocket = server.simulateClientConnection();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // Trigger INQUIRE
+            mockCommandExecutor.setSendCommandsResponse('INQUIRE KEYPWD prompt\n');
+            clientSocket.simulateDataReceived(Buffer.from('PASSWD\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 20));
+
+            // CAN\n immediately followed by a pipelined command in the same buffer.
+            // Use ERR for all subsequent responses — both resolve correctly.
+            mockCommandExecutor.setSendCommandsResponse('ERR 67108949 Operation cancelled\n');
+            clientSocket.simulateDataReceived(Buffer.from('CAN\nGETINFO version\n', 'latin1'));
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            // Verify CAN was the second sendCommands call and GETINFO was the third
+            expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(3);
+            expect(mockCommandExecutor.getCallArgs('sendCommands', 1)[1]).to.equal('CAN\n');
+            expect(mockCommandExecutor.getCallArgs('sendCommands', 2)[1]).to.equal('GETINFO version\n');
+
+            await instance.stop();
+        });
     });
 
     describe('Phase 7c: Response Processing', () => {
