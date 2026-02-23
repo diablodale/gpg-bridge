@@ -169,11 +169,6 @@ cd ../gpg-bridge-request && npm run test:integration
 ```
 All must pass.
 
-### Commit
-```
-refactor: rename project from gpg-windows-relay to gpg-bridge
-```
-
 ---
 
 ## Phase 2 — Fix VSIX Bundling ✅ COMPLETE
@@ -288,11 +283,6 @@ Remove-Item "$env:TEMP\vsix-inspect" -Recurse -Force
 
 Repeat inspection for `gpg-bridge-request`.
 
-### Commit
-```
-build: add esbuild bundling to fix vsce path traversal
-```
-
 > **Implementation notes (deviations from plan):**
 > - `.vscodeignore` required 3 iterations beyond the planned `node_modules/**` addition.
 >   Final state also excludes: `esbuild.js`, `eslint.config.mjs`, `.vscode-test.cjs`,
@@ -344,11 +334,6 @@ cd ../gpg-bridge-request && npm run test:integration
 
 Spot-check: re-run `npm run package:agent`, unzip the VSIX, confirm
 `extension/package.json` inside shows `"publisher": "hidale"`.
-
-### Commit
-```
-feat: set publisher identity to hidale, align @types/node
-```
 
 ---
 
@@ -438,11 +423,6 @@ vsce does not warn on unknown or silently dropped `package.json` fields
 (pack has no capabilities block — agent and request only):
 ```powershell
 @("gpg-bridge-agent\gpg-bridge-agent-0.0.1.vsix","gpg-bridge-request\gpg-bridge-request-0.0.1.vsix") | ForEach-Object { Write-Host "`n=== $_ ===" -ForegroundColor Cyan; Copy-Item $_ _tmp.zip -Force; Expand-Archive _tmp.zip _vsix -Force; Remove-Item _tmp.zip; Get-Content _vsix\extension\package.json | Select-String "virtualWorkspaces|untrustedWorkspaces"; Remove-Item _vsix -Recurse -Force }
-```
-
-### Commit
-```
-docs: add icon, polish READMEs, add CONTRIBUTING, restructure CHANGELOG
 ```
 
 > **Implementation notes (deviations from plan):**
@@ -547,10 +527,9 @@ local git repo without any GitHub API involvement.
 
 ### Why this tool
 `commit-and-tag-version` reads the local git log, determines the semver bump from
-Conventional Commit prefixes (`fix:` → patch, `feat:` → minor, breaking → major),
-writes `CHANGELOG.md`, bumps `version` in all configured `package.json` files,
-and creates a local git commit + `v*` tag. Fully offline — no GitHub API, no PR,
-no bot account required.
+Conventional Commit prefixes, then writes `CHANGELOG.md`, bumps `version` in all
+configured `package.json` files, and creates a local git commit + `v*` tag.
+Fully offline — no GitHub API, no PR, no bot account required.
 
 ### Steps
 
@@ -565,28 +544,58 @@ Add to root `package.json` `scripts`:
 "release:dry-run": "commit-and-tag-version --dry-run"
 ```
 
-**4.2b.** Create `.versionrc.json` at the repository root. Configures lockstep bumping
-across all five packages and maps Conventional Commit types to CHANGELOG sections:
+**4.2b.** Add `commit-and-tag-version` configuration to the root `package.json` under
+a `"commit-and-tag-version"` key. This keeps all release tooling config in one file
+rather than a separate `.versionrc.json`.
+
+Add the following top-level key to root `package.json`:
 ```json
-{
+"commit-and-tag-version": {
   "bumpFiles": [
-    { "filename": "package.json",                  "type": "json" },
-    { "filename": "gpg-bridge-agent/package.json", "type": "json" },
+    { "filename": "package.json",                   "type": "json" },
+    { "filename": "gpg-bridge-agent/package.json",  "type": "json" },
     { "filename": "gpg-bridge-request/package.json","type": "json" },
-    { "filename": "pack/package.json",             "type": "json" },
-    { "filename": "shared/package.json",           "type": "json" }
+    { "filename": "pack/package.json",              "type": "json" },
+    { "filename": "shared/package.json",            "type": "json" }
   ],
-  "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\nSee [Conventional Commits](https://conventionalcommits.org) for commit guidelines.",
+  "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\nSee [Conventional Commits](https://conventionalcommits.org) for guidelines.",
+  "bumpStrict": true,
   "types": [
-    { "type": "feat",     "section": "### Added"         },
-    { "type": "fix",      "section": "### Fixed"         },
-    { "type": "perf",     "section": "### Changed"       },
-    { "type": "refactor", "section": "### Changed"       },
-    { "type": "docs",     "section": "### Documentation", "hidden": false },
-    { "type": "chore",    "section": "### Maintenance",   "hidden": false }
+    { "type": "feat",      "section": "Added"         },
+    { "type": "feat",      "section": "Removed", "scope": "remove" },
+    { "type": "feat",      "section": "Removed", "scope": "removed" },
+    { "type": "fix",       "section": "Fixed"         },
+    { "type": "perf",      "section": "Performance"   },
+    { "type": "security",  "section": "Security"      },
+    { "type": "deprecate", "section": "Deprecated"    },
+    { "type": "docs",      "hidden": true },
+    { "type": "chore",     "hidden": true },
+    { "type": "refactor",  "hidden": true },
+    { "type": "test",      "hidden": true },
+    { "type": "build",     "hidden": true },
+    { "type": "ci",        "hidden": true }
   ]
 }
 ```
+
+**Commit type versioning policy:**
+
+- `BREAKING CHANGE`/`!` → major
+- `feat:` → minor
+- any visible (non-hidden) type → patch
+- only hidden-type commits (`docs`, `chore`, `refactor`, `test`, `build`, `ci`) → **no release**
+
+Bump level is determined by the `conventionalcommits` preset's `whatBump` function
+([source](https://github.com/conventional-changelog/conventional-changelog/blob/master/packages/conventional-changelog-conventionalcommits/src/whatBump.js)):
+`BREAKING CHANGE`/`!` upgrades to major; `feat` upgrades to minor; everything
+else visible triggers patch. With `bumpStrict: true`, if every commit in the batch
+is a hidden type, `whatBump` returns `null` — no bump, no tag, no release.
+`security`, `deprecate`, `perf`, and other custom types are unrecognized by
+`whatBump` but are **visible** (not hidden), so they fall through to patch.
+
+`feat(remove)` uses the `scope` field to route removals into the `Removed` section
+while still auto-bumping minor via the `feat` type.
+`deprecate` goes in `Deprecated` section and produces a patch bump (it is visible).
 
 **4.2c.** Bootstrap: replace the existing hand-written `CHANGELOG.md` with a clean
 tool-managed file and create the initial `v0.1.0` tag. The `v0.0.0` anchor tag was
@@ -649,8 +658,7 @@ as its baseline — no other migration needed.
 
 | File | Change |
 |------|--------|
-| `.versionrc.json` | Lockstep monorepo config (new) |
-| `package.json` | `commit-and-tag-version` devDependency; `release` and `release:dry-run` scripts |
+| `package.json` | `commit-and-tag-version` devDependency; `release` and `release:dry-run` scripts; `"commit-and-tag-version"` config block |
 
 ### Verification gate
 
@@ -658,11 +666,6 @@ as its baseline — no other migration needed.
 npm run release:dry-run
 ```
 Expected: CHANGELOG preview and version printed, no files written.
-
-### Commit
-```
-chore: add commit-and-tag-version for local release management
-```
 
 ---
 
@@ -736,7 +739,7 @@ cd ../gpg-bridge-request && npm run test:integration
 ```
 
 > **No manual commit needed.** The `npm run release -- --release-as 1.0.0` command
-> in step 5a already created the commit (`chore(release): 1.0.0`) and pushed it
+> in step 5a already created the commit `chore(release): 1.0.0` and pushed it
 > along with the `v1.0.0` tag.
 
 ---
@@ -944,11 +947,6 @@ commits accumulate).
 To verify `publish.yml` without publishing: inspect the workflow YAML and
  confirm the `VSCE_PAT` secret is accessible (GitHub shows whether a secret
 exists without revealing its value).
-
-### Commit
-```
-ci: add GitHub Actions for CI, publish on tag, and release-please automation
-```
 
 ---
 

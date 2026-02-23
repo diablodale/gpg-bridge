@@ -5,35 +5,33 @@ This workspace contains two cooperating VS Code extensions written in TypeScript
 - `gpg-bridge-agent` — manages authenticated connections to a local GPG agent (Windows: TCP via socket file nonce).
 - `gpg-bridge-request` — provides a local Unix socket server that forwards Assuan protocol requests to `gpg-bridge-agent`.
 
-## Code Style
+## Writing Style
 
-- Language: TypeScript. Configuration is in `tsconfig.json`.
-- Linting / formatting: follow existing patterns in `eslint.config.mjs` and existing code (no extra formatting rules enforced here).
-- Logging: use the module-level `log(config, message)` helper pattern (see `gpg-bridge-agent/src/services/agentProxy.ts` and `gpg-bridge-request/src/services/requestProxy.ts`). Do not log raw binary data.
+- Perspective: Use second-person ("you" and "your") for user-facing messages
+- Clarity: Write for non-native English speakers
+- Formatting in messages:
+  - Use backticks for: file paths, filenames, variable names, field entries
+  - Use sentence case for titles and messages (capitalize only the first word and proper nouns)
 
-## Source Control
+## Code Review Style
 
-- Use Git for all version control operations.
-- All commits must be GPG signed. This should be automatic due to .gitconfig settings. If you receive an error
-  about this automatic GPG signing, then inform the user and stop the commit so they can fix their GPG configuration.
-- Commit changes as logically complete units of work (e.g., a new feature, a bug fix, or a refactor).
-- Follow the *Conventional Commits v1* specification for commit messages
-  (e.g., `feat: add proxy command`, `fix: handle socket errors`, `docs: update architecture docs`).
-- **VERY IMPORTANT** When working from a todo list or plan:
-  1. Complete an item or phase of work.
-  2. Update the todo/plan to reflect the change.
-  3. Then commit all work, including todo/plan/docs, to Git.
-     This keeps the commit history aligned with the plan and makes the evolution of the project easier to understand.
-  4. Only after committing to git, can you proceed to the next phase of work.
+- Language: TypeScript. Configuration is in `tsconfig.json`
+- Linting / formatting: follow existing patterns in `eslint.config.mjs` and existing code (no extra formatting rules enforced here)
 
-## Regular Checkpoints
+## Regular Checkpoints with Git
 
-When a logically complete units of work or significant change is made, follow this process:
-
-1. Ensure all changes are complete and tested locally.
-2. Update documentation, plans, todo lists, and architecture diagrams to reflect the change.
-3. Ask me if I am ready for a commit and provide a summary of the changes and any relevant context.
-4. Commit all changes together using the above [source control](#source-control) guidelines.
+- Git source control
+- All commits and tags must be GPG signed
+- Commit messages are enforced by commitlint (`commit-msg` hook). Valid types are:
+  `feat`, `fix`, `perf`, `security`, `deprecate`, `docs`, `chore`, `refactor`, `test`, `build`, `ci`.
+  Any other type will be rejected at commit time.
+- Identify when a conceptually complete unit of work is finished
+  e.g. feature, bug fix, refactor. Ask the user if they want to git commit. If they agree,
+  the following must be completed successfully
+  1. Documents, plans, diagrams updated to align with work and indicate work is complete
+  2. All unit tests must pass
+  3. Git commit message must follow *Conventional Commits v1* specification
+  4. Inform user work is complete and committed. Wait for user
 
 ## Architecture
 
@@ -42,6 +40,9 @@ When a logically complete units of work or significant change is made, follow th
 - `gpg-bridge-agent` handles the Assuan/GPG protocol specifics, including nonce authentication and session lifecycle.
 - Shared code is packaged as `@gpg-bridge/shared` npm package (`file:../shared` dependency) for clean imports and testability.
   Import this with `from '@gpg-bridge/shared'` or `from '@gpg-bridge/shared/test'`.
+- Sessions are stored in `Map` keyed by UUID; cleanup via socket 'close' handlers. Use `socket.destroy()` for unrecoverable errors.
+- Error handling: Async functions rethrow after local cleanup if caller expects rejection.
+- Use `latin1` encoding for socket I/O (preserves raw bytes)
 
 Key files:
 
@@ -52,6 +53,13 @@ Key files:
 - [shared/src/protocol.ts](../shared/src/protocol.ts) (shared utilities for Assuan/GPG protocol, latin1 encoding, error handling, command extraction)
 - [shared/src/types.ts](../shared/src/types.ts) (shared types for logging, sanitization, dependency injection)
 - [shared/src/test/helpers.ts](../shared/src/test/helpers.ts) (shared mock implementations for testing with dependency injection)
+
+## Logging
+
+- Use module-level `log(config, message)` helper pattern
+- Never log raw binary; use `sanitizeForLog()`
+- No sensitive data (keys, tokens, passwords)
+- No periods at end of messages
 
 ### State Machine Architecture
 
@@ -177,7 +185,7 @@ Run `npm test` or `npm run test:watch`. Framework: Mocha (BDD) + Chai (expect). 
 Both services support optional dependency injection via `*Deps` interfaces. AgentProxy accepts socketFactory and fileSystem. RequestProxy accepts commandExecutor, serverFactory, fileSystem, and getSocketPath. Pass mocks via optional deps parameter to test without VS Code runtime or real sockets. Enables isolated testing, systematic error scenarios, and deterministic execution. Example:
 
 ```typescript
-wait startRequestProxy(config, {
+await startRequestProxy(config, {
     commandExecutor: new MockCommandExecutor(),
     serverFactory: new MockServerFactory(),
     fileSystem: new MockFileSystem(),
@@ -190,18 +198,14 @@ wait startRequestProxy(config, {
 Use Powershell on Windows hosts. Use bash on Linux/macOS hosts. From repository root:
 
 - **`npm install`** — installs root dependencies and auto-runs postinstall hooks to install subfolders
-- **`npm run compile`** — builds in dependency order: shared → agent-proxy → request-proxy
+- **`npm run compile`** — builds in dependency order: shared → gpg-bridge-agent → gpg-bridge-request
 - **`npm run watch`** — runs watch mode in all folders simultaneously (rebuilds on file change)
-- **`npm run package`** — creates packaged extension (.vsix files)
+- **`npm run package`** — creates packaged extension (.vsix files) via per-extension `vsix` scripts
 
-Each extension compiles to its own `out/` folder via TypeScript, and shared code is packaged as `@gpg-bridge/shared` npm module imported with `file:../shared` dependencies.
-
-## Project Conventions
-
-- **Protocol**: Use `latin1` encoding for socket I/O (preserves raw bytes). Never log raw binary; use `sanitizeForLog()` (first token + byte count).
-- **Logging**: Use module-level `log(config, message)` with config callbacks, not `console.log`.
-- **Sessions**: Stored in `Map` keyed by UUID; cleanup via socket 'close' handlers. Use `socket.destroy()` for unrecoverable errors.
-- **Error handling**: Async functions rethrow after local cleanup if caller expects rejection.
+Each extension compiles to its own `out/` folder via TypeScript (`tsc`) for development and testing.
+Packaging (`npm run package`) uses esbuild to bundle each extension into a single `out/extension.js`
+before vsce packages it — no `node_modules` are included in the VSIX. Shared code is imported
+from `@gpg-bridge/shared` (`file:../shared` dependency), inlined by esbuild at package time.
 
 ## Integration Points
 
