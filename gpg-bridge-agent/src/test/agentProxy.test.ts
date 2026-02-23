@@ -261,7 +261,7 @@ describe('AgentProxy', () => {
             expect(agentProxy.isRunning()).to.equal(false);
         });
 
-        it('should handle disconnect of invalid session', async () => {
+        it('should silently succeed when disconnecting an already-cleaned-up session', async () => {
             const agentProxy = new AgentProxy(
                 {
                     logCallback: mockLogConfig.logCallback,
@@ -274,12 +274,9 @@ describe('AgentProxy', () => {
                 }
             );
 
-            try {
-                await agentProxy.disconnectAgent('invalid-session-id');
-                expect.fail('Should have thrown');
-            } catch (error: unknown) {
-                expect((error as Error).message).to.include('session');
-            }
+            // Should resolve without throwing — session not found means the gpg-agent
+            // already closed the socket (e.g. after BYE) and CLEANUP_COMPLETE already ran.
+            await agentProxy.disconnectAgent('invalid-session-id');
         });
     });
 

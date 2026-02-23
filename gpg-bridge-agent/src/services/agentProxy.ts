@@ -683,12 +683,26 @@ export class AgentProxy {
             // Add to sessions map
             this.sessions.set(sessionId, session);
 
-            // Register permanent cleanup listener to remove session from map
-            // This ensures cleanup works even if Promise bridges have already resolved
-            session.once('CLEANUP_COMPLETE', () => {
-                log(this.config, `[${sessionId}] Removing session from map after cleanup`);
-                this.sessions.delete(sessionId);
-            });
+            // Register permanent cleanup listeners to remove session from map and update status bar.
+            // Covers two distinct cleanup outcomes:
+            //   CLEANUP_COMPLETE — socket destroyed cleanly → CLOSING → DISCONNECTED
+            //   CLEANUP_ERROR   — socket.destroy() threw   → CLOSING → FATAL
+            //
+            // This ensures cleanup works even if Promise bridges have already resolved — including
+            // the spontaneous path where gpg-agent closes the socket (e.g. after BYE) without a
+            // corresponding disconnectAgent() call.
+            //
+            // The `has` guard prevents a double-call when disconnectAgent() already removed the
+            // session (and called statusBarCallback) in its CLEANUP_REQUESTED handler.
+            const onPermanentCleanup = () => {
+                if (this.sessions.has(sessionId)) {
+                    log(this.config, `[${sessionId}] Removing session from map after cleanup`);
+                    this.sessions.delete(sessionId);
+                    this.config.statusBarCallback?.();
+                }
+            };
+            session.once('CLEANUP_COMPLETE', onPermanentCleanup);
+            session.once('CLEANUP_ERROR', onPermanentCleanup);
 
             // Promise bridge: wait for AGENT_DATA_RECEIVED (greeting) or CLEANUP_REQUESTED
             // Note: ERROR_OCCURRED always emits CLEANUP_REQUESTED, so we only listen to CLEANUP
@@ -825,7 +839,11 @@ export class AgentProxy {
     public async disconnectAgent(sessionId: string): Promise<void> {
         const session = this.sessions.get(sessionId);
         if (!session) {
-            throw new Error(`Invalid session: ${sessionId}`);
+            // Session already cleaned up — this is normal when gpg-agent closed the socket
+            // first (e.g. after BYE). The CLEANUP_COMPLETE listener already fired, removed the
+            // session from the map, and called statusBarCallback. Nothing left to do.
+            log(this.config, `[${sessionId}] disconnectAgent: session already cleaned up`);
+            return;
         }
 
         log(this.config, `[${sessionId}] Disconnect gracefully from gpg-agent...`);
@@ -833,9 +851,11 @@ export class AgentProxy {
         // Promise bridge: wait for CLEANUP_REQUESTED
         // Note: This always resolves (graceful or error cleanup), never rejects
         // ERROR_OCCURRED always emits CLEANUP_REQUESTED, so we only listen to CLEANUP
-        return new Promise<void>((resolve, reject) => {
+        // sessions.delete and statusBarCallback are called here (fast path), and also in the
+        // permanent CLEANUP_COMPLETE/ERROR listeners (spontaneous-close path). The `has` guard
+        // in those permanent listeners prevents double-calls.
+        return new Promise<void>((resolve) => {
             const handleDisconnected = () => {
-                // Remove session from map
                 this.sessions.delete(sessionId);
                 log(this.config, `[${sessionId}] Disconnected from gpg-agent`);
                 this.config.statusBarCallback?.();
