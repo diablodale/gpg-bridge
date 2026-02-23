@@ -308,7 +308,7 @@ function showStatus(): void {
 		'GPG Bridge Agent Status',
 		'',
 		`State: ${state}${sessionCount > 0 ? ` (${sessionCount} session${sessionCount > 1 ? 's' : ''})` : ''}`,
-		`GnuPG bin: ${gpgBinDir}`,
+		`GPG bin dir: ${gpgBinDir}`,
 		`GPG agent: ${agentSocket}`
 	].join('\n');
 

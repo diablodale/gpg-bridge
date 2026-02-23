@@ -31,6 +31,22 @@ Search for **GPG Bridge** in the VS Code Extensions sidebar, or install from
 the [marketplace page](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge).
 Both component extensions install automatically.
 
+### Manual installation from VSIX
+
+Download the two `.vsix` files from the [GitHub Releases page](https://github.com/diablodale/gpg-bridge/releases)
+and install them via the VS Code CLI:
+
+```sh
+code --install-extension gpg-bridge-agent-<version>.vsix
+code --install-extension gpg-bridge-request-<version>.vsix
+```
+
+Or via the UI: open the Extensions sidebar, click the **`···`** menu, choose
+**Install from VSIX…**, and repeat for each file.
+
+> ℹ️ Install both files. The agent and request extensions work together and
+> must both be present.
+
 Both proxies start automatically when VS Code opens — no manual start needed.
 
 ## How It Works

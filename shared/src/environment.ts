@@ -12,8 +12,7 @@ export function isTestEnvironment(): boolean {
 
     return process.env.npm_lifecycle_event === 'test'
         || argv.includes('extensionTestsPath')
-        || argv.includes('vscode-test')
-        || argv.includes('bootstrap-fork.js');
+        || argv.includes('vscode-test');
 }
 
 /**
