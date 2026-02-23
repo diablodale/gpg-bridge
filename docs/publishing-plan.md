@@ -630,8 +630,17 @@ npm run release -- --release-as 0.1.0
 git log --show-signature -1
 git verify-tag v0.1.0
 
-git push --follow-tags
+# Verify all four CHANGELOG files exist, contain [0.1.0], and are identical
+$files = @("CHANGELOG.md","gpg-bridge-agent/CHANGELOG.md","gpg-bridge-request/CHANGELOG.md","pack/CHANGELOG.md")
+$files | ForEach-Object { Select-String -Path $_ -Pattern "\[0\.1\.0\]" | Select-Object -First 1 }
+# Expected: one match per file showing the [0.1.0] section header
+
+# Confirm all three copies are byte-for-byte identical to root
+$ref = (Get-FileHash "CHANGELOG.md").Hash
+$files[1..3] | ForEach-Object { $h = (Get-FileHash $_).Hash; "$_ $(if ($h -eq $ref) {'OK'} else {'MISMATCH'})" }
+# Expected: all three lines end with OK
 ```
+
 All five `package.json` files are now at `0.1.0`, the `[0.1.0]` CHANGELOG section
 contains all conventional commits since `v0.0.0`, and the `v0.1.0` tag exists in
 the repository. All subsequent runs generate incrementally from the latest tag.
