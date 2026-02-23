@@ -530,24 +530,164 @@ configured via `commitlint.config.js` (`extends @commitlint/config-conventional`
 
 ---
 
-## Phase 5 — First Publish (bootstrap)
+## Phase 4.2 — Local Version Management
 
 ### Goal
-Publish v0.1.0 to the VS Code marketplace and create a GitHub Release with all
-three VSIX artifacts attached.
+Configure `commit-and-tag-version` for local changelog generation, lockstep version
+bumping across all five packages, and `v*` tag creation — all offline, against the
+local git repo without any GitHub API involvement.
 
-> **This is the only manual publish.** Phase 6 sets up `release-please` so that
-> all future releases (v0.1.1, v0.2.0, etc.) are triggered by merging an
-> auto-generated PR on GitHub — no manual version bumping or tagging required.
+**Relationship to other phases:**
+- **Phase 5** — first marketplace release uses `--release-as 1.0.0` to explicitly declare
+  the public debut version regardless of what the last dev tag auto-increment would
+  produce; this replaces the manual per-file edits in Phase 5 step 5a
+- **Phase 6** — when `release-please` is activated, remove `commit-and-tag-version`
+  entirely; `release-please` reads existing `v*` tags from git history and adopts them
+  seamlessly — no migration required
+
+### Why this tool
+`commit-and-tag-version` reads the local git log, determines the semver bump from
+Conventional Commit prefixes (`fix:` → patch, `feat:` → minor, breaking → major),
+writes `CHANGELOG.md`, bumps `version` in all configured `package.json` files,
+and creates a local git commit + `v*` tag. Fully offline — no GitHub API, no PR,
+no bot account required.
 
 ### Steps
 
-**5a.** Bump version to `0.1.0` in lockstep across all five `package.json` files:
-- `gpg-bridge-agent/package.json`
-- `gpg-bridge-request/package.json`
-- `pack/package.json`
-- `shared/package.json`
-- root `package.json`
+**4.2a.** Add `commit-and-tag-version` as a root devDependency and add release scripts:
+```powershell
+cd c:\njs\gpg-windows-relay
+npm install --save-dev commit-and-tag-version
+```
+Add to root `package.json` `scripts`:
+```json
+"release": "commit-and-tag-version",
+"release:dry-run": "commit-and-tag-version --dry-run"
+```
+
+**4.2b.** Create `.versionrc.json` at the repository root. Configures lockstep bumping
+across all five packages and maps Conventional Commit types to CHANGELOG sections:
+```json
+{
+  "bumpFiles": [
+    { "filename": "package.json",                  "type": "json" },
+    { "filename": "gpg-bridge-agent/package.json", "type": "json" },
+    { "filename": "gpg-bridge-request/package.json","type": "json" },
+    { "filename": "pack/package.json",             "type": "json" },
+    { "filename": "shared/package.json",           "type": "json" }
+  ],
+  "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\nSee [Conventional Commits](https://conventionalcommits.org) for commit guidelines.",
+  "types": [
+    { "type": "feat",     "section": "### Added"         },
+    { "type": "fix",      "section": "### Fixed"         },
+    { "type": "perf",     "section": "### Changed"       },
+    { "type": "refactor", "section": "### Changed"       },
+    { "type": "docs",     "section": "### Documentation", "hidden": false },
+    { "type": "chore",    "section": "### Maintenance",   "hidden": false }
+  ]
+}
+```
+
+**4.2c.** Bootstrap: replace the existing hand-written `CHANGELOG.md` with a clean
+tool-managed file and create the initial `v0.1.0` tag. The `v0.0.0` anchor tag was
+already manually applied to a previous commit — the tool will walk commits from that
+point forward and include them in the `[0.1.0]` CHANGELOG section. The starting tag
+is **exclusive**: the commit tagged `v0.0.0` itself does not appear; only commits
+after it do.
+
+> **Why not `--first-release`?** That flag tags at the current `package.json` version
+> without bumping — but it also does **not** write to `bumpFiles`. In a monorepo the
+> four sub-package `package.json` files would not be updated, leaving versions out of
+> sync. `--release-as 0.1.0` writes to all five `bumpFiles` correctly.
+
+```powershell
+# Replace existing CHANGELOG.md with the header only (tool will prepend entries above this)
+Set-Content CHANGELOG.md "# Changelog`n`nAll notable changes to this project will be documented in this file.`nSee [Conventional Commits](https://conventionalcommits.org) for commit guidelines."
+
+# Generate CHANGELOG from v0.0.0..HEAD, bump all package.json files to 0.1.0, commit, tag
+npx commit-and-tag-version --release-as 0.1.0
+git push --follow-tags
+```
+All five `package.json` files are now at `0.1.0`, the `[0.1.0]` CHANGELOG section
+contains all conventional commits since `v0.0.0`, and the `v0.1.0` tag exists in
+the repository. All subsequent runs generate incrementally from the latest tag.
+
+**4.2d.** Verify dry-run output before the first normal release. No files are changed:
+```powershell
+npm run release:dry-run
+```
+Confirms that only commits since `v0.1.0` appear in the preview and the bump is correct.
+
+### Usage (recurring — deliberate releases only, not on every push)
+
+```powershell
+npm run release                              # auto-detects patch/minor/major from commits
+npm run release -- --release-as minor        # force a specific bump type
+git push --follow-tags                       # push the commit + v* tag to GitHub
+```
+
+> Releases are a deliberate act. Normal development commits are pushed to `main`
+> without running `npm run release`. Run it only when you decide a set of completed
+> work is worth versioning — the pre-push hook runs `npm test` regardless.
+
+**Phase 5 note**: by Phase 5 there will already be `v*` tags from development cycles.
+Use `--release-as 1.0.0` to explicitly declare the marketplace launch version regardless
+of what auto-increment would calculate from the last dev tag (e.g., `v0.0.7` + `fix:` commits
+would auto-produce `v0.0.8`, not `v1.0.0`):
+```powershell
+npm run release -- --release-as 1.0.0
+git push --follow-tags
+```
+This replaces the manual per-file version edits described in Phase 5 step 5a.
+
+**Phase 6 transition**: when `release-please` is active, remove `commit-and-tag-version`
+from devDependencies, delete `.versionrc.json`, and remove the `release`/`release:dry-run`
+scripts. All `v*` tags already in git history are immediately usable by `release-please`
+as its baseline — no other migration needed.
+
+### Files added / changed
+
+| File | Change |
+|------|--------|
+| `.versionrc.json` | Lockstep monorepo config (new) |
+| `package.json` | `commit-and-tag-version` devDependency; `release` and `release:dry-run` scripts |
+
+### Verification gate
+
+```powershell
+npm run release:dry-run
+```
+Expected: CHANGELOG preview and version printed, no files written.
+
+### Commit
+```
+chore: add commit-and-tag-version for local release management
+```
+
+---
+
+## Phase 5 — First Publish (bootstrap)
+
+### Goal
+Publish v1.0.0 to the VS Code marketplace and create a GitHub Release with all
+three VSIX artifacts attached.
+
+> **This is the only manual marketplace publish.** Phase 6 sets up `release-please`
+> to automate future releases from GitHub — no manual VSIX packaging or publishing
+> required after that. Version bumping and tagging are already automated locally
+> via Phase 4.2.
+
+### Steps
+
+**5a.** Bump version to `1.0.0`, generate CHANGELOG entry, commit, and tag using
+Phase 4.2 tooling (see Phase 4.2 for setup). The `--release-as` flag overrides
+auto-increment to declare the explicit marketplace launch version:
+```powershell
+npm run release -- --release-as 1.0.0
+git push --follow-tags
+```
+This bumps all five `package.json` files in lockstep, appends to `CHANGELOG.md`,
+creates a `chore(release): 1.0.0` commit, and creates the `v1.0.0` tag locally.
 
 **5b.** Confirm `"preview"` is absent from all extension `package.json` files.
 (Decided: remove `"preview": true` — extension is functional and tested.)
@@ -579,12 +719,12 @@ cd ../pack               && npx vsce publish
 
 **5f.** Update README badge URLs now that marketplace IDs are live.
 
-**5g.** Create GitHub Release manually (bootstrap only — Phase 6 automates this):
+**5g.** Create GitHub Release manually (Phase 6 automates this for future releases):
 - On GitHub: Releases → Draft a new release
-- Tag: `v0.1.0` (create the tag here — this is the only time a `v*` tag is
-  created manually; after Phase 6, release-please creates tags automatically)
-- Title: `v0.1.0 — Initial release`
-- Body: paste the `[0.1.0]` section from CHANGELOG.md
+- Tag: `v1.0.0` (already exists — pushed in step 5a via `git push --follow-tags`;
+  select it from the tag dropdown rather than creating a new one)
+- Title: `v1.0.0 — Initial release`
+- Body: paste the `[1.0.0]` section from CHANGELOG.md
 - Attach all three `.vsix` files as release assets
 
 ### Verification gate
@@ -595,10 +735,9 @@ cd gpg-bridge-agent      && npm run test:integration
 cd ../gpg-bridge-request && npm run test:integration
 ```
 
-### Commit
-```
-chore: bump version to 0.1.0 for first release
-```
+> **No manual commit needed.** The `npm run release -- --release-as 1.0.0` command
+> in step 5a already created the commit (`chore(release): 1.0.0`) and pushed it
+> along with the `v1.0.0` tag.
 
 ---
 
@@ -623,10 +762,10 @@ acts as a bot. After every merge to `main` it:
 1. Reads your git commit messages since the last release tag
 2. Determines the next semver version from Conventional Commit prefixes
    (`fix:` → patch, `feat:` → minor, `feat!:` / `BREAKING CHANGE:` → major)
-3. Opens (or updates) a single PR titled e.g. `chore: release 0.2.0`
+3. Opens (or updates) a single PR titled e.g. `chore: release 1.0.1`
 4. That PR contains: bumped versions in all tracked `package.json` files +
    a new `CHANGELOG.md` section generated from the commit messages
-5. When **you merge that PR**, release-please creates a `v0.2.0` tag
+5. When **you merge that PR**, release-please creates a `v1.0.1` tag
 6. The `publish.yml` workflow detects the new tag and fires automatically
 
 You never write version numbers or CHANGELOG entries by hand after Phase 6.
@@ -664,14 +803,21 @@ The `sentence-case` plugin capitalizes the leading word of each changelog entry.
 
 **6b.** Create `.release-please-manifest.json` at the repository root. This is
 release-please's state file — it records the current version of each package so
-it knows what to bump from. After the Phase 5 publish it should be:
+it knows what to bump from. Set it to whatever `v*` tag was last produced by
+Phase 4.2 (expected to be `1.0.0` after the Phase 5 release):
+
+> **Phase 4.2 cleanup**: before committing this file, remove `commit-and-tag-version`
+> from root `package.json` devDependencies, delete `.versionrc.json`, and remove the
+> `release` and `release:dry-run` scripts — Phase 6 takes over from here.
+
+After Phase 5 publish it should be:
 ```json
 {
-  ".": "0.1.0",
-  "gpg-bridge-agent": "0.1.0",
-  "gpg-bridge-request": "0.1.0",
-  "pack": "0.1.0",
-  "shared": "0.1.0"
+  ".": "1.0.0",
+  "gpg-bridge-agent": "1.0.0",
+  "gpg-bridge-request": "1.0.0",
+  "pack": "1.0.0",
+  "shared": "1.0.0"
 }
 ```
 
@@ -787,8 +933,8 @@ git push
 ```
 Then confirm in the GitHub Actions tab:
 - `ci.yml` run passes
-- `release-please.yml` run passes and opens a release PR titled `chore: release 0.1.1`
-- The release PR diff shows a version bump from `0.1.0` → `0.1.1` and a
+- `release-please.yml` run passes and opens a release PR titled `chore: release 1.0.1`
+- The release PR diff shows a version bump from `1.0.0` → `1.0.1` and a
   CHANGELOG entry for the test fix commit
 
 Do **not** merge that PR — it exists only to verify the workflow. Close it
