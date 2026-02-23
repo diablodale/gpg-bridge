@@ -18,7 +18,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	outputChannel = vscode.window.createOutputChannel('GPG Bridge Agent');
 	statusBarItem = vscode.window.createStatusBarItem(context.extension.id, vscode.StatusBarAlignment.Right, 100);
 
-	outputChannel.appendLine('GPG Bridge Agent activated');
+	// This extension is the Windows-side half of the bridge.
+	// The os field in package.json prevents marketplace installs on non-win32, but
+	// local VSIX installs bypass that check. Guard at runtime so nothing starts.
+	if (process.platform !== 'win32') {
+        const msg = 'GPG Bridge Agent is inactive. It can only be installed on Windows.';
+        outputChannel.appendLine(msg);
+        void vscode.window.showErrorMessage(msg);
+        return;
+    }
 
 	// Register three command handlers for inter-extension communication
 	context.subscriptions.push(

@@ -23,6 +23,16 @@ let outputChannel: vscode.OutputChannel;
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     outputChannel = vscode.window.createOutputChannel('GPG Bridge Request');
 
+    // This extension is the remote (Linux/macOS) half of the bridge.
+    // The os field in package.json prevents marketplace installs on win32, but
+    // local VSIX installs bypass that check. Guard at runtime so nothing starts.
+    if (process.platform === 'win32') {
+        const msg = 'GPG Bridge Request is inactive. It can only be installed on a Linux/macOS remote (dev container, SSH, WSL).';
+        outputChannel.appendLine(msg);
+        void vscode.window.showErrorMessage(msg);
+        return;
+    }
+
     try {
         outputChannel.appendLine(`Remote context (${vscode.env.remoteName}) activated`);
 
