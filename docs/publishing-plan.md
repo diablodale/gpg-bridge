@@ -564,9 +564,11 @@ Add the following top-level key to root `package.json`:
   ],
   "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\nSee [Conventional Commits](https://conventionalcommits.org) for guidelines.",
   "bumpStrict": true,
+  "commitAll": true,
   "sign": true,
   "noVerify": true,
   "scripts": {
+    "prerelease": "node -e \"const {execSync}=require('child_process');const s=execSync('git status --porcelain').toString().trim();if(s){console.error('ERROR: working tree is not clean. Commit or stash all changes before releasing:\\n'+s);process.exit(1);}\"",
     "postchangelog": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('CHANGELOG.md',d+'/CHANGELOG.md');console.log(d+'/CHANGELOG.md copied');})\"",
     "precommit": "git add gpg-bridge-agent/CHANGELOG.md gpg-bridge-request/CHANGELOG.md pack/CHANGELOG.md"
   },
@@ -620,10 +622,12 @@ after it do.
 > sync. `--release-as 0.1.0` writes to all five `bumpFiles` correctly.
 
 ```powershell
-# Replace existing CHANGELOG.md with the header only (tool will prepend entries above this)
-Set-Content CHANGELOG.md "# Changelog`n`nAll notable changes to this project will be documented in this file.`nSee [Conventional Commits](https://conventionalcommits.org) for commit guidelines."
+# Prerequisite: working tree must be clean (prerelease lifecycle script enforces this too)
+git status --porcelain   # Expected: no output
 
 # Generate CHANGELOG from v0.0.0..HEAD, bump all package.json files to 0.1.0, commit, tag
+# Note: do NOT pre-edit CHANGELOG.md — the tool rewrites it from the header config.
+# Any modification would dirty the tree and the prerelease guard would abort.
 npm run release -- --release-as 0.1.0
 
 # Verify the release commit and tag are both GPG signed

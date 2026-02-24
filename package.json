@@ -122,9 +122,11 @@
     ],
     "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\nSee [Conventional Commits](https://conventionalcommits.org) for guidelines.",
     "bumpStrict": true,
+    "commitAll": true,
     "sign": true,
     "noVerify": true,
     "scripts": {
+      "prerelease": "node -e \"const {execSync}=require('child_process');const s=execSync('git status --porcelain').toString().trim();if(s){console.error('ERROR: working tree is not clean. Commit or stash all changes before releasing:\\n'+s);process.exit(1);}\"",
       "postchangelog": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('CHANGELOG.md',d+'/CHANGELOG.md');console.log(d+'/CHANGELOG.md copied');})\"",
       "precommit": "git add gpg-bridge-agent/CHANGELOG.md gpg-bridge-request/CHANGELOG.md pack/CHANGELOG.md"
     },
