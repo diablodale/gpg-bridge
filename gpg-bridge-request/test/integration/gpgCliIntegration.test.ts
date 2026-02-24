@@ -34,7 +34,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { expect } from 'chai';
-import { GpgCli, assertSafeToDelete } from '@gpg-bridge/shared/test/integration';
+import { GpgTestHelper, assertSafeToDelete } from '@gpg-bridge/shared/test/integration';
 
 // Env vars injected into the container's remote extension host via:
 //   gpgCliRunTest.ts extensionTestsEnv  →  VS Code process env
@@ -51,7 +51,7 @@ describe('Phase 3 — gpg CLI → request-proxy → agent-proxy → gpg-agent', 
     // 120 s ceiling: full-chain sign/decrypt + 1 MB large-file stress test.
     this.timeout(120000);
 
-    let cli: GpgCli;
+    let cli: GpgTestHelper;
     let testDir: string;
 
     before(async function () {
@@ -113,10 +113,11 @@ describe('Phase 3 — gpg CLI → request-proxy → agent-proxy → gpg-agent', 
         fs.writeFileSync(path.join(LINUX_GNUPGHOME, 'gpg.conf'), 'trust-model always\n', 'latin1');
 
         // ----------------------------------------------------------------
-        // 4. Construct GpgCli — reads GNUPGHOME from process.env.
-        //    Use explicit paths so the test is not sensitive to PATH order.
+        // 4. Construct GpgTestHelper wrapping the injected GNUPGHOME.
+        //    gnupgHome is provided so cleanup() is a no-op — the runner manages agent/dir lifecycle.
+        //    gpg and gpgconf are on PATH in the container so no gpgBinDir needed.
         // ----------------------------------------------------------------
-        cli = new GpgCli({ gpgPath: 'gpg', gpgconfPath: 'gpgconf' });
+        cli = new GpgTestHelper({ gnupgHome: LINUX_GNUPGHOME });
 
         // ----------------------------------------------------------------
         // 5. Import the Windows test key's public component.

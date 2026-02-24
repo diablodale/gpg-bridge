@@ -16,18 +16,12 @@
  */
 
 import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
 import { runTests } from '@vscode/test-electron';
-import { GpgCli, assertSafeToDelete } from '@gpg-bridge/shared/test/integration';
+import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
-// Create an isolated keyring directory unique to this run.
-// Validate immediately after creation before touching process.env or GpgCli.
-const GNUPGHOME = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-integration-'));
-assertSafeToDelete(GNUPGHOME);
-process.env.GNUPGHOME = GNUPGHOME;
-
-const gpg = new GpgCli();
+// GpgTestHelper creates and validates its own isolated keyring at construction time.
+// process.env.GNUPGHOME is never mutated.
+const gpg = new GpgTestHelper();
 
 async function main(): Promise<void> {
     // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
@@ -37,7 +31,7 @@ async function main(): Promise<void> {
 
     // Launch the gpg-agent now, before the extension host starts, so that
     // gpgconf --list-dirs agent-extra-socket (called during activate()) finds a live socket.
-    gpg.launchAgent();
+    await gpg.launchAgent();
 
     try {
         await runTests({
@@ -54,19 +48,12 @@ async function main(): Promise<void> {
             // also being true (the normal test signal is still present under @vscode/test-electron).
             extensionTestsEnv: {
                 VSCODE_INTEGRATION_TEST: '1',
-                GNUPGHOME
+                GNUPGHOME: gpg.gnupgHome
             }
         });
     } finally {
-        // Kill agent whether tests passed or failed.
-        // killAgent() already tolerates a dead agent; only throws if gpgconf fails to spawn.
-        gpg.killAgent();
-
-        // Validate again before deleting as a secondary safety net — the primary
-        // check runs immediately after mkdtempSync above, but this catches any
-        // unlikely mutation of GNUPGHOME between creation and cleanup.
-        assertSafeToDelete(GNUPGHOME);
-        fs.rmSync(GNUPGHOME, { recursive: true, force: true });
+        // Kill agent and remove the isolated keyring whether tests passed or failed.
+        await gpg.cleanup();
     }
 }
 

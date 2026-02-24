@@ -236,9 +236,10 @@ export function parseImportResult(output: string): { imported: number; unchanged
 
 export class GpgCli {
     private readonly binDir: string;
-    private readonly gpgBin: string;
-    private readonly gpgconfBin: string;
-    // Protected so GpgTestHelper can reference it without re-reading opts
+    // Protected so GpgTestHelper can call gpg/gpgconf directly via run()/runRaw()
+    protected readonly gpgBin: string;
+    protected readonly gpgconfBin: string;
+    // Protected so GpgTestHelper can expose it as a narrowed public readonly string
     protected readonly gnupgHome: string | undefined;
 
     // Resolved deps (all fields populated — no optional at runtime)
@@ -317,14 +318,15 @@ export class GpgCli {
      * Run a subprocess. Rejects (throws) on non-zero exit or spawn error.
      * Use for operations where failure is unexpected (gpgconf, key listing, export).
      */
-    protected async run(binary: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-        return this._execFileAsync(binary, args, {
+    protected async run(binary: string, args: string[]): Promise<GpgExecResult> {
+        const { stdout, stderr } = await this._execFileAsync(binary, args, {
             encoding: 'latin1',
             env: this.env,
             shell: false,   // never allow shell interpolation — binary is invoked directly
             timeout: 10000,
             maxBuffer: 1024 * 1024, // 1 MB — largest expected: ~256 KB for bulk export
         });
+        return { exitCode: 0, stdout, stderr };
     }
 
     /**

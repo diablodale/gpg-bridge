@@ -441,20 +441,24 @@ replaced by `new GpgTestHelper()` in Phase 2):
 
 ---
 
-### Phase 2 — `GpgTestHelper` refactor (`shared` integration tests)
+### Phase 2 — `GpgTestHelper` refactor (`shared` integration tests) ✅ complete
 
-**Files changed**: `shared/src/test/integration/gpgCli.ts`, `shared/src/test/integration/index.ts`,
-all integration test call sites
+**Files changed**: `shared/src/gpgCli.ts`, `shared/src/index.ts`,
+`shared/src/test/integration/gpgCli.ts`, `shared/src/test/integration/index.ts`,
+`shared/src/test/integration/gpgCli.test.ts`,
+`gpg-bridge-agent/test/integration/agentProxyIntegration.test.ts`,
+`gpg-bridge-request/test/integration/gpgCliIntegration.test.ts`,
+all three integration test runner files
 
 #### Work items
-- [ ] Rename class `GpgCli` → `GpgTestHelper` in `shared/src/test/integration/gpgCli.ts`
-- [ ] Change `GpgTestHelper` to `extends GpgCli` (import from `@gpg-bridge/shared`)
-- [ ] Update constructor: `mkdtempSync` → `assertSafeToDelete` → `super({ gnupgHome })`; expose as `public readonly gnupgHome: string`; do **not** mutate `process.env.GNUPGHOME`
-- [ ] Add `async cleanup()`: `killAgent()` → `assertSafeToDelete` → `fs.rmSync`
-- [ ] Remove all duplicated subprocess infrastructure now inherited from `GpgCli`
-- [ ] Update `shared/src/test/integration/index.ts`: export `GpgTestHelper`
-- [ ] Update all integration test call sites in Mocha test files: `new GpgCli(...)` → `new GpgTestHelper()`
-- [ ] Update all three integration test runner files (`gpg-bridge-agent/test/integration/runTest.ts`,
+- [x] Rename class `GpgCli` → `GpgTestHelper` in `shared/src/test/integration/gpgCli.ts`
+- [x] Change `GpgTestHelper` to `extends GpgCli` (import from `@gpg-bridge/shared`)
+- [x] Update constructor: `mkdtempSync` → `assertSafeToDelete` → `super({ gnupgHome })`; expose as `public readonly gnupgHome: string`; do **not** mutate `process.env.GNUPGHOME`
+- [x] Add `async cleanup()`: `killAgent()` → `assertSafeToDelete` → `fs.rmSync`
+- [x] Remove all duplicated subprocess infrastructure now inherited from `GpgCli`
+- [x] Update `shared/src/test/integration/index.ts`: export `GpgTestHelper`
+- [x] Update all integration test call sites in Mocha test files: `new GpgCli(...)` → `new GpgTestHelper()`
+- [x] Update all three integration test runner files (`gpg-bridge-agent/test/integration/runTest.ts`,
   `gpg-bridge-request/test/integration/requestProxyRunTest.ts`,
   `gpg-bridge-request/test/integration/gpgCliRunTest.ts`):
   - Remove top-level `const GNUPGHOME = fs.mkdtempSync(...)`, `assertSafeToDelete(GNUPGHOME)`,
@@ -463,21 +467,35 @@ all integration test call sites
   - Remove imports of `fs`, `os`, `assertSafeToDelete` that are no longer needed at top level
   - Replace `GNUPGHOME` constant with `gpg.gnupgHome` in `extensionTestsEnv` and anywhere else it is referenced
   - Replace `finally` block (manual `killAgent()` + `assertSafeToDelete` + `fs.rmSync`) with `await gpg.cleanup()`
+- [x] Export `ExecFileError` and `GpgExecResult` interfaces from `shared/src/gpgCli.ts` and re-export from `shared/src/index.ts`
+- [x] Unify `run()` and `runRaw()` return types to `Promise<GpgExecResult>`; update `ExecFileFn` to return `Promise<Pick<GpgExecResult, 'stdout' | 'stderr'>>` and `SpawnForStdinFn` to return `Promise<GpgExecResult>`
+- [x] Make `gpgBin` and `gpgconfBin` `protected` so `GpgTestHelper` subclass can invoke them
+- [x] Use `GpgCliOpts` (imported from `@gpg-bridge/shared`) as the constructor parameter type instead of an inline type
+- [x] Extend `GpgTestHelper` constructor to accept optional `opts.gnupgHome` (via `GpgCliOpts`): when provided, wraps an existing keyring without taking ownership (`_ownsTempDir = false`) and `cleanup()` is a no-op; when omitted, behaviour is unchanged (`mkdtempSync`, full cleanup)
+- [x] Fix `gpg-bridge-agent/test/integration/agentProxyIntegration.test.ts`: was importing `GpgCli` from test barrel; changed to `GpgTestHelper` constructed with `{ gnupgHome: process.env.GNUPGHOME! }` so it wraps the keyring prepared by `runTest.ts` without owning its lifecycle
+- [x] Fix `gpg-bridge-request/test/integration/gpgCliIntegration.test.ts`: same issue — changed to `GpgTestHelper` constructed with `{ gnupgHome: LINUX_GNUPGHOME }`
+- [x] Remove duplicate Phase 1 test blocks from `shared/src/test/integration/gpgCli.test.ts` (all superseded by Phase 2 block); merge best assertions from each into the surviving Phase 2 tests:
+  - `gpgconfListDirs('agent-socket')`: add absolute path check from Phase 1
+  - `listPairedKeys()` with key: add explicit `userIds.length === 1` and error messages from Phase 1
+  - `exportPublicKeys()`: add error message; tighten `length > 0` → `length >= 300` (minimum for Ed25519+cv25519 binary packet)
+  - `importPublicKeys()`: add `keyData.length >= 300` pre-check; add `JSON.stringify` in error messages from Phase 1
+  - `listPairedKeys()` count: tighten `>= 1` → `=== 1` (isolated keyring, exactly one key generated)
+  - Constructor tests: convert from synchronous `fs.rmSync` to `async`/`await helper.cleanup()`
 
 #### Test cases
 
 **Integration tests** (real gpg; each test constructs its own `GpgTestHelper()` which
 creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach`):
-- [ ] `new GpgTestHelper()` sets `gnupgHome` to a non-empty string pointing to a real temp directory
-- [ ] `new GpgTestHelper()` does **not** mutate `process.env.GNUPGHOME`
-- [ ] `getBinDir()` returns a non-empty string (confirms detection resolved a real gpg install)
-- [ ] `gpgconfListDirs('homedir')` returns the same path as `gnupgHome` (confirms GNUPGHOME injection)
-- [ ] `gpgconfListDirs('agent-socket')` returns a non-empty path string
-- [ ] `listPairedKeys()` returns an empty array on a fresh empty keyring
-- [ ] `listPairedKeys()` returns `PairedKeyInfo[]` with correct fingerprints and userIds for key pairs generated in the isolated keyring
-- [ ] `exportPublicKeys('pairs')` returns non-empty `Uint8Array` for a key pair in the isolated keyring
-- [ ] `importPublicKeys()` imports exported bytes into a second `new GpgTestHelper()` keyring; result has `imported: 1`
-- [ ] `cleanup()` removes the temp directory
+- [x] `new GpgTestHelper()` sets `gnupgHome` to a non-empty string pointing to a real temp directory
+- [x] `new GpgTestHelper()` does **not** mutate `process.env.GNUPGHOME`
+- [x] `getBinDir()` returns a non-empty string (confirms detection resolved a real gpg install)
+- [x] `gpgconfListDirs('homedir')` returns the same path as `gnupgHome` (confirms GNUPGHOME injection)
+- [x] `gpgconfListDirs('agent-socket')` returns a non-empty absolute path string
+- [x] `listPairedKeys()` returns an empty array on a fresh empty keyring
+- [x] `listPairedKeys()` returns exactly one `PairedKeyInfo` with correct fingerprint and userId for a single generated key
+- [x] `exportPublicKeys()` returns `Uint8Array` of at least 300 bytes for a key pair (Ed25519+cv25519 minimum)
+- [x] `importPublicKeys()` imports exported bytes (>= 300 bytes) into a second `new GpgTestHelper()` keyring; result has `imported: 1`, `errors: 0`
+- [x] `cleanup()` removes the temp directory
 
 ---
 

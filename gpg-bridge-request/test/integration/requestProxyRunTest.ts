@@ -65,19 +65,14 @@
  */
 
 import * as path from 'path';
-import * as os from 'os';
 import * as fs from 'fs';
 import * as cp from 'child_process';
 import { runTests, downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } from '@vscode/test-electron';
-import { GpgCli, assertSafeToDelete } from '@gpg-bridge/shared/test/integration';
+import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
-// Create an isolated keyring directory unique to this run.
-// Validate immediately after creation before touching process.env or GpgCli.
-const GNUPGHOME = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-integration-'));
-assertSafeToDelete(GNUPGHOME);
-process.env.GNUPGHOME = GNUPGHOME;
-
-const gpg = new GpgCli();
+// GpgTestHelper creates and validates its own isolated keyring at construction time.
+// process.env.GNUPGHOME is never mutated.
+const gpg = new GpgTestHelper();
 
 /**
  * Walk up from `startDir` until we find a directory containing `AGENTS.md`
@@ -208,21 +203,14 @@ async function main(): Promise<void> {
             //   container's remote extension host (where the Mocha suite reads process.env).
             extensionTestsEnv: {
                 VSCODE_INTEGRATION_TEST: '1',
-                GNUPGHOME,
+                GNUPGHOME: gpg.gnupgHome,
                 TEST_KEY_FINGERPRINT: fingerprint,
                 TEST_KEY_KEYGRIP: keygrip
             }
         });
     } finally {
-        // Kill agent whether tests passed or failed.
-        // killAgent() already tolerates a dead agent; only throws if gpgconf fails to spawn.
-        await gpg.killAgent();
-
-        // Validate again before deleting as a secondary safety net — the primary
-        // check runs immediately after mkdtempSync above, but this catches any
-        // unlikely mutation of GNUPGHOME between creation and cleanup.
-        assertSafeToDelete(GNUPGHOME);
-        fs.rmSync(GNUPGHOME, { recursive: true, force: true });
+        // Kill agent and remove the isolated keyring whether tests passed or failed.
+        await gpg.cleanup();
     }
 }
 

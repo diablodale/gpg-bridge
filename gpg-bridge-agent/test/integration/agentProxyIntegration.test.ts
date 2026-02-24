@@ -17,7 +17,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { expect } from 'chai';
-import { GpgCli } from '@gpg-bridge/shared/test/integration';
+import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
 // ---------------------------------------------------------------------------
 // Type aliases matching the command signatures in agent-proxy/src/extension.ts
@@ -33,13 +33,15 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
     // Integration tests involve real gpg-agent operations; set a generous timeout.
     this.timeout(60000);
 
-    let gpg: GpgCli;
+    let gpg: GpgTestHelper;
     let fingerprint: string;
     let keygrip: string;
 
     before(async function () {
         // GNUPGHOME is already in process.env (injected via extensionTestsEnv in runTest.ts).
-        gpg = new GpgCli();
+        // Wrap it with GpgTestHelper so we have access to convenience methods (generateKey, etc.).
+        // We do NOT own the keyring or agent lifecycle — runTest.ts manages those.
+        gpg = new GpgTestHelper({ gnupgHome: process.env.GNUPGHOME! });
 
         // Generate a no-passphrase test key in the isolated keyring.
         // gpg-agent is already running (launched by runTest.ts before the host started).
