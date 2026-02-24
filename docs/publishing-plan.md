@@ -510,7 +510,7 @@ configured via `commitlint.config.js` (`extends @commitlint/config-conventional`
 
 ---
 
-## Phase 4.2 — Local Version Management
+## Phase 4.2 — Local Version Management ✅ COMPLETE
 
 ### Goal
 Configure `commit-and-tag-version` for local changelog generation, lockstep version
@@ -563,12 +563,11 @@ Add the following top-level key to root `package.json`:
     { "filename": "shared/package.json",            "type": "json" }
   ],
   "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\nSee [Conventional Commits](https://conventionalcommits.org) for guidelines.",
-  "bumpStrict": true,
   "commitAll": true,
   "sign": true,
   "noVerify": true,
   "scripts": {
-    "prerelease": "node -e \"const {execSync}=require('child_process');const s=execSync('git status --porcelain').toString().trim();if(s){console.error('ERROR: working tree is not clean. Commit or stash all changes before releasing:\\n'+s);process.exit(1);}\"",
+    "prerelease": "node scripts/release-guard.js",
     "postchangelog": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('CHANGELOG.md',d+'/CHANGELOG.md');console.log(d+'/CHANGELOG.md copied');})\"",
     "precommit": "git add gpg-bridge-agent/CHANGELOG.md gpg-bridge-request/CHANGELOG.md pack/CHANGELOG.md"
   },
@@ -597,19 +596,24 @@ Add the following top-level key to root `package.json`:
 - any visible (non-hidden) type → patch
 - only hidden-type commits (`docs`, `chore`, `refactor`, `test`, `build`, `ci`) → **no release**
 
-Bump level is determined by the `conventionalcommits` preset's `whatBump` function
-([source](https://github.com/conventional-changelog/conventional-changelog/blob/master/packages/conventional-changelog-conventionalcommits/src/whatBump.js)):
+Bump level is determined by the `conventionalcommits` preset's `whatBump` function:
 `BREAKING CHANGE`/`!` upgrades to major; `feat` upgrades to minor; everything
-else visible triggers patch. With `bumpStrict: true`, if every commit in the batch
-is a hidden type, `whatBump` returns `null` — no bump, no tag, no release.
+else visible triggers patch.
 `security`, `deprecate`, `perf`, and other custom types are unrecognized by
 `whatBump` but are **visible** (not hidden), so they fall through to patch.
+
+> **Note:** `bumpStrict` is documented in `commit-and-tag-version` but is silently
+> ignored — it pins `conventional-changelog-conventionalcommits@6.1.0`, which is three
+> major versions before `bumpStrict` was introduced in `@9.0.0`. The no-release guard
+> (hidden-only or zero commits) is enforced instead by `scripts/release-guard.js`,
+> invoked as the `prerelease` lifecycle script. Guard 2 can be bypassed with
+> `RELEASE_FORCE=1 npm run release` for exceptional forced releases.
 
 `feat(remove)` uses the `scope` field to route removals into the `Removed` section
 while still auto-bumping minor via the `feat` type.
 `deprecate` goes in `Deprecated` section and produces a patch bump (it is visible).
 
-**4.2c.** Bootstrap: replace the existing hand-written `CHANGELOG.md` with a clean
+**4.2c.** ✅ Bootstrap: replace the existing hand-written `CHANGELOG.md` with a clean
 tool-managed file and create the initial `v0.1.0` tag. The `v0.0.0` anchor tag was
 already manually applied to a previous commit — the tool will walk commits from that
 point forward and include them in the `[0.1.0]` CHANGELOG section. The starting tag
@@ -649,11 +653,16 @@ All five `package.json` files are now at `0.1.0`, the `[0.1.0]` CHANGELOG sectio
 contains all conventional commits since `v0.0.0`, and the `v0.1.0` tag exists in
 the repository. All subsequent runs generate incrementally from the latest tag.
 
-**4.2d.** Verify dry-run output before the first normal release. No files are changed:
+**4.2d.** ✅ Verify the guard and dry-run before the first normal release:
 ```powershell
-npm run release:dry-run
+npm run release          # expected to be blocked by release-guard.js guard 2
+npm run release:dry-run  # shows what would be released (guard not enforced in dry-run)
 ```
-Confirms that only commits since `v0.1.0` appear in the preview and the bump is correct.
+
+> **Deviation:** `npm run release:dry-run` does **not** enforce lifecycle script exit
+> codes — it marks all scripts as passed regardless. Use `npm run release` (non-dry-run)
+> to confirm the guard fires. With only hidden-type commits since `v0.1.0` the guard
+> should print the blocked message and exit 1.
 
 ### Usage (recurring — deliberate releases only, not on every push)
 
@@ -686,15 +695,17 @@ history are immediately usable by `release-please` as its baseline — no other 
 
 | File | Change |
 |------|--------|
-| `package.json` | `commit-and-tag-version` devDependency; `release` and `release:dry-run` scripts; `"commit-and-tag-version"` config block (`bumpFiles`, `header`, `bumpStrict`, `sign`, `noVerify`, `scripts`, `types`); `"commitlint"` config block (moved from `commitlint.config.js`, with `type-enum` rule added) |
+| `package.json` | `commit-and-tag-version` devDependency; `release` and `release:dry-run` scripts; `"commit-and-tag-version"` config block (`bumpFiles`, `header`, `commitAll`, `sign`, `noVerify`, `scripts`, `types`); `"commitlint"` config block (moved from `commitlint.config.js`, with `type-enum` rule added) |
 | `commitlint.config.js` | config now lives in `package.json` |
+| `scripts/release-guard.js` | Pre-release guard: (1) clean working tree, (2) at least one visible-type commit since last tag. Implements the `bumpStrict` semantics that `commit-and-tag-version@12` cannot provide. Visible types derived from `commit-and-tag-version.types` in `package.json` — single source of truth. `RELEASE_FORCE=1` bypasses guard 2 for exceptional forced releases. |
 
 ### Verification gate
 
 ```powershell
-npm run release:dry-run
+npm run release          # guard fires and blocks (exit 1) when no visible commits
+npm run release:dry-run  # shows CHANGELOG preview; does not enforce guard exit codes
 ```
-Expected: CHANGELOG preview and version printed, no files written.
+Expected: `npm run release` blocked with guard message; dry-run shows preview.
 
 ---
 
