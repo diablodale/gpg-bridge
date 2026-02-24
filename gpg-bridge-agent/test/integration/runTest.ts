@@ -27,17 +27,17 @@ const GNUPGHOME = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-integration-')
 assertSafeToDelete(GNUPGHOME);
 process.env.GNUPGHOME = GNUPGHOME;
 
-const cli = new GpgCli();
+const gpg = new GpgCli();
 
 async function main(): Promise<void> {
     // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
     // SSH / Putty / OpenSSH-disable options are not valid conf file entries in
     // this build and will cause gpg-agent --gpgconf-test to fail.
-    cli.writeAgentConf(['disable-scdaemon']);
+    gpg.writeAgentConf(['disable-scdaemon']);
 
     // Launch the gpg-agent now, before the extension host starts, so that
     // gpgconf --list-dirs agent-extra-socket (called during activate()) finds a live socket.
-    cli.launchAgent();
+    gpg.launchAgent();
 
     try {
         await runTests({
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     } finally {
         // Kill agent whether tests passed or failed.
         // killAgent() already tolerates a dead agent; only throws if gpgconf fails to spawn.
-        cli.killAgent();
+        gpg.killAgent();
 
         // Validate again before deleting as a secondary safety net — the primary
         // check runs immediately after mkdtempSync above, but this catches any

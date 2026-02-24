@@ -41,7 +41,7 @@ const GNUPGHOME = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-integration-')
 assertSafeToDelete(GNUPGHOME);
 process.env.GNUPGHOME = GNUPGHOME;
 
-const cli = new GpgCli();
+const gpg = new GpgCli();
 
 /**
  * Walk up from `startDir` until we find a directory containing `AGENTS.md`
@@ -86,21 +86,21 @@ const containerWorkspaceFolder = `/workspaces/${path.basename(workspaceRoot)}`;
 
 async function main(): Promise<void> {
     // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
-    cli.writeAgentConf(['disable-scdaemon']);
+    gpg.writeAgentConf(['disable-scdaemon']);
 
     // Generate the test key on Windows before either extension host starts.
-    await cli.generateKey('Integration Test User', 'integration-test@example.com');
-    const fingerprint = await cli.getFingerprint('integration-test@example.com');
+    await gpg.generateKey('Integration Test User', 'integration-test@example.com');
+    const fingerprint = await gpg.getFingerprint('integration-test@example.com');
 
     // Export the public key as an ASCII-armored string and pass it directly via env var.
     // Ed25519 armored public keys are ~350 chars — well within the 32,767-char Win32 limit.
     // The Mocha before() reads PUBKEY_ARMORED_KEY and calls importPublicKey() directly,
     // with no intermediate file or workspace bind mount path required.
-    const pubkeyArmored = await cli.exportPublicKey(fingerprint);
+    const pubkeyArmored = await gpg.exportPublicKey(fingerprint);
 
     // Launch the gpg-agent BEFORE the extension hosts start so that gpg-bridge-agent's
     // activate() → detectAgentSocket() (calls gpgconf) already sees a live socket.
-    await cli.launchAgent();
+    await gpg.launchAgent();
 
     // Download (or reuse cached) VS Code binary, then pre-install the Dev Containers
     // extension into the test profile. resolveCliArgsFromVSCodeExecutablePath returns
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
         });
     } finally {
         // Kill agent whether tests passed or failed.
-        await cli.killAgent();
+        await gpg.killAgent();
 
         // Validate again before deleting as a secondary safety net.
         assertSafeToDelete(GNUPGHOME);

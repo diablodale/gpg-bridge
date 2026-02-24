@@ -33,19 +33,19 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
     // Integration tests involve real gpg-agent operations; set a generous timeout.
     this.timeout(60000);
 
-    let cli: GpgCli;
+    let gpg: GpgCli;
     let fingerprint: string;
     let keygrip: string;
 
     before(async function () {
         // GNUPGHOME is already in process.env (injected via extensionTestsEnv in runTest.ts).
-        cli = new GpgCli();
+        gpg = new GpgCli();
 
         // Generate a no-passphrase test key in the isolated keyring.
         // gpg-agent is already running (launched by runTest.ts before the host started).
-        await cli.generateKey('Integration Test User', 'integration-test@example.com');
-        fingerprint = await cli.getFingerprint('integration-test@example.com');
-        keygrip = await cli.getKeygrip('integration-test@example.com');
+        await gpg.generateKey('Integration Test User', 'integration-test@example.com');
+        fingerprint = await gpg.getFingerprint('integration-test@example.com');
+        keygrip = await gpg.getKeygrip('integration-test@example.com');
     });
 
     after(async function () {
@@ -53,7 +53,7 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
         // Key deletion must happen while gpg-agent is still alive (runTest.ts kills it
         // after runTests() resolves, i.e. after this after() completes).
         if (fingerprint) {
-            try { await cli.deleteKey(fingerprint); } catch { /* ignore if already deleted */ }
+            try { await gpg.deleteKey(fingerprint); } catch { /* ignore if already deleted */ }
         }
         // Reset extension state so subsequent test runs start clean.
         try { await vscode.commands.executeCommand('gpg-bridge-agent.stop'); } catch { /* ignore */ }
