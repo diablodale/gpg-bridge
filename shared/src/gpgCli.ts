@@ -53,6 +53,23 @@ export interface GpgCliOpts {
     gnupgHome?: string;
 }
 
+/**
+ * Shape of errors thrown by `promisify(execFile)` on non-zero exit.
+ * `code` is `null` when the process was killed by a signal rather than exiting normally.
+ */
+export interface ExecFileError {
+    code?: number | null;
+    stdout?: string;
+    stderr?: string;
+}
+
+/** Normalised result returned by every GpgCli subprocess helper. */
+export interface GpgExecResult {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+}
+
 // ============================================================================
 // Dependency injection interfaces (for unit testing without real gpg)
 // ============================================================================
@@ -71,7 +88,7 @@ export type SpawnForStdinFn = (
     args: readonly string[],
     input: Buffer,
     env: NodeJS.ProcessEnv
-) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+) => Promise<GpgExecResult>;
 
 /** Optional dependencies — all have production defaults. */
 export interface GpgCliDeps {
@@ -314,7 +331,7 @@ export class GpgCli {
      * Run a subprocess. Returns exit code instead of rejecting on non-zero exit.
      * Use for operations where the caller needs to inspect the exit code.
      */
-    protected async runRaw(binary: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    protected async runRaw(binary: string, args: string[]): Promise<GpgExecResult> {
         try {
             const { stdout, stderr } = await this._execFileAsync(binary, args, {
                 encoding: 'latin1',
@@ -325,9 +342,10 @@ export class GpgCli {
             });
             return { stdout, stderr, exitCode: 0 };
         } catch (err: unknown) {
-            // promisify(execFile) rejects with { code: number; stdout: string; stderr: string }
-            // on non-zero exit — extract those values and return normally.
-            const e = err as { code?: number; stdout?: string; stderr?: string };
+            // promisify(execFile) rejects with ExecFileError on non-zero exit;
+            // code is null only when the process was killed by a signal.
+            // Extract those values and return normally.
+            const e = err as ExecFileError;
             if (typeof e.code === 'number' && typeof e.stdout === 'string') {
                 return { exitCode: e.code, stdout: e.stdout, stderr: e.stderr ?? '' };
             }

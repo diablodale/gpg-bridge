@@ -9,7 +9,6 @@
  */
 
 export { GpgCli } from './gpgCli';
-export type { GpgCliOpts, GpgExecResult } from './gpgCli';
 
 export { AssuanSocketClient } from './assuanSocketClient';
 export type { AssuanSocketClientOpts } from './assuanSocketClient';

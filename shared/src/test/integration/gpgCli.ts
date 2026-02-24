@@ -16,27 +16,15 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import type { ExecFileError, GpgExecResult } from '@gpg-bridge/shared';
 
 const execFileAsync = promisify(execFile);
-
-/** Shape of errors thrown by execFileAsync for non-zero process exits. */
-interface ExecFileError {
-    code?: number | null;
-    stdout?: string;
-    stderr?: string;
-}
 
 export interface GpgCliOpts {
     /** Path to gpg binary. Defaults to 'gpg' (must be on PATH). */
     gpgPath?: string;
     /** Path to gpgconf binary. Defaults to 'gpgconf' (must be on PATH). */
     gpgconfPath?: string;
-}
-
-export interface GpgExecResult {
-    exitCode: number;
-    stdout: string;
-    stderr: string;
 }
 
 export class GpgCli {
