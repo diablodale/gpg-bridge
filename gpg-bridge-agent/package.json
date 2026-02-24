@@ -2,11 +2,11 @@
   "name": "gpg-bridge-agent",
   "displayName": "GPG Bridge Agent",
   "description": "Windows agent proxy component for GPG Bridge",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "icon": "icon.png",
   "preview": true,
   "publisher": "hidale",
-  "author":{
+  "author": {
     "name": "Dale Phurrough"
   },
   "license": "MIT",
