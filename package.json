@@ -43,7 +43,7 @@
     "test:shared": "npm --prefix shared test",
     "test:agent": "npm --prefix gpg-bridge-agent test",
     "test:request": "npm --prefix gpg-bridge-request test",
-    "test:integration": "npm --prefix gpg-bridge-agent run test:integration && npm --prefix gpg-bridge-request run test:integration",
+    "test:integration": "npm --prefix shared run test:integration && npm --prefix gpg-bridge-agent run test:integration && npm --prefix gpg-bridge-request run test:integration",
     "test:watch": "npm --prefix shared run test:watch",
     "lint": "npm run lint:shared && npm run lint:agent && npm run lint:request",
     "lint:shared": "npm --prefix shared run lint",

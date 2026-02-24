@@ -39,11 +39,17 @@
     "compile": "tsc --build",
     "watch": "tsc --build --watch",
     "pretest": "npm run compile && npm run lint",
+    "pretest:integration": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "mocha --ui bdd out/test/**/*.test.js"
+    "test": "mocha --ui bdd out/test/*.test.js",
+    "test:integration": "mocha --ui bdd out/test/integration/*.test.js"
+  },
+  "dependencies": {
+    "which": "^5.0.0"
   },
   "devDependencies": {
     "@types/chai": "^4.3.20",
+    "@types/which": "^3.0.4",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.x",
     "chai": "^4.5.0",

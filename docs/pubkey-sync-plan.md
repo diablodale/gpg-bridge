@@ -387,57 +387,57 @@ and integration tests pass → update this plan (mark checkboxes) → git commit
 
 ---
 
-### Phase 1 — `GpgCli` production base class (`shared`)
+### Phase 1 — `GpgCli` production base class (`shared`) ✅ complete
 
 **Files changed**: `shared/src/gpgCli.ts` (new), `shared/src/types.ts`, `shared/src/index.ts`,
 `shared/package.json`
 
 #### Work items
-- [ ] Add `which` as a production dependency in `shared/package.json`
-- [ ] Create `shared/src/gpgCli.ts` with `GpgCliOpts` interface and `GpgCli` class skeleton
-- [ ] Implement private `detect()`: `whichSync('gpgconf')` → PATH probe; fall back to
+- [x] Add `which` as a production dependency in `shared/package.json`
+- [x] Create `shared/src/gpgCli.ts` with `GpgCliOpts` interface and `GpgCli` class skeleton
+- [x] Implement private `detect()`: `whichSync('gpgconf')` → PATH probe; fall back to
   well-known Windows Gpg4win directories; throw if not found
-- [ ] Implement constructor: accept `gpgBinDir` opt (validate) or run `detect()`; accept
+- [x] Implement constructor: accept `gpgBinDir` opt (validate) or run `detect()`; accept
   `gnupgHome` opt; store resolved paths
-- [ ] Implement `getBinDir(): string`
-- [ ] Implement `protected run()` / `runRaw()` helpers (spawn with optional `GNUPGHOME`)
-- [ ] Implement `gpgconfListDirs(dirName: string): Promise<string>`
-- [ ] Implement `listPairedKeys(): Promise<PairedKeyInfo[]>` (parses `--with-colons` output: `fpr:` records for fingerprints, `uid:` records for user IDs)
-- [ ] Re-export `PairedKeyInfo` from `shared/src/index.ts`
-- [ ] Implement `exportPublicKeys(filter?: string): Promise<Uint8Array>`
-- [ ] Implement `importPublicKeys(keyData: Uint8Array): Promise<{ imported; unchanged; errors }>`
-  (passes `keyData` as `execFile` `input:` option; parses `gpg --import` stdout; no temp file)
-- [ ] Add `KeyFilter = 'all' | 'pairs' | string` to `shared/src/types.ts`
-- [ ] Re-export `GpgCli`, `GpgCliOpts`, `KeyFilter` from `shared/src/index.ts`
+- [x] Implement `getBinDir(): string`
+- [x] Implement `protected run()` / `runRaw()` helpers (spawn with optional `GNUPGHOME`)
+- [x] Implement `gpgconfListDirs(dirName: string): Promise<string>`
+- [x] Implement `listPairedKeys(): Promise<PairedKeyInfo[]>` (parses `--with-colons` output: `fpr:` records for fingerprints, `uid:` records for user IDs)
+- [x] Re-export `PairedKeyInfo` from `shared/src/index.ts`
+- [x] Implement `exportPublicKeys(filter?: string): Promise<Uint8Array>`
+- [x] Implement `importPublicKeys(keyData: Uint8Array): Promise<{ imported; unchanged; errors }>`
+  (pipes `keyData` to `gpg --import` stdin via `spawn`; parses `gpg --import` stderr; no temp file)
+- [x] Add `KeyFilter = 'all' | 'pairs' | string` to `shared/src/types.ts`
+- [x] Re-export `GpgCli`, `GpgCliOpts`, `KeyFilter` from `shared/src/index.ts`
 
 #### Test cases
 
 Tests are split into two groups:
 
 **Unit tests** (`shared/src/test/gpgCli.test.ts`, new — mocked subprocesses, no real gpg required, no keyring access):
-- [ ] `GpgCli` constructor throws when `gpgBinDir` points to a directory without `gpgconf[.exe]`
-- [ ] `GpgCli` constructor succeeds when `gpgBinDir` is valid (filesystem check only, mock `fs.existsSync`)
-- [ ] `getBinDir()` returns the resolved directory
-- [ ] `gpgconfListDirs` returns trimmed path string (mock subprocess)
-- [ ] `gpgconfListDirs` throws on non-zero exit (mock subprocess)
-- [ ] `listPairedKeys` parses `--with-colons` output correctly — returns `PairedKeyInfo[]` with correct fingerprints and userIds (mock subprocess output)
-- [ ] `listPairedKeys` returns empty array for empty `--with-colons` output (mock subprocess)
-- [ ] `exportPublicKeys` returns `Uint8Array` of key data (mock subprocess)
-- [ ] `exportPublicKeys` returns empty `Uint8Array` when subprocess produces no output (mock subprocess)
-- [ ] `importPublicKeys` parses stdout: `{ imported: 1, unchanged: 0, errors: 0 }` (mock subprocess)
-- [ ] `importPublicKeys` parses stdout: already-imported key `{ imported: 0, unchanged: 1, errors: 0 }` (mock subprocess)
-- [ ] `GNUPGHOME` is injected into every subprocess call when `gnupgHome` opt is set (mock subprocess)
-- [ ] `GNUPGHOME` is absent from subprocess env when `gnupgHome` opt is not set (mock subprocess)
+- [x] `GpgCli` constructor throws when `gpgBinDir` points to a directory without `gpgconf[.exe]`
+- [x] `GpgCli` constructor succeeds when `gpgBinDir` is valid (filesystem check only, mock `fs.existsSync`)
+- [x] `getBinDir()` returns the resolved directory
+- [x] `gpgconfListDirs` returns trimmed path string (mock subprocess)
+- [x] `gpgconfListDirs` throws on non-zero exit (mock subprocess)
+- [x] `listPairedKeys` parses `--with-colons` output correctly — returns `PairedKeyInfo[]` with correct fingerprints and userIds (mock subprocess output)
+- [x] `listPairedKeys` returns empty array for empty `--with-colons` output (mock subprocess)
+- [x] `exportPublicKeys` returns `Uint8Array` of key data (mock subprocess)
+- [x] `exportPublicKeys` returns empty `Uint8Array` when subprocess produces no output (mock subprocess)
+- [x] `importPublicKeys` parses stdout: `{ imported: 1, unchanged: 0, errors: 0 }` (mock subprocess)
+- [x] `importPublicKeys` parses stdout: already-imported key `{ imported: 0, unchanged: 1, errors: 0 }` (mock subprocess)
+- [x] `GNUPGHOME` is injected into every subprocess call when `gnupgHome` opt is set (mock subprocess)
+- [x] `GNUPGHOME` is absent from subprocess env when `gnupgHome` opt is not set (mock subprocess)
 
 **Integration tests** (`shared/src/test/integration/gpgCli.test.ts`, new — real gpg subprocesses; `GpgTestHelper` does not exist yet;
 tests set up the isolated keyring manually: `mkdtempSync` → `assertSafeToDelete` →
 `new GpgCli({ gnupgHome: tmpHome })` → delete in `afterEach`; this boilerplate is
 replaced by `new GpgTestHelper()` in Phase 2):
-- [ ] `GpgCli` constructor succeeds with no opts (real PATH probe finds `gpgconf`)
-- [ ] `gpgconfListDirs('agent-socket')` returns a valid path string against the isolated keyring
-- [ ] `listPairedKeys` returns `PairedKeyInfo[]` with correct fingerprints and userIds for keys generated in the isolated keyring
-- [ ] `exportPublicKeys('pairs')` round-trip: exported bytes are non-empty for a key pair in the isolated keyring
-- [ ] `importPublicKeys` round-trip: export from one isolated keyring, import into a second isolated keyring; result `imported: 1`
+- [x] `GpgCli` constructor succeeds with no opts (real PATH probe finds `gpgconf`)
+- [x] `gpgconfListDirs('agent-socket')` returns a valid path string against the isolated keyring
+- [x] `listPairedKeys` returns `PairedKeyInfo[]` with correct fingerprints and userIds for keys generated in the isolated keyring
+- [x] `exportPublicKeys('pairs')` round-trip: exported bytes are non-empty for a key pair in the isolated keyring
+- [x] `importPublicKeys` round-trip: export from one isolated keyring, import into a second isolated keyring; result `imported: 1`
 
 ---
 

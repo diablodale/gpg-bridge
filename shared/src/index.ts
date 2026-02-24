@@ -2,3 +2,5 @@
 export * from './protocol';
 export * from './types';
 export * from './environment';
+export { GpgCli, parsePairedKeys, parseImportResult } from './gpgCli';
+export type { GpgCliOpts, GpgCliDeps, ExecFileFn, SpawnForStdinFn, PairedKeyInfo } from './gpgCli';

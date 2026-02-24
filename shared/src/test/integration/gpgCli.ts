@@ -75,6 +75,7 @@ export class GpgCli {
         const { stdout, stderr } = await execFileAsync(binary, args, {
             encoding: 'latin1',
             env: this.env,
+            shell: false,
             timeout: 30000,
             maxBuffer: 1024 * 1024  // largest expected stdout: ~256 KB (decrypt test); 1 MB gives 4× headroom
         });
@@ -91,6 +92,7 @@ export class GpgCli {
             const { stdout, stderr } = await execFileAsync(binary, args, {
                 encoding: 'latin1',
                 env: this.env,
+                shell: false,
                 timeout: 30000,
                 maxBuffer: 1024 * 1024  // largest expected stdout: ~256 KB (decrypt test); 1 MB gives 4× headroom
             });
@@ -133,6 +135,7 @@ export class GpgCli {
             await execFileAsync(this.gpgconfPath, ['--kill', 'gpg-agent'], {
                 encoding: 'latin1',
                 env: this.env,
+                shell: false,
                 timeout: 10000
             });
         } catch (err: unknown) {
