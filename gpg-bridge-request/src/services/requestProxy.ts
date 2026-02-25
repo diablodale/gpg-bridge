@@ -616,6 +616,10 @@ export class RequestProxy {
      * cannot be determined, the socket is already in use, or permissions fail.
      */
     async start(): Promise<void> {
+        if (this.server !== null) {
+            throw new Error('Request proxy already started');
+        }
+
         const fullConfig: RequestProxyConfigWithExecutor = {
             ...this.config,
             commandExecutor: this.commandExecutor,
