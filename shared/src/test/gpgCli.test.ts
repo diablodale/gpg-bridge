@@ -61,11 +61,12 @@ function spawnReturns(stdout: string, stderr: string, exitCode = 0): SpawnForStd
     return () => Promise.resolve({ stdout, stderr, exitCode });
 }
 
-/** spawnForStdin that records passed-in stdin buffer. */
-function spawnCapture(stderr: string): { fn: SpawnForStdinFn; lastInput: Buffer | null } {
-    const capture = { fn: null as unknown as SpawnForStdinFn, lastInput: null as Buffer | null };
-    capture.fn = (_binary, _args, input, _env) => {
+/** spawnForStdin that records passed-in stdin buffer and args. */
+function spawnCapture(stderr: string): { fn: SpawnForStdinFn; lastInput: Buffer | null; lastArgs: readonly string[] | null } {
+    const capture = { fn: null as unknown as SpawnForStdinFn, lastInput: null as Buffer | null, lastArgs: null as readonly string[] | null };
+    capture.fn = (_binary, args, input, _env) => {
         capture.lastInput = input;
+        capture.lastArgs = args;
         return Promise.resolve({ stdout: '', stderr, exitCode: 0 });
     };
     return capture;
@@ -347,6 +348,15 @@ describe('GpgCli', () => {
             await cli.importPublicKeys(keyData);
             expect(capture.lastInput).not.to.be.null;
             expect(capture.lastInput!.toString('latin1')).to.equal(keyData);
+        });
+
+        it('passes --no-autostart to prevent gpg contacting the agent socket', async () => {
+            // On the remote machine the agent socket is the bridge relay — connecting
+            // to it during import would cause a feedback loop.
+            const capture = spawnCapture('gpg: Total number processed: 0\n');
+            const cli = makeCli(execReturns(''), capture.fn);
+            await cli.importPublicKeys('armor-stub');
+            expect(capture.lastArgs).to.include('--no-autostart');
         });
     });
 

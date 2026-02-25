@@ -487,12 +487,13 @@ export class GpgCli {
     /**
      * Import public keys from ASCII-armored text.
      * Key data is passed via stdin — no temp file written to disk.
+     * `--no-autostart` prevents gpg from lauching a new gpg-agentduring import;
      * @returns Parsed statistics from `gpg --import` output.
      */
     async importPublicKeys(keyData: string): Promise<{ imported: number; unchanged: number; errors: number }> {
         const { stderr } = await this._spawnForStdin(
             this.gpgBin,
-            ['--import'],
+            ['--no-autostart', '--import'],
             Buffer.from(keyData, 'latin1'),
             this.env
         );
