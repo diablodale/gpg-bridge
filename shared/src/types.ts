@@ -4,6 +4,7 @@
  */
 
 import type * as net from 'net';
+import type { GpgCli } from './gpgCli';
 
 /**
  * Configuration for logging callbacks.
@@ -121,6 +122,20 @@ export interface ISessionManager {
      * Returns a string to accommodate differing SessionState union types across extensions.
      */
     getState(): string;
+}
+
+/**
+ * Factory interface for creating `GpgCli` instances.
+ * Matches the pattern of `ISocketFactory` and `IServerFactory`.
+ * Production: `{ create: () => new GpgCli({ gpgBinDir }) }` — `gpgBinDir` captured in closure.
+ * Tests: `{ create: () => new MockGpgCli(socketPath) }` — returns controllable mock.
+ */
+export interface IGpgCliFactory {
+    /**
+     * Create a new `GpgCli` instance.
+     * No parameters — all opts are captured in the factory closure.
+     */
+    create(): GpgCli;
 }
 
 /**

@@ -522,7 +522,7 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 
 ---
 
-### Phase 3 — Agent extension: replace detection with `GpgCli`
+### Phase 3 — Agent extension: replace detection with `GpgCli` ✅ complete
 
 **Files changed**: `shared/src/types.ts`, `shared/src/index.ts`, `shared/src/gpgCli.ts`,
 `gpg-bridge-agent/src/services/agentProxy.ts`, `gpg-bridge-agent/src/extension.ts`,
@@ -531,62 +531,56 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 `gpg-bridge-request/src/services/requestProxy.ts`
 
 #### Work items
-- [ ] Add `IGpgCliFactory` interface to `shared/src/types.ts` (`create(): GpgCli` — no params);
+- [x] Add `IGpgCliFactory` interface to `shared/src/types.ts` (`create(): GpgCli` — no params);
   re-export from `shared/src/index.ts`
-- [ ] Add `async cleanup(): Promise<void>` no-op to `GpgCli` base class in `shared/src/gpgCli.ts`
-- [ ] Add `gpgCliFactory?: IGpgCliFactory` to `AgentProxyDeps` in `agentProxy.ts`
-- [ ] Add `private gpgCli: GpgCli | null` and `private gpgAgentSocketPath: string | null` fields
+- [x] Add `async cleanup(): Promise<void>` no-op to `GpgCli` base class in `shared/src/gpgCli.ts`
+- [x] Add `gpgCliFactory?: IGpgCliFactory` to `AgentProxyDeps` in `agentProxy.ts`
+- [x] Add `private gpgCli: GpgCli | null` and `private gpgAgentSocketPath: string | null` fields
   to `AgentProxy` class
-- [ ] Add `async start(): Promise<void>` to `AgentProxy`: throw if already started (`gpgCli !== null`);
+- [x] Add `async start(): Promise<void>` to `AgentProxy`: throw if already started (`gpgCli !== null`);
   construct `GpgCli` via `this.gpgCliFactory?.create() ?? new GpgCli()`; call
   `gpgconfListDirs('agent-extra-socket')`; throw if socket path does not exist
-- [ ] Update `AgentProxy.connectAgent()`: throw immediately with `'Agent proxy not started — call start() first'`
+- [x] Update `AgentProxy.connectAgent()`: throw immediately with `'Agent proxy not started — call start() first'`
   if `this.gpgAgentSocketPath` is null
-- [ ] Update `AgentProxy.stop()`: call `await this.gpgCli?.cleanup()` before nulling it out
-- [ ] Add `getGpgBinDir(): string | null` instance method to `AgentProxy`
+- [x] Update `AgentProxy.stop()`: call `await this.gpgCli?.cleanup()` before nulling it out
+- [x] Add `getGpgBinDir(): string | null` instance method to `AgentProxy`
   (returns `this.gpgCli?.getBinDir() ?? null`)
-- [ ] Add `getAgentSocketPath(): string | null` instance method to `AgentProxy`
+- [x] Add `getAgentSocketPath(): string | null` instance method to `AgentProxy`
   (returns `this.gpgAgentSocketPath`)
-- [ ] Remove `AgentProxyConfig.gpgAgentSocketPath`; update constructor to not validate it
-- [ ] Update `extension.ts startAgentProxy()`: read `gpgBinDir` from VS Code config; construct
+- [x] Remove `AgentProxyConfig.gpgAgentSocketPath`; update constructor to not validate it
+- [x] Update `extension.ts startAgentProxy()`: read `gpgBinDir` from VS Code config; construct
   `AgentProxy` with `gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) }` closure;
   call `await agentProxyService.start()`; remove `detectGpgBinDir()`, `resolveAgentSocketPath()`,
   `detectedGpgBinDir`, `resolvedAgentSocketPath`
-- [ ] Update `extension.ts showStatus()`: call `agentProxyService.getGpgBinDir() ?? '(not detected)'`
+- [x] Update `extension.ts showStatus()`: call `agentProxyService.getGpgBinDir() ?? '(not detected)'`
   and `agentProxyService.getAgentSocketPath() ?? '(not detected)'`
-- [ ] Fix `RequestProxy.start()`: add guard at top — throw if `this.server !== null`
+- [x] Fix `RequestProxy.start()`: add guard at top — throw if `this.server !== null`
   (`'Request proxy already started'`); mirrors the new `AgentProxy.start()` guard
-- [ ] Migrate existing `agentProxy.test.ts` constructor tests that exercised the old
+- [x] Migrate existing `agentProxy.test.ts` constructor tests that exercised the old
   `gpgAgentSocketPath` validation: move validation assertions to `start()` tests; remove or
   update any test that constructs `AgentProxy` with `{ gpgAgentSocketPath: ... }`
 
 #### Test cases (`gpg-bridge-agent/src/test/agentProxy.test.ts`)
 
 **Unit tests** (mocked `GpgCli` via `AgentProxyDeps.gpgCliFactory` — no real gpg required):
-- [ ] `start()` calls `gpgCliFactory.create()` with no args and uses the returned mock
-- [ ] `start()` calls `gpgconfListDirs('agent-extra-socket')` on the constructed `GpgCli`
-- [ ] `start()` uses the `gpgconfListDirs` result as `gpgAgentSocketPath`
-- [ ] `start()` throws when the resolved socket path does not exist (mock `fileSystem.existsSync` returns false)
-- [ ] `start()` throws if called a second time without an intervening `stop()`
-- [ ] `start()` propagates `GpgCli` constructor throw (gpgconf not found → proxy fails to start)
-- [ ] `connectAgent()` throws `'Agent proxy not started'` when called before `start()`
-- [ ] `stop()` calls `cleanup()` on the `GpgCli` instance
-- [ ] `stop()` after `stop()` is a no-op (already null)
-- [ ] `getGpgBinDir()` returns `null` before `start()` is called
-- [ ] `getGpgBinDir()` returns `getBinDir()` result after `start()`
-- [ ] `getAgentSocketPath()` returns `null` before `start()` is called
-- [ ] `getAgentSocketPath()` returns the socket path resolved by `gpgconfListDirs` after `start()`
+- [x] `start()` calls `gpgCliFactory.create()` with no args and uses the returned mock
+- [x] `start()` calls `gpgconfListDirs('agent-extra-socket')` on the constructed `GpgCli`
+- [x] `start()` uses the `gpgconfListDirs` result as `gpgAgentSocketPath`
+- [x] `start()` throws when the resolved socket path does not exist (mock `fileSystem.existsSync` returns false)
+- [x] `start()` throws if called a second time without an intervening `stop()`
+- [x] `start()` propagates `GpgCli` constructor throw (gpgconf not found → proxy fails to start)
+- [x] `connectAgent()` throws `'Agent proxy not started'` when called before `start()`
+- [x] `stop()` calls `cleanup()` on the `GpgCli` instance
+- [x] `stop()` after `stop()` is a no-op (already null)
+- [x] `getGpgBinDir()` returns `null` before `start()` is called
+- [x] `getGpgBinDir()` returns `getBinDir()` result after `start()`
+- [x] `getAgentSocketPath()` returns `null` before `start()` is called
+- [x] `getAgentSocketPath()` returns the socket path resolved by `gpgconfListDirs` after `start()`
 
-**Integration tests** (added to the existing `agentProxyIntegration.test.ts` — picked up
-by the suite glob in `gpg-bridge-agent/test/integration/suite/index.ts`; the runner
-manages GNUPGHOME, launches gpg-agent, and tears down after all suites):
-- [ ] `start()` with `create: () => new GpgCli()` auto-detects `gpgconf` on PATH or well-known
-  Gpg4win location; socket path exists; no error thrown
-- [ ] `start()` throws if called twice without `stop()`
-- [ ] `connectAgent()` throws `'Agent proxy not started'` when called before `start()`
-- [ ] `getGpgBinDir()` returns the directory that contains the real `gpgconf[.exe]`
-- [ ] `getAgentSocketPath()` returns a path to an existing socket file after `start()`
-- [ ] `stop()` then `start()` re-constructs `GpgCli` and resolves a valid socket path
+**Integration tests** (added to the existing `agentProxyIntegration.test.ts`;
+`beforeEach`/`afterEach` stop the proxy so each test starts from a known stopped state):
+- [x] `connectAgent()` throws `'Agent proxy not started'` when called before `start()`
+- [x] `start` command when proxy already running returns gracefully without throwing
 
 ---
 

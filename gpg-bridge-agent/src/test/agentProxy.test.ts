@@ -7,18 +7,22 @@
 
 import { expect } from 'chai';
 import { AgentProxy } from '../services/agentProxy';
-import { MockSocketFactory, MockFileSystem, MockLogConfig } from '@gpg-bridge/shared/test';
+import { MockSocketFactory, MockFileSystem, MockLogConfig, MockGpgCli } from '@gpg-bridge/shared/test';
+import type { IGpgCliFactory } from '@gpg-bridge/shared';
 
 describe('AgentProxy', () => {
     let mockLogConfig: MockLogConfig;
     let mockSocketFactory: MockSocketFactory;
     let mockFileSystem: MockFileSystem;
+    let mockGpgCliFactory: IGpgCliFactory;
+    let proxyUnderTest: AgentProxy | null = null;
     const socketPath = '/tmp/gpg-S.gpg-agent.extra';
 
     beforeEach(() => {
         mockLogConfig = new MockLogConfig();
         mockSocketFactory = new MockSocketFactory();
         mockFileSystem = new MockFileSystem();
+        mockGpgCliFactory = { create: () => new MockGpgCli(socketPath) };
 
         // Set up mock socket file content: "<port>\n<16-byte-nonce>"
         // Per parseSocketFile() in shared/protocol.ts
@@ -30,7 +34,36 @@ describe('AgentProxy', () => {
         mockFileSystem.setFile(socketPath, socketFileContent);
     });
 
-    afterEach(() => {
+    /**
+     * Helper: construct an `AgentProxy` and call `start()` on it.
+     * All tests should use this instead of constructing `AgentProxy` directly.
+     */
+    async function makeProxy(overrides?: {
+        logCallback?: (msg: string) => void;
+        statusBarCallback?: () => void;
+        gpgCliFactory?: IGpgCliFactory;
+    }): Promise<AgentProxy> {
+        const proxy = new AgentProxy(
+            {
+                logCallback: overrides?.logCallback ?? mockLogConfig.logCallback,
+                statusBarCallback: overrides?.statusBarCallback
+            },
+            {
+                fileSystem: mockFileSystem,
+                socketFactory: mockSocketFactory,
+                gpgCliFactory: overrides?.gpgCliFactory ?? mockGpgCliFactory
+            }
+        );
+        await proxy.start();
+        proxyUnderTest = proxy;
+        return proxy;
+    }
+
+    afterEach(async () => {
+        // Stop the proxy (no-op if already stopped or never started)
+        await proxyUnderTest?.stop();
+        proxyUnderTest = null;
+
         // Clean up all sockets to prevent test pollution (lingering timeouts, event listeners)
         const sockets = mockSocketFactory.getSockets();
         sockets.forEach(socket => {
@@ -40,19 +73,165 @@ describe('AgentProxy', () => {
         });
     });
 
+    // ─── Phase 3: start() / stop() / getter tests ────────────────────────────
+
+    describe('start()', () => {
+        it('calls gpgCliFactory.create() and uses the returned instance', async () => {
+            let createCallCount = 0;
+            const factory: IGpgCliFactory = {
+                create: () => {
+                    createCallCount++;
+                    return new MockGpgCli(socketPath);
+                }
+            };
+            await makeProxy({ gpgCliFactory: factory });
+            expect(createCallCount).to.equal(1);
+        });
+
+        it('calls gpgconfListDirs("agent-extra-socket") on the created GpgCli', async () => {
+            const calls: string[] = [];
+            class TrackingMockGpgCli extends MockGpgCli {
+                override async gpgconfListDirs(dirName: string): Promise<string> {
+                    calls.push(dirName);
+                    return super.gpgconfListDirs(dirName);
+                }
+            }
+            const factory: IGpgCliFactory = { create: () => new TrackingMockGpgCli(socketPath) };
+            await makeProxy({ gpgCliFactory: factory });
+            expect(calls).to.deep.equal(['agent-extra-socket']);
+        });
+
+        it('uses gpgconfListDirs result as the agent socket path', async () => {
+            const customPath = '/custom/S.gpg-agent.extra';
+            mockFileSystem.setFile(customPath, Buffer.alloc(0));
+            const factory: IGpgCliFactory = { create: () => new MockGpgCli(customPath) };
+            const proxy = await makeProxy({ gpgCliFactory: factory });
+            expect(proxy.getAgentSocketPath()).to.equal(customPath);
+        });
+
+        it('throws when the resolved socket path does not exist', async () => {
+            const missingPath = '/nonexistent/S.gpg-agent.extra';
+            // Do NOT add missingPath to mockFileSystem — existsSync will return false
+            const factory: IGpgCliFactory = { create: () => new MockGpgCli(missingPath) };
+            const proxy = new AgentProxy(
+                { logCallback: mockLogConfig.logCallback },
+                { fileSystem: mockFileSystem, socketFactory: mockSocketFactory, gpgCliFactory: factory }
+            );
+            try {
+                await proxy.start();
+                expect.fail('Should have thrown for missing socket');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('GPG agent socket not found');
+            }
+        });
+
+        it('throws if called a second time without intervening stop()', async () => {
+            const proxy = await makeProxy();
+            try {
+                await proxy.start();
+                expect.fail('Should have thrown on second start()');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('already started');
+            }
+        });
+
+        it('propagates GpgCli constructor throw (gpgconf not found)', async () => {
+            const factory: IGpgCliFactory = {
+                create: () => { throw new Error('gpgconf not found'); }
+            };
+            const proxy = new AgentProxy(
+                { logCallback: mockLogConfig.logCallback },
+                { fileSystem: mockFileSystem, socketFactory: mockSocketFactory, gpgCliFactory: factory }
+            );
+            try {
+                await proxy.start();
+                expect.fail('Should have propagated factory throw');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('gpgconf not found');
+            }
+        });
+    });
+
+    describe('before start()', () => {
+        it('connectAgent() throws "Agent proxy not started"', async () => {
+            const proxy = new AgentProxy(
+                { logCallback: mockLogConfig.logCallback },
+                { fileSystem: mockFileSystem, socketFactory: mockSocketFactory, gpgCliFactory: mockGpgCliFactory }
+            );
+            try {
+                await proxy.connectAgent();
+                expect.fail('Should have thrown');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('not started');
+            }
+        });
+
+        it('getGpgBinDir() returns null', () => {
+            const proxy = new AgentProxy(
+                { logCallback: mockLogConfig.logCallback },
+                { fileSystem: mockFileSystem, socketFactory: mockSocketFactory, gpgCliFactory: mockGpgCliFactory }
+            );
+            expect(proxy.getGpgBinDir()).to.be.null;
+        });
+
+        it('getAgentSocketPath() returns null', () => {
+            const proxy = new AgentProxy(
+                { logCallback: mockLogConfig.logCallback },
+                { fileSystem: mockFileSystem, socketFactory: mockSocketFactory, gpgCliFactory: mockGpgCliFactory }
+            );
+            expect(proxy.getAgentSocketPath()).to.be.null;
+        });
+    });
+
+    describe('stop()', () => {
+        it('calls cleanup() on the GpgCli instance', async () => {
+            let cleanupCallCount = 0;
+            class CleanupTrackingMockGpgCli extends MockGpgCli {
+                override async cleanup(): Promise<void> {
+                    cleanupCallCount++;
+                }
+            }
+            const factory: IGpgCliFactory = { create: () => new CleanupTrackingMockGpgCli(socketPath) };
+            const proxy = await makeProxy({ gpgCliFactory: factory });
+            await proxy.stop();
+            // afterEach will call stop() again — no-op since already stopped
+            expect(cleanupCallCount).to.equal(1);
+        });
+
+        it('calling stop() a second time is a no-op', async () => {
+            const proxy = await makeProxy();
+            await proxy.stop();
+            // Second stop() should not throw
+            await proxy.stop();
+            expect(proxy.getAgentSocketPath()).to.be.null;
+        });
+    });
+
+    describe('getters after start()', () => {
+        it('getGpgBinDir() returns the bin dir from the GpgCli instance', async () => {
+            const proxy = await makeProxy();
+            // MockGpgCli uses mockBinDir = '/fake/gpg/bin' by default
+            expect(proxy.getGpgBinDir()).to.equal('/fake/gpg/bin');
+        });
+
+        it('getAgentSocketPath() returns the path resolved by gpgconfListDirs', async () => {
+            const proxy = await makeProxy();
+            expect(proxy.getAgentSocketPath()).to.equal(socketPath);
+        });
+
+        it('getters return null after stop()', async () => {
+            const proxy = await makeProxy();
+            await proxy.stop();
+            expect(proxy.getGpgBinDir()).to.be.null;
+            expect(proxy.getAgentSocketPath()).to.be.null;
+        });
+    });
+
+    // ─── End Phase 3 tests ───────────────────────────────────────────────────
+
     describe('connectAgent', () => {
         it('should read socket file and parse port/nonce', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             expect(mockFileSystem.getCallCount('readFileSync')).to.equal(0);
 
@@ -86,19 +265,7 @@ describe('AgentProxy', () => {
         });
 
         it('should initialize session on successful connection', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: () => {
-                        // status bar callback
-                    }
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ statusBarCallback: () => {} });
 
             const socketPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -114,17 +281,7 @@ describe('AgentProxy', () => {
             const connectionError = new Error('Connection refused');
             mockSocketFactory.setConnectError(connectionError);
 
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             try {
                 await agentProxy.connectAgent();
@@ -134,36 +291,24 @@ describe('AgentProxy', () => {
             }
         });
 
-        it('should throw when socket file is missing', () => {
-            expect(() => {
-                new AgentProxy(
-                    {
-                        logCallback: mockLogConfig.logCallback,
-                        gpgAgentSocketPath: '/nonexistent/socket',
-                        statusBarCallback: undefined
-                    },
-                    {
-                        fileSystem: mockFileSystem,
-                        socketFactory: mockSocketFactory
-                    }
-                );
-            }).to.throw('GPG agent socket not found');
+        it('start() throws when the resolved socket path does not exist', async () => {
+            const noSocketFactory: IGpgCliFactory = { create: () => new MockGpgCli('/nonexistent/socket') };
+            const agentProxy = new AgentProxy(
+                { logCallback: mockLogConfig.logCallback },
+                { fileSystem: mockFileSystem, socketFactory: mockSocketFactory, gpgCliFactory: noSocketFactory }
+            );
+            try {
+                await agentProxy.start();
+                expect.fail('Should have thrown');
+            } catch (error: unknown) {
+                expect((error as Error).message).to.include('GPG agent socket not found');
+            }
         });
     });
 
     describe('sendCommands', () => {
         it('should send command block and return response', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // First connect
             const connectPromise = agentProxy.connectAgent();
@@ -187,17 +332,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle multiple connected sessions', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect session 1
             const session1Promise = agentProxy.connectAgent();
@@ -224,17 +359,7 @@ describe('AgentProxy', () => {
 
     describe('disconnectAgent', () => {
         it('should send BYE command and cleanup session', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect first
             const connectPromise = agentProxy.connectAgent();
@@ -262,17 +387,7 @@ describe('AgentProxy', () => {
         });
 
         it('should silently succeed when disconnecting an already-cleaned-up session', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Should resolve without throwing — session not found means the gpg-agent
             // already closed the socket (e.g. after BYE) and CLEANUP_COMPLETE already ran.
@@ -282,17 +397,7 @@ describe('AgentProxy', () => {
 
     describe('session lifecycle', () => {
         it('should track running sessions', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             expect(agentProxy.isRunning()).to.equal(false);
 
@@ -320,17 +425,7 @@ describe('AgentProxy', () => {
 
     describe('response completion detection', () => {
         it('should detect OK response (single line)', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -350,17 +445,7 @@ describe('AgentProxy', () => {
         });
 
         it('should detect OK response (multi-line with data lines)', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -381,17 +466,7 @@ describe('AgentProxy', () => {
         });
 
         it('should detect ERR response', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -411,17 +486,7 @@ describe('AgentProxy', () => {
         });
 
         it('should detect INQUIRE response', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -441,17 +506,7 @@ describe('AgentProxy', () => {
         });
 
         it('should detect END response (D-block) in INQUIRE context', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -474,17 +529,7 @@ describe('AgentProxy', () => {
         });
 
         it('should not complete on incomplete response (no newline)', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -512,17 +557,7 @@ describe('AgentProxy', () => {
         });
 
         it('should not complete on partial OK/ERR', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -546,17 +581,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle response with empty lines before terminal line', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -576,17 +601,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle response with embedded "OK" in data lines', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -607,17 +622,7 @@ describe('AgentProxy', () => {
         });
 
         it('should preserve binary data in responses', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -646,17 +651,7 @@ describe('AgentProxy', () => {
 
     describe('response accumulation', () => {
         it('should accumulate response split across 2 chunks', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -677,17 +672,7 @@ describe('AgentProxy', () => {
         });
 
         it('should accumulate response split across 3+ chunks', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -708,17 +693,7 @@ describe('AgentProxy', () => {
         });
 
         it('should accumulate large response (>1MB)', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -741,17 +716,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle rapid chunk arrival', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -776,17 +741,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle response with all byte values (0-255)', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -815,17 +770,7 @@ describe('AgentProxy', () => {
         it('should timeout after 5s on connection and cleanup', async function() {
             this.timeout(7000); // Allow time for 6s delay + test overhead
 
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             mockSocketFactory.setDelayConnect(6000); // Delay longer than 5s timeout
 
@@ -841,17 +786,7 @@ describe('AgentProxy', () => {
         it('should timeout after 5s on greeting and cleanup', async function() {
             this.timeout(7000);
 
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Don't emit greeting - let it timeout
             try {
@@ -866,17 +801,7 @@ describe('AgentProxy', () => {
         it('should cleanup session from Map after timeout', async function() {
             this.timeout(7000);
 
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             mockSocketFactory.setDelayConnect(6000);
 
@@ -893,17 +818,7 @@ describe('AgentProxy', () => {
 
     describe('nonce authentication', () => {
         it('should send nonce immediately after socket connect', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -922,17 +837,7 @@ describe('AgentProxy', () => {
         it('should trigger cleanup on nonce write failure', async () => {
             mockSocketFactory.setWriteError(new Error('Write failed'));
 
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             try {
                 await agentProxy.connectAgent();
@@ -944,17 +849,7 @@ describe('AgentProxy', () => {
         });
 
         it('should complete connection after greeting received', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -974,17 +869,7 @@ describe('AgentProxy', () => {
             // Per gpg-agent source: check_nonce() calls assuan_sock_close() on bad nonce
             mockSocketFactory.setCloseAfterFirstWrite();
 
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             try {
                 await agentProxy.connectAgent();
@@ -999,17 +884,7 @@ describe('AgentProxy', () => {
 
     describe('error paths', () => {
         it('should handle socket error during waitForResponse', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1036,17 +911,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle write error during sendCommands', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1070,17 +935,7 @@ describe('AgentProxy', () => {
         });
 
         it('should accept relaxed greeting format (any OK*)', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1096,17 +951,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle invalid session ID on sendCommands', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             try {
                 await agentProxy.sendCommands('nonexistent-session-id', 'TEST\n');
@@ -1120,17 +965,7 @@ describe('AgentProxy', () => {
     describe('Phase 3.3: Socket Close State Machine Integration', () => {
         it('should emit CLEANUP_REQUESTED(false) on graceful agent socket close', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1152,17 +987,7 @@ describe('AgentProxy', () => {
 
         it('should emit ERROR_OCCURRED on socket close with transmission error', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1185,17 +1010,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle CLEANUP_REQUESTED from READY state', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1222,17 +1037,7 @@ describe('AgentProxy', () => {
 
         it('should handle CLEANUP_REQUESTED from SENDING_TO_AGENT state', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1267,17 +1072,7 @@ describe('AgentProxy', () => {
 
         it('should use .once() for close - prevents duplicate state transitions', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1313,17 +1108,7 @@ describe('AgentProxy', () => {
 
         it('should use .once() for socket error - no duplicate ERROR_OCCURRED', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1366,17 +1151,7 @@ describe('AgentProxy', () => {
 
         it('should pass hadError parameter through cleanup chain', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1397,17 +1172,7 @@ describe('AgentProxy', () => {
 
         it('should handle socket close during connection phase', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1428,17 +1193,7 @@ describe('AgentProxy', () => {
 
         it('should transition from multiple socket-having states to CLOSING', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1471,17 +1226,7 @@ describe('AgentProxy', () => {
 
     describe('Phase 6: State Machine Internals', () => {
         it('should throw descriptive error on invalid session', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Verify that calling sendCommands before connecting fails
             try {
@@ -1493,17 +1238,7 @@ describe('AgentProxy', () => {
         });
 
         it('should cleanup Promise bridge listeners after Promise settles', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect
             const connectPromise = agentProxy.connectAgent();
@@ -1549,17 +1284,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle socket close after transition to READY (slow close race)', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect and send BYE
             const connectPromise = agentProxy.connectAgent();
@@ -1597,17 +1322,7 @@ describe('AgentProxy', () => {
         // The guard is verified by code review. This test confirms it rejects invalid sessions.
 
         it('should reject sendCommands on invalid sessionId', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Try to send command without connecting
             try {
@@ -1621,17 +1336,7 @@ describe('AgentProxy', () => {
 
     describe('Phase 7: Greeting Validation', () => {
         it('should accept greeting with just "OK\\n"', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1654,17 +1359,7 @@ describe('AgentProxy', () => {
     describe('Phase 7: Socket Close Coverage Gaps', () => {
         it('should handle socket error close in WAITING_FOR_AGENT state', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             const connectPromise = agentProxy.connectAgent();
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1702,17 +1397,7 @@ describe('AgentProxy', () => {
 
         it('should handle socket error in CONNECTING_TO_AGENT state', async () => {
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             // Configure socket factory to emit error on connection attempt
             mockSocketFactory.setConnectError(new Error('Connection refused'));
@@ -1737,17 +1422,7 @@ describe('AgentProxy', () => {
             this.timeout(15000); // 15 seconds
 
             const logs: string[] = [];
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: (msg) => logs.push(msg),
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
 
             // Step 1: Connect to agent
             const connectPromise = agentProxy.connectAgent();
@@ -1806,17 +1481,7 @@ describe('AgentProxy', () => {
             // Verifies that NO response timeout allows multiple interactive operations in sequence
             const DELAY_MS = 5000; // 5 seconds - simulates real interactive operations
 
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: () => {},
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy({ logCallback: () => {} });
 
             // Connect to agent
             const connectPromise = agentProxy.connectAgent();
@@ -1867,17 +1532,7 @@ describe('AgentProxy', () => {
 
     describe('Phase 8: Concurrent Sessions & Integration', () => {
         it('should support multiple concurrent sessions with independent state machines', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect session 1
             const connect1Promise = agentProxy.connectAgent();
@@ -1943,17 +1598,7 @@ describe('AgentProxy', () => {
         });
 
         it('should isolate sessions so error in one does not affect others', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect 2 sessions
             const connect1Promise = agentProxy.connectAgent();
@@ -1998,17 +1643,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle end-to-end flow with interactive operation', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect
             const connectPromise = agentProxy.connectAgent();
@@ -2055,17 +1690,7 @@ describe('AgentProxy', () => {
         });
 
         it('should recover from agent connection failure for one session while keeping others', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect successful session
             const connect1Promise = agentProxy.connectAgent();
@@ -2112,17 +1737,7 @@ describe('AgentProxy', () => {
         });
 
         it('should allow disconnecting one session while another is actively sending commands', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect session 1
             const connect1Promise = agentProxy.connectAgent();
@@ -2175,17 +1790,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle rapid sequential session creation and cleanup cycles', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Create and cleanup 3 sessions in rapid succession
             for (let i = 0; i < 3; i++) {
@@ -2221,17 +1826,7 @@ describe('AgentProxy', () => {
         });
 
         it('should maintain session state isolation during write errors', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect session 1
             const connect1Promise = agentProxy.connectAgent();
@@ -2286,17 +1881,7 @@ describe('AgentProxy', () => {
         });
 
         it('should support full end-to-end workflow: connect, multiple operations, graceful disconnect', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Step 1: Connect
             const connectPromise = agentProxy.connectAgent();
@@ -2353,17 +1938,7 @@ describe('AgentProxy', () => {
         });
 
         it('should handle cleanup failure and transition to terminal error state', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             // Connect session
             const connectPromise = agentProxy.connectAgent();
@@ -2404,17 +1979,7 @@ describe('AgentProxy', () => {
         });
 
         it('should generate unique sessionIds for all sessions', async () => {
-            const agentProxy = new AgentProxy(
-                {
-                    logCallback: mockLogConfig.logCallback,
-                    gpgAgentSocketPath: socketPath,
-                    statusBarCallback: undefined
-                },
-                {
-                    fileSystem: mockFileSystem,
-                    socketFactory: mockSocketFactory
-                }
-            );
+            const agentProxy = await makeProxy();
 
             const sessionIds = new Set<string>();
 

@@ -13,7 +13,8 @@ import * as fs from 'fs';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { log, encodeProtocolData, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog, detectResponseCompletion, cleanupSocket } from '@gpg-bridge/shared';
-import type { LogConfig, IFileSystem, ISocketFactory, ISessionManager } from '@gpg-bridge/shared';
+import type { LogConfig, IFileSystem, ISocketFactory, ISessionManager, IGpgCliFactory } from '@gpg-bridge/shared';
+import { GpgCli } from '@gpg-bridge/shared';
 
 // ============================================================================
 // State Machine Type Definitions
@@ -127,7 +128,6 @@ export interface EventPayloads {
 // ============================================================================
 
 export interface AgentProxyConfig extends LogConfig {
-    gpgAgentSocketPath: string; // Path to Assuan socket file
     statusBarCallback?: () => void;
 }
 
@@ -147,6 +147,7 @@ export interface AgentSessionManagerConfig extends LogConfig {
 interface AgentProxyDeps {
     socketFactory: ISocketFactory;
     fileSystem: IFileSystem;
+    gpgCliFactory?: IGpgCliFactory;
 }
 
 // ============================================================================
@@ -613,6 +614,9 @@ export class AgentProxy {
     private sessions: Map<string, AgentSessionManager> = new Map();
     private socketFactory: ISocketFactory;
     private fileSystem: IFileSystem;
+    private readonly gpgCliFactory?: IGpgCliFactory;
+    private gpgCli: GpgCli | null = null;
+    private gpgAgentSocketPath: string | null = null;
     private readonly sessionTimeouts = {
         connection: 5000,   // Non-interactive network operation
         greeting: 5000      // Non-interactive nonce authentication
@@ -620,17 +624,44 @@ export class AgentProxy {
     };
 
     constructor(private config: AgentProxyConfig, deps?: Partial<AgentProxyDeps>) {
-        // Initialize with defaults or provided dependencies
+        // Cheap: wire dependencies only — no subprocess, no socket validation
         this.socketFactory = deps?.socketFactory ?? { createConnection: (options) => net.createConnection(options) };
         this.fileSystem = deps?.fileSystem ?? ({
             existsSync: fs.existsSync,
             readFileSync: fs.readFileSync
         } as unknown as IFileSystem);
+        this.gpgCliFactory = deps?.gpgCliFactory;
+    }
 
-        // Validate socket path exists
-        if (!this.fileSystem.existsSync(config.gpgAgentSocketPath)) {
-            throw new Error(`GPG agent socket not found: ${config.gpgAgentSocketPath}`);
+    /**
+     * Start the agent proxy: construct `GpgCli`, resolve the gpg-agent socket path,
+     * and validate the socket file exists.
+     *
+     * Throws if called a second time without an intervening `stop()`.
+     * Throws if `gpgconf` cannot be found (binary not installed or wrong path).
+     * Throws if the resolved socket path does not exist on disk.
+     */
+    public async start(): Promise<void> {
+        if (this.gpgCli !== null) {
+            throw new Error('Agent proxy already started');
         }
+        // Construct via injected factory or fall back to production default
+        this.gpgCli = this.gpgCliFactory?.create() ?? new GpgCli();
+        this.gpgAgentSocketPath = await this.gpgCli.gpgconfListDirs('agent-extra-socket');
+        if (!this.fileSystem.existsSync(this.gpgAgentSocketPath)) {
+            throw new Error(`GPG agent socket not found: ${this.gpgAgentSocketPath}`);
+        }
+        log(this.config, `[AgentProxy] Started — socket: ${this.gpgAgentSocketPath}`);
+    }
+
+    /** Return the resolved gpg bin dir, or null before start() is called. */
+    public getGpgBinDir(): string | null {
+        return this.gpgCli?.getBinDir() ?? null;
+    }
+
+    /** Return the resolved agent socket path, or null before start() is called. */
+    public getAgentSocketPath(): string | null {
+        return this.gpgAgentSocketPath;
     }
 
     /**
@@ -669,9 +700,13 @@ export class AgentProxy {
     public async connectAgent(sessionId: string = uuidv4()): Promise<{ sessionId: string; greeting: string }> {
         log(this.config, `[${sessionId}] Create session to gpg-agent...`);
 
+        if (!this.gpgAgentSocketPath) {
+            throw new Error('Agent proxy not started — call start() first');
+        }
+
         try {
             // Read and parse the socket file to get port and nonce
-            const socketData = this.fileSystem.readFileSync(this.config.gpgAgentSocketPath);
+            const socketData = this.fileSystem.readFileSync(this.gpgAgentSocketPath);
             const { port, nonce } = parseSocketFile(socketData);
 
             log(this.config, `[${sessionId}] Found config: localhost:${port} with nonce`);
@@ -903,35 +938,39 @@ export class AgentProxy {
      *    drive them into teardown
      */
     public async stop(): Promise<void> {
-        if (this.sessions.size === 0) {
-            return;
-        }
-        log(this.config, `[AgentProxy] Stopping ${this.sessions.size} active session(s)`);
-        const stopError = new Error('AgentProxy stopped');
-        const cleanupPromises: Promise<void>[] = [];
+        if (this.sessions.size > 0) {
+            log(this.config, `[AgentProxy] Stopping ${this.sessions.size} active session(s)`);
+            const stopError = new Error('AgentProxy stopped');
+            const cleanupPromises: Promise<void>[] = [];
 
-        for (const [sessionId, session] of this.sessions) {
-            const state = session.getState();
+            for (const [sessionId, session] of this.sessions) {
+                const state = session.getState();
 
-            // 1. DISCONNECTED / FATAL: skip
-            if (state === 'DISCONNECTED' || state === 'FATAL') {
-                continue;
+                // 1. DISCONNECTED / FATAL: skip
+                if (state === 'DISCONNECTED' || state === 'FATAL') {
+                    continue;
+                }
+
+                // 2 & 3. Register CLEANUP_COMPLETE listener (always); emit ERROR_OCCURRED only
+                // for active states that have not yet entered the teardown sequence.
+                const promise = new Promise<void>((resolve) => {
+                    session.once('CLEANUP_COMPLETE', () => resolve());
+                });
+                cleanupPromises.push(promise);
+
+                if (state !== 'ERROR' && state !== 'CLOSING') {
+                    log(this.config, `[${sessionId}] Force-closing session during stop (state: ${state})`);
+                    session.emit('ERROR_OCCURRED', { error: stopError });
+                }
             }
 
-            // 2 & 3. Register CLEANUP_COMPLETE listener (always); emit ERROR_OCCURRED only
-            // for active states that have not yet entered the teardown sequence.
-            const promise = new Promise<void>((resolve) => {
-                session.once('CLEANUP_COMPLETE', () => resolve());
-            });
-            cleanupPromises.push(promise);
-
-            if (state !== 'ERROR' && state !== 'CLOSING') {
-                log(this.config, `[${sessionId}] Force-closing session during stop (state: ${state})`);
-                session.emit('ERROR_OCCURRED', { error: stopError });
-            }
+            await Promise.all(cleanupPromises);
+            log(this.config, '[AgentProxy] All sessions cleaned up');
         }
 
-        await Promise.all(cleanupPromises);
-        log(this.config, '[AgentProxy] All sessions cleaned up');
+        // Tear down GpgCli after sessions — order ensures no further socket reads are needed
+        await this.gpgCli?.cleanup();
+        this.gpgCli = null;
+        this.gpgAgentSocketPath = null;
     }
 }

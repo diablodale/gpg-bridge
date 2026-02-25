@@ -48,17 +48,26 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
         await gpg.generateKey('Integration Test User', 'integration-test@example.com');
         fingerprint = await gpg.getFingerprint('integration-test@example.com');
         keygrip = await gpg.getKeygrip('integration-test@example.com');
+
+        // stop any running agent to ensure a clean state for the tests
+        await vscode.commands.executeCommand('gpg-bridge-agent.stop');
     });
 
     after(async function () {
-        // Clean up: remove the test key, then reset extension state.
+        // Clean up: remove the test key.
         // Key deletion must happen while gpg-agent is still alive (runTest.ts kills it
         // after runTests() resolves, i.e. after this after() completes).
         if (fingerprint) {
             try { await gpg.deleteKey(fingerprint); } catch { /* ignore if already deleted */ }
         }
-        // Reset extension state so subsequent test runs start clean.
-        try { await vscode.commands.executeCommand('gpg-bridge-agent.stop'); } catch { /* ignore */ }
+    });
+
+    beforeEach(async function () {
+        await vscode.commands.executeCommand('gpg-bridge-agent.start');
+    });
+
+    afterEach(async function () {
+        await vscode.commands.executeCommand('gpg-bridge-agent.stop');
     });
 
     // -----------------------------------------------------------------------
@@ -309,6 +318,54 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
             '_gpg-bridge-agent.connectAgent'
         );
         expect(greeting).to.match(/^OK/);
+        await vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', sessionId);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 — AgentProxy start/stop lifecycle
+// ---------------------------------------------------------------------------
+
+describe('Phase 3 — AgentProxy start/stop lifecycle', function () {
+    this.timeout(30000);
+
+    beforeEach(async () => {
+        await vscode.commands.executeCommand('gpg-bridge-agent.stop');
+    });
+
+    afterEach(async () => {
+        await vscode.commands.executeCommand('gpg-bridge-agent.stop');
+    });
+
+    it('1. connectAgent() throws "not started" when called before start()', async function () {
+        let threw = false;
+        let errorMsg = '';
+        try {
+            await vscode.commands.executeCommand<ConnectResult>('_gpg-bridge-agent.connectAgent');
+        } catch (err) {
+            threw = true;
+            errorMsg = err instanceof Error ? err.message : String(err);
+        }
+        expect(threw, 'connectAgent() should reject when proxy is stopped').to.be.true;
+        expect(errorMsg, 'error should mention "not started" or "not initialized"').to.match(/not started|not initialized/i);
+    });
+
+    it('2. start command when proxy already running returns gracefully without error', async function () {
+        // Ensure the proxy is running
+        await vscode.commands.executeCommand('gpg-bridge-agent.start');
+
+        // Calling start again should show a warning and not throw.
+        let threw = false;
+        try {
+            await vscode.commands.executeCommand('gpg-bridge-agent.start');
+        } catch {
+            threw = true;
+        }
+        expect(threw, 'start command should not throw when proxy is already running').to.be.false;
+
+        // Proxy should still be fully operational
+        const { sessionId, greeting } = await vscode.commands.executeCommand<ConnectResult>('_gpg-bridge-agent.connectAgent');
+        expect(greeting, 'proxy should still be operational after redundant start').to.match(/^OK/);
         await vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', sessionId);
     });
 });

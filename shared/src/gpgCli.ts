@@ -417,4 +417,12 @@ export class GpgCli {
         // gpg --import writes its summary statistics to stderr
         return parseImportResult(stderr);
     }
+
+    /**
+     * No-op in base class.
+     * Overridden by `GpgTestHelper` to kill the test gpg-agent and delete the temp GNUPGHOME.
+     */
+    async cleanup(): Promise<void> {
+        // no-op
+    }
 }

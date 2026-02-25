@@ -8,6 +8,7 @@
 import { EventEmitter } from 'events';
 import * as net from 'net';
 import type { IFileSystem, ISocketFactory, ICommandExecutor, IServerFactory } from '../types';
+import { GpgCli } from '../gpgCli';
 
 /**
  * Mock FileSystem - tracks calls and allows test control
@@ -549,5 +550,41 @@ export class MockLogConfig {
     hasLog(pattern: string | RegExp): boolean {
         const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
         return this.logs.some((log) => regex.test(log));
+    }
+}
+
+/**
+ * Mock GpgCli — extends the production `GpgCli` base class for unit testing.
+ *
+ * Overrides `gpgconfListDirs()` to return a caller-supplied socket path without
+ * spawning any subprocess. The constructor passes a fake `gpgBinDir` with a
+ * stub `existsSync` so the base-class detection never runs.
+ *
+ * `getBinDir()` comes from the base class and returns `mockBinDir`.
+ * `cleanup()` is a no-op (already defined as no-op in the base class).
+ *
+ * Usage:
+ * ```typescript
+ * const mockGpgCliFactory = { create: () => new MockGpgCli('/tmp/gpg-agent.extra') };
+ * const proxy = new AgentProxy(config, { gpgCliFactory: mockGpgCliFactory });
+ * await proxy.start();
+ * ```
+ */
+export class MockGpgCli extends GpgCli {
+    /** Socket path returned verbatim by `gpgconfListDirs()`. */
+    public readonly socketPath: string;
+
+    constructor(socketPath: string, mockBinDir: string = '/fake/gpg/bin') {
+        // Pass explicit gpgBinDir + existsSync stub so base-class detect() never throws.
+        super({ gpgBinDir: mockBinDir }, { existsSync: () => true });
+        this.socketPath = socketPath;
+    }
+
+    /**
+     * Return the configured socket path regardless of `dirName`.
+     * No subprocess is spawned.
+     */
+    override async gpgconfListDirs(_dirName: string): Promise<string> {
+        return this.socketPath;
     }
 }

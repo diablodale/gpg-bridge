@@ -1,16 +1,11 @@
 ﻿import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
-import { spawnSync } from 'child_process';
 import { AgentProxy } from './services/agentProxy';
-import { isTestEnvironment, isIntegrationTestEnvironment, extractErrorMessage } from '@gpg-bridge/shared';
+import { GpgCli, isTestEnvironment, isIntegrationTestEnvironment, extractErrorMessage } from '@gpg-bridge/shared';
 
 // Global agent proxy service instance
 let agentProxyService: AgentProxy | null = null;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
-let detectedGpgBinDir: string | null = null;
-let resolvedAgentSocketPath: string | null = null;
 let probeSuccessful = false;
 
 // This method is called when your extension is activated
@@ -148,92 +143,6 @@ async function disconnectAgent(sessionId: string): Promise<void> {
 // ==============================================================================
 
 /**
- * Detect GnuPG bin directory.
- * Throws if gpgconf.exe cannot be found.
- */
-async function detectGpgBinDir(): Promise<void> {
-	const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
-	const configPath = config.get<string>('gpgBinDir') || '';
-
-	// If a path is explicitly configured, use it exclusively — do not fall back to
-	// auto-detection.  An invalid configured path is a user error and should fail loudly.
-	if (configPath) {
-		const gpgconfPath = path.join(configPath, 'gpgconf.exe');
-		if (fs.existsSync(gpgconfPath)) {
-			detectedGpgBinDir = configPath;
-			resolveAgentSocketPath();
-			return;
-		}
-		throw new Error(`GnuPG bin not found at configured path: ${configPath}`);
-	}
-
-	// Check 64-bit default locations
-	const gpg4win64Paths = [
-		'C:\\Program Files\\GnuPG\\bin',
-		'C:\\Program Files\\Gpg4win\\bin'
-	];
-
-	for (const checkPath of gpg4win64Paths) {
-		const gpgconfPath = path.join(checkPath, 'gpgconf.exe');
-		if (fs.existsSync(gpgconfPath)) {
-			detectedGpgBinDir = checkPath;
-			resolveAgentSocketPath();
-			return;
-		}
-	}
-
-	// Check 32-bit (x86) default locations
-	const gpg4win32Paths = [
-		'C:\\Program Files (x86)\\GnuPG\\bin',
-		'C:\\Program Files (x86)\\Gpg4win\\bin'
-	];
-
-	for (const checkPath of gpg4win32Paths) {
-		const gpgconfPath = path.join(checkPath, 'gpgconf.exe');
-		if (fs.existsSync(gpgconfPath)) {
-			detectedGpgBinDir = checkPath;
-			resolveAgentSocketPath();
-			return;
-		}
-	}
-
-	throw new Error('GnuPG bin not found. Please install Gpg4win or set gpgBridgeAgent.gpgBinDir.');
-}
-
-/**
- * Resolve the GPG agent socket path by querying gpgconf.
- * Sets resolvedAgentSocketPath to the path reported by gpgconf.
- * Throws if the path cannot be resolved.
- */
-function resolveAgentSocketPath(): void {
-	if (!detectedGpgBinDir) {
-		throw new Error('resolveAgentSocketPath() called before gpg bin dir was set');
-	}
-
-	const gpgconfPath = path.join(detectedGpgBinDir, 'gpgconf.exe');
-	if (!fs.existsSync(gpgconfPath)) {
-		throw new Error(`gpgconf not found at: ${gpgconfPath}`);
-	}
-
-	let result;
-	try {
-		result = spawnSync(gpgconfPath, ['--list-dirs', 'agent-extra-socket'], {
-			encoding: 'utf8',
-			timeout: 2000
-		});
-	} catch (error) {
-		throw new Error(`Failed to run gpgconf: ${extractErrorMessage(error)}`);
-	}
-
-	if (result.status !== 0 || !result.stdout?.trim()) {
-		throw new Error(`gpgconf failed to report agent-extra-socket (exit ${result.status})`);
-	}
-
-	resolvedAgentSocketPath = result.stdout.trim();
-	outputChannel.appendLine(`Resolved GPG agent extra socket path: ${resolvedAgentSocketPath}`);
-}
-
-/**
  * Start the agent proxy service
  */
 async function startAgentProxy(): Promise<void> {
@@ -246,24 +155,18 @@ async function startAgentProxy(): Promise<void> {
 	}
 
 	try {
-		// Ensure GnuPG bin dir and agent socket path are resolved.
-		// detectGpgBinDir() calls resolveAgentSocketPath() internally; both throw on failure.
-		if (!detectedGpgBinDir || !resolvedAgentSocketPath) {
-			await detectGpgBinDir();
-		}
-
 		outputChannel.appendLine('Starting agent proxy...');
 
-		// Create a log callback that respects the debugLogging setting
 		const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
+		const gpgBinDir = config.get<string>('gpgBinDir') ?? '';
 		const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
 		const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
 
-		agentProxyService = new AgentProxy({
-			gpgAgentSocketPath: resolvedAgentSocketPath!,
-			logCallback: logCallback,
-			statusBarCallback: () => updateStatusBar()
-		});
+		agentProxyService = new AgentProxy(
+			{ logCallback, statusBarCallback: () => updateStatusBar() },
+			{ gpgCliFactory: { create: () => new GpgCli({ gpgBinDir: gpgBinDir || undefined }) } }
+		);
+		await agentProxyService.start();
 
 		outputChannel.appendLine('Agent proxy initialized. Probe of gpg-agent in process. Status will be READY when complete.');
 	} catch (error) {
@@ -271,6 +174,8 @@ async function startAgentProxy(): Promise<void> {
 		outputChannel.appendLine(`Error starting agent proxy: ${errorMessage}`);
 		outputChannel.show(true);
 		vscode.window.showErrorMessage(`Failed to start agent proxy: ${errorMessage}`);
+		// stop() cleans up any partially-initialized GpgCli resources before we discard the instance
+		await agentProxyService?.stop();
 		agentProxyService = null;
 		throw error; // propagate so callers (commands, tests) can observe failure
 	}
@@ -288,9 +193,6 @@ async function stopAgentProxy(): Promise<void> {
 	outputChannel.appendLine('Stopping agent proxy...');
 	await agentProxyService.stop();
 	agentProxyService = null;
-	// Reset resolved state so the next start re-detects (e.g. if gpgBinDir changed).
-	detectedGpgBinDir = null;
-	resolvedAgentSocketPath = null;
 	probeSuccessful = false;
 
 	updateStatusBar();
@@ -302,8 +204,8 @@ async function stopAgentProxy(): Promise<void> {
  * Show agent proxy status
  */
 function showStatus(): void {
-	const gpgBinDir = detectedGpgBinDir || '(not detected)';
-	const agentSocket = resolvedAgentSocketPath || '(not detected)';
+	const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(not detected)';
+	const agentSocket = agentProxyService?.getAgentSocketPath() ?? '(not detected)';
 
 	let state = 'Inactive';
 	let sessionCount = 0;
