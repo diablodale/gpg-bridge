@@ -77,9 +77,9 @@ export function deactivate() {
  * Command: _gpg-bridge-agent.exportPublicKeys
  *
  * Called by request-proxy (or for manual use) to export public keys from the GPG keyring.
- * Returns the exported key bytes as a Uint8Array, or undefined if nothing was exported.
+ * Returns the exported key data as an ASCII-armored string, or undefined if nothing was exported.
  */
-async function exportPublicKeysCommand(filter?: KeyFilter): Promise<Uint8Array | undefined> {
+async function exportPublicKeysCommand(filter?: KeyFilter): Promise<string | undefined> {
     if (!agentProxyService) {
         throw new Error('Agent proxy not initialized. Please start the extension.');
     }
@@ -87,7 +87,7 @@ async function exportPublicKeysCommand(filter?: KeyFilter): Promise<Uint8Array |
     // TODO updateStatusBar to indicate export in progress
     try {
         const result = await agentProxyService.exportPublicKeys(filter);
-        outputChannel.appendLine(`[exportPublicKeys] filter=${filter ?? '(interactive)'} → ${result ? result.length : 0} bytes`);
+        outputChannel.appendLine(`[exportPublicKeys] filter=${filter ?? '(interactive)'} → ${result ? result.length : 0} chars`);
         return result;
     } catch (error) {
         const msg = extractErrorMessage(error);

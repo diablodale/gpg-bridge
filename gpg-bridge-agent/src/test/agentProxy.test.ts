@@ -28,7 +28,7 @@ describe('AgentProxy', () => {
         // Per parseSocketFile() in shared/protocol.ts
         const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]); // 16 binary bytes
         const socketFileContent = Buffer.concat([
-            Buffer.from('31415\n', 'utf-8'),
+            Buffer.from('31415\n', 'latin1'),
             nonce
         ]);
         mockFileSystem.setFile(socketPath, socketFileContent);

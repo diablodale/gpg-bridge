@@ -290,7 +290,7 @@ describe('Phase 5 — RequestProxy uses GpgCli for socket path', function () {
     // gpgconf subprocess + proxy restart; 30 s is generous for both.
     this.timeout(30000);
 
-    let listdirs = (name: string) => spawnSync('gpgconf', ['--list-dirs', name], { encoding: 'utf-8', timeout: 5000, shell: false });
+    let listdirs = (name: string) => spawnSync('gpgconf', ['--list-dirs', name], { encoding: 'latin1', timeout: 5000, shell: false });
     let proxySocketPath: string;
 
     before(async function () {
@@ -388,8 +388,8 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
 
     // Target keyring starts empty and receives the imported key.
     let targetHelper: GpgTestHelper;
-    /** Raw binary key bytes exported from sourceHelper. */
-    let sourceBytes: Uint8Array;
+    /** Raw armored key text exported from sourceHelper. */
+    let sourceBytes: string;
     /** Fingerprint of the key in sourceHelper — used to verify the correct key was imported. */
     let sourceFpr: string;
 
@@ -419,7 +419,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
         await targetHelper?.cleanup();
     });
 
-    function makeSvc(gpg: GpgTestHelper, keyBytes: Uint8Array): { svc: typeof PublicKeySync.prototype; infoMessages: string[]; errorMessages: string[] } {
+    function makeSvc(gpg: GpgTestHelper, keyBytes: string): { svc: typeof PublicKeySync.prototype; infoMessages: string[]; errorMessages: string[] } {
         const infoMessages: string[] = [];
         const errorMessages: string[] = [];
         const svc = new PublicKeySync(
@@ -489,7 +489,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
     // -----------------------------------------------------------------------
     it('4. Import multiple groups of keys with duplicates', async function () {
         let multiSourceHelper: GpgTestHelper | undefined = undefined;
-        let multiBytes: Uint8Array;
+        let multiBytes: string;
 
         try {
             // create source with 2 key pairs
@@ -566,7 +566,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
 
             // Verify the correct key landed in the container's default keyring.
             const listResult = spawnSync('gpg', ['--list-keys', '--with-colons'], {
-                encoding: 'utf-8',
+                encoding: 'latin1',
                 timeout: 10000,
                 shell: false,
             });
@@ -581,7 +581,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
             // Remove the imported public-only key so the test does not pollute
             // the container's default keyring for subsequent test runs.
             spawnSync('gpg', ['--batch', '--yes', '--delete-key', fprNormalized], {
-                encoding: 'utf-8',
+                encoding: 'latin1',
                 timeout: 10000,
                 shell: false,
             });

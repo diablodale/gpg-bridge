@@ -1,12 +1,12 @@
 /**
  * Agent absent — executeCommand rejects with an error indicating the
  * gpg-bridge-agent command is not available or not found in VS Code.
- * 
+ *
  * When this occurs:
  * - The sync operation catches the rejection gracefully (does not re-throw)
  * - An error message is displayed to the user indicating export failure
  * - importPublicKeys is never invoked since no key data was obtained
- * 
+ *
  * This scenario tests the error boundary for when the remote VS Code extension
  * (agent) that exports public keys is missing, disabled, or unreachable.
  */
@@ -33,12 +33,12 @@ import type { PublicKeySyncDeps } from '../services/publicKeySync';
 class MockGpgCliWithImport extends MockGpgCli {
     public importResult: { imported: number; unchanged: number; errors: number } =
         { imported: 1, unchanged: 0, errors: 0 };
-    public importCalls: Uint8Array[] = [];
+    public importCalls: string[] = [];
     public importShouldThrow: Error | null = null;
 
     constructor() { super('/tmp/test.sock'); }
 
-    override async importPublicKeys(keyData: Uint8Array): Promise<{ imported: number; unchanged: number; errors: number }> {
+    override async importPublicKeys(keyData: string): Promise<{ imported: number; unchanged: number; errors: number }> {
         if (this.importShouldThrow) { throw this.importShouldThrow; }
         this.importCalls.push(keyData);
         return this.importResult;
@@ -52,7 +52,7 @@ interface MockState {
     errorMessages: string[];
     deps: PublicKeySyncDeps;
     /** Configure executeCommand to resolve with this value on next call(s). */
-    setExportResult(value: Uint8Array | undefined): void;
+    setExportResult(value: string | undefined): void;
     /** Configure executeCommand to reject with this error on next call(s). */
     setExportThrows(err: Error): void;
 }
@@ -63,7 +63,7 @@ function createMockState(): MockState {
     const infoMessages: string[] = [];
     const errorMessages: string[] = [];
 
-    let exportResult: Uint8Array | undefined = undefined;
+    let exportResult: string | undefined = undefined;
     let exportThrows: Error | null = null;
 
     const executeCommand = (command: string, ...args: unknown[]): Promise<unknown> => {
@@ -173,7 +173,7 @@ describe('PublicKeySync', () => {
     // -----------------------------------------------------------------------
     it('6. successful import — importPublicKeys called with key bytes; info message shown with counts', async () => {
         const m = createMockState();
-        const keyBytes = new Uint8Array([0x99, 0x01, 0xd3]); // minimal GPG binary stub
+        const keyBytes = '-----BEGIN PGP PUBLIC KEY BLOCK-----\nFAKEKEYDATA\n-----END PGP PUBLIC KEY BLOCK-----\n';
         m.setExportResult(keyBytes);
         m.gpgCli.importResult = { imported: 2, unchanged: 1, errors: 0 };
         const svc = new PublicKeySync({ logCallback: logConfig.logCallback }, m.deps);
@@ -181,7 +181,7 @@ describe('PublicKeySync', () => {
         await svc.syncPublicKeys('all');
 
         expect(m.gpgCli.importCalls, 'importPublicKeys must be called once').to.have.length(1);
-        expect(m.gpgCli.importCalls[0]).to.deep.equal(keyBytes, 'key bytes passed verbatim');
+        expect(m.gpgCli.importCalls[0]).to.equal(keyBytes, 'armor string passed verbatim');
         expect(m.infoMessages, 'exactly one info message expected').to.have.length(1);
         expect(m.infoMessages[0]).to.include('imported: 2');
         expect(m.infoMessages[0]).to.include('unchanged: 1');

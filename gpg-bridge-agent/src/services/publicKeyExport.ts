@@ -45,19 +45,19 @@ export interface PublicKeyExportDeps {
  * @param gpgCli  Active `GpgCli` instance (provided internally by `AgentProxy.exportPublicKeys()`).
  * @param filter  Export filter — see `KeyFilter` type docs.
  * @param deps    Optional injected dependencies (for unit testing without VS Code runtime).
- * @returns       Exported key bytes as `Uint8Array`, or `undefined` if nothing was exported.
+ * @returns       ASCII-armored key data as a `string`, or `undefined` if nothing was exported.
  */
 export async function exportPublicKeys(
     gpgCli: GpgCli,
     filter: KeyFilter | undefined,
     deps: Partial<PublicKeyExportDeps> = {}
-): Promise<Uint8Array | undefined> {
+): Promise<string | undefined> {
     const quickPick = deps.quickPick ??
         ((items, options) => vscode.window.showQuickPick(items, options));
     const showWarningMessage = deps.showWarningMessage ??
         ((message) => { void vscode.window.showWarningMessage(message); });
 
-    let keyData: Uint8Array;
+    let keyData: string;
 
     if (filter === 'all') {
         keyData = await gpgCli.exportPublicKeys();

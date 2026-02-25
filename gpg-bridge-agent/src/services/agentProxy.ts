@@ -918,7 +918,7 @@ export class AgentProxy {
      * Export public keys from the GPG keyring.
      * Delegates to the `publicKeyExport` service; throws if `start()` has not been called.
      */
-    public async exportPublicKeys(filter?: KeyFilter, deps?: Partial<PublicKeyExportDeps>): Promise<Uint8Array | undefined> {
+    public async exportPublicKeys(filter?: KeyFilter, deps?: Partial<PublicKeyExportDeps>): Promise<string | undefined> {
         if (!this.gpgCli) {
             throw new Error('Agent proxy not started — call start() first');
         }

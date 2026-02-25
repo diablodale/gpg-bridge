@@ -82,10 +82,10 @@ export class PublicKeySync {
     async syncPublicKeys(filter?: KeyFilter): Promise<void> {
         log(this.config, `[syncPublicKeys] Requesting export. filter=${filter ?? '(interactive)'}`);
 
-        let keyData: Uint8Array | undefined;
+        let keyData: string | undefined;
         try {
             const args: unknown[] = filter !== undefined ? [filter] : [];
-            keyData = await this.executeCommandFn('_gpg-bridge-agent.exportPublicKeys', ...args) as Uint8Array | undefined;
+            keyData = await this.executeCommandFn('_gpg-bridge-agent.exportPublicKeys', ...args) as string | undefined;
         } catch (err) {
             // Agent extension is absent, not initialized, or threw during export
             const msg = `Could not export public keys from agent: ${extractErrorMessage(err)}`;
@@ -100,26 +100,7 @@ export class PublicKeySync {
             return;
         }
 
-        // VS Code JSON-serializes TypedArrays when passing values across extension hosts
-        // (local ↔ remote). Two possible shapes depending on the runtime type:
-        //   - Buffer (extends Uint8Array): Buffer.toJSON() → {type: 'Buffer', data: number[]}
-        //   - Uint8Array (plain): serialized as indexed object {0: n, 1: n, ...}
-        // Normalize to Uint8Array so importPublicKeys receives valid binary in all code paths.
-        let keyBytes: Uint8Array;
-        if (keyData instanceof Uint8Array) {
-            keyBytes = keyData;
-        } else if (
-            keyData !== null &&
-            typeof keyData === 'object' &&
-            (keyData as { type?: unknown }).type === 'Buffer' &&
-            Array.isArray((keyData as { data?: unknown }).data)
-        ) {
-            keyBytes = Uint8Array.from((keyData as { data: number[] }).data);
-        } else {
-            keyBytes = Uint8Array.from(Object.values(keyData as Record<string, number>));
-        }
-
-        const result = await this.gpgCli.importPublicKeys(keyBytes);
+        const result = await this.gpgCli.importPublicKeys(keyData);
         const summary = `imported: ${result.imported}, unchanged: ${result.unchanged}, errors: ${result.errors}`;
         log(this.config, `[syncPublicKeys] Import complete — ${summary}`);
         this.showInformationMessageFn(`GPG Bridge: public key sync complete — ${summary}`);

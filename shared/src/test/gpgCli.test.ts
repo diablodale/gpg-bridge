@@ -219,33 +219,33 @@ describe('GpgCli', () => {
     // ============================================================================
 
     describe('exportPublicKeys()', () => {
-        it('returns Uint8Array of key data', async () => {
-            const keyBytes = Buffer.from('FAKEKEYDATA', 'latin1');
-            const cli = makeCli(execReturns(keyBytes.toString('latin1')));
+        it('returns armored string of key data', async () => {
+            const armorText = '-----BEGIN PGP PUBLIC KEY BLOCK-----\nFAKEKEYDATA\n-----END PGP PUBLIC KEY BLOCK-----\n';
+            const cli = makeCli(execReturns(armorText));
             const result = await cli.exportPublicKeys('AABBCCDD');
-            expect(result).to.be.instanceof(Uint8Array);
-            expect(Buffer.from(result).toString('latin1')).to.equal(keyBytes.toString('latin1'));
+            expect(result).to.be.a('string');
+            expect(result).to.equal(armorText);
         });
 
-        it('returns empty Uint8Array when subprocess produces no output', async () => {
+        it('returns empty string when subprocess produces no output', async () => {
             const cli = makeCli(execReturns(''));
             const result = await cli.exportPublicKeys('nobody@example.com');
-            expect(result).to.be.instanceof(Uint8Array);
-            expect(result.length).to.equal(0);
+            expect(result).to.be.a('string');
+            expect(result).to.equal('');
         });
 
         it('calls gpg with --export and no args when filter is omitted', async () => {
             const capture = execCapture('');
             const cli = makeCli(capture.fn);
             await cli.exportPublicKeys();
-            expect(capture.lastArgs!.args).to.deep.equal(['--export']);
+            expect(capture.lastArgs!.args).to.deep.equal(['--armor', '--export']);
         });
 
         it('splits space-separated filter into individual arguments', async () => {
             const capture = execCapture('');
             const cli = makeCli(capture.fn);
             await cli.exportPublicKeys('FPR1 FPR2');
-            expect(capture.lastArgs!.args).to.deep.equal(['--export', 'FPR1', 'FPR2']);
+            expect(capture.lastArgs!.args).to.deep.equal(['--armor', '--export', 'FPR1', 'FPR2']);
         });
     });
 
@@ -261,7 +261,7 @@ describe('GpgCli', () => {
                 'gpg:               imported: 1',
             ].join('\n');
             const cli = makeCli(execReturns(''), spawnReturns('', stderr, 0));
-            const result = await cli.importPublicKeys(new Uint8Array([1, 2, 3]));
+            const result = await cli.importPublicKeys('armor-stub');
             expect(result).to.deep.equal({ imported: 1, unchanged: 0, errors: 0 });
         });
 
@@ -272,17 +272,17 @@ describe('GpgCli', () => {
                 'gpg:            unchanged: 1',
             ].join('\n');
             const cli = makeCli(execReturns(''), spawnReturns('', stderr, 0));
-            const result = await cli.importPublicKeys(new Uint8Array([1, 2, 3]));
+            const result = await cli.importPublicKeys('armor-stub');
             expect(result).to.deep.equal({ imported: 0, unchanged: 1, errors: 0 });
         });
 
-        it('passes the keyData bytes as stdin to spawnForStdin', async () => {
+        it('passes keyData as latin1 stdin to spawnForStdin', async () => {
             const capture = spawnCapture('gpg: Total number processed: 0\n');
             const cli = makeCli(execReturns(''), capture.fn);
-            const keyData = new Uint8Array([0x01, 0x02, 0xff]);
+            const keyData = 'armor-test-data';
             await cli.importPublicKeys(keyData);
             expect(capture.lastInput).not.to.be.null;
-            expect(Array.from(capture.lastInput!)).to.deep.equal([0x01, 0x02, 0xff]);
+            expect(capture.lastInput!.toString('latin1')).to.equal(keyData);
         });
     });
 

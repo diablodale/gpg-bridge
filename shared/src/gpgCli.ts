@@ -9,7 +9,8 @@
  *   - gpg --export                             (exportPublicKeys)
  *   - gpg --import via stdin                   (importPublicKeys)
  *
- * All subprocess I/O uses latin1 encoding to preserve binary key material.
+ * Subprocess I/O uses latin1 encoding for binary protocols (Assuan).
+ * Exported key data uses ASCII armor for transport-safe text encoding.
  *
  * Subclassed by GpgTestHelper (shared/src/test/integration/gpgCli.ts) which
  * adds test-only methods and manages an isolated temp GNUPGHOME.
@@ -380,31 +381,33 @@ export class GpgCli {
     }
 
     /**
-     * Export public keys as binary data.
+     * Export public keys as ASCII-armored text.
+     * Armor encoding makes the data safe to transport through JSON-based channels
+     * (such as VS Code's cross-host command bridge) without serialization issues.
      * @param filter Optional GPG identifier (fingerprint, email, key ID) or space-separated list.
      *               If omitted, exports all public keys.
-     * @returns Binary key data as `Uint8Array`. Empty if no keys match the filter.
+     * @returns ASCII-armored key data as a `string`. Empty string if no keys match the filter.
      */
-    async exportPublicKeys(filter?: string): Promise<Uint8Array> {
-        const args = ['--export'];
+    async exportPublicKeys(filter?: string): Promise<string> {
+        const args = ['--armor', '--export'];
         if (filter) {
             // Space-separated identifiers are passed as individual arguments
             args.push(...filter.split(' ').filter(Boolean));
         }
         const { stdout } = await this.run(this.gpgBin, args);
-        return Buffer.from(stdout, 'latin1');
+        return stdout;
     }
 
     /**
-     * Import public keys from binary data.
+     * Import public keys from ASCII-armored text.
      * Key data is passed via stdin — no temp file written to disk.
      * @returns Parsed statistics from `gpg --import` output.
      */
-    async importPublicKeys(keyData: Uint8Array): Promise<{ imported: number; unchanged: number; errors: number }> {
+    async importPublicKeys(keyData: string): Promise<{ imported: number; unchanged: number; errors: number }> {
         const { stderr } = await this._spawnForStdin(
             this.gpgBin,
             ['--import'],
-            Buffer.from(keyData),
+            Buffer.from(keyData, 'latin1'),
             this.env
         );
         // gpg --import writes its summary statistics to stderr

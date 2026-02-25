@@ -102,7 +102,7 @@ export function parseSocketFile(data: Buffer): ParsedSocketFile {
     }
 
     // Extract and parse port as ASCII
-    const portStr = data.toString('utf-8', 0, newlineIndex);
+    const portStr = data.toString('latin1', 0, newlineIndex);
     const port = parseInt(portStr, 10);
 
     if (isNaN(port)) {

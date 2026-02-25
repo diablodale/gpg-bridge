@@ -18,7 +18,7 @@ import type * as vscode from 'vscode';
 
 class MockExportGpgCli extends GpgCli {
     public listPairedKeysResult: PairedKeyInfo[] = [];
-    public exportPublicKeysResult: Uint8Array = new Uint8Array([1, 2, 3]);
+    public exportPublicKeysResult: string = 'FAKEARMOR';
     public exportPublicKeysCalls: Array<string | undefined> = [];
     public listPairedKeysCalled = false;
 
@@ -32,7 +32,7 @@ class MockExportGpgCli extends GpgCli {
         return this.listPairedKeysResult;
     }
 
-    override async exportPublicKeys(filter?: string): Promise<Uint8Array> {
+    override async exportPublicKeys(filter?: string): Promise<string> {
         this.exportPublicKeysCalls.push(filter);
         return this.exportPublicKeysResult;
     }
@@ -62,7 +62,7 @@ function makeQuickPickDep(result: readonly vscode.QuickPickItem[] | undefined): 
 
 describe('exportPublicKeys', () => {
     let gpgCli: MockExportGpgCli;
-    const fakeKeyData = new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF]);
+    const fakeKeyData = '-----BEGIN PGP PUBLIC KEY BLOCK-----\nFAKEKEYDATA\n-----END PGP PUBLIC KEY BLOCK-----\n';
 
     const sampleKeys: PairedKeyInfo[] = [
         { fingerprint: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBB', userIds: ['Alice <alice@example.com>'] },
@@ -127,7 +127,7 @@ describe('exportPublicKeys', () => {
     });
 
     it('zero-byte export result: VS Code warning message shown; returns undefined', async () => {
-        gpgCli.exportPublicKeysResult = new Uint8Array(0);
+        gpgCli.exportPublicKeysResult = ''
         const warnings: string[] = [];
         const showWarningMessage = (msg: string) => { warnings.push(msg); };
 

@@ -87,17 +87,18 @@ describe('GpgCli integration (via GpgTestHelper)', function () {
             expect(key.userIds.some(u => u.includes('phasetwo@example.com'))).to.equal(true);
         });
 
-        it("exportPublicKeys() returns non-empty Uint8Array for a key pair", async () => {
+        it('exportPublicKeys() returns non-empty armored string for a key pair', async () => {
             await helper.generateKey('Export P2', 'exportp2@example.com');
             const result = await helper.exportPublicKeys();
-            expect(result).to.be.instanceof(Uint8Array);
-            expect(result.length).to.be.greaterThanOrEqual(300, 'expected at least 300 bytes for an Ed25519+cv25519 key pair export');
+            expect(result).to.be.a('string');
+            expect(result).to.include('-----BEGIN PGP PUBLIC KEY BLOCK-----');
+            expect(result.length).to.be.greaterThanOrEqual(300, 'expected at least 300 chars for an Ed25519+cv25519 key pair export');
         });
 
         it('importPublicKeys() imports into a second keyring; imported: 1', async () => {
             await helper.generateKey('Import P2', 'importp2@example.com');
             const keyData = await helper.exportPublicKeys();
-            expect(keyData.length).to.be.greaterThanOrEqual(300, 'expected at least 300 bytes for an Ed25519+cv25519 key pair export');
+            expect(keyData.length).to.be.greaterThanOrEqual(300, 'expected at least 300 chars for an Ed25519+cv25519 key pair export');
 
             const helper2 = new GpgTestHelper();
             try {

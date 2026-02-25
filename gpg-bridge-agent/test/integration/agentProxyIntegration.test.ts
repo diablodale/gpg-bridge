@@ -427,41 +427,44 @@ describe('Phase 4 — exportPublicKeys command', function () {
 
     it("1. filter='pairs': returns both key pairs and excludes the public-only key", async function () {
         const [pairsResult, allResult] = await Promise.all([
-            vscode.commands.executeCommand<Uint8Array | undefined>('_gpg-bridge-agent.exportPublicKeys', 'pairs'),
-            vscode.commands.executeCommand<Uint8Array | undefined>('_gpg-bridge-agent.exportPublicKeys', 'all')
+            vscode.commands.executeCommand<string | undefined>('_gpg-bridge-agent.exportPublicKeys', 'pairs'),
+            vscode.commands.executeCommand<string | undefined>('_gpg-bridge-agent.exportPublicKeys', 'all')
         ]);
-        expect(pairsResult, "filter='pairs' should return key bytes").to.be.instanceOf(Uint8Array);
-        expect(allResult,   "filter='all' should return key bytes").to.be.instanceOf(Uint8Array);
+        expect(pairsResult, "filter='pairs' should return armored key data").to.be.a('string');
+        expect(allResult,   "filter='all' should return armored key data").to.be.a('string');
+        expect(pairsResult).to.include('-----BEGIN PGP PUBLIC KEY BLOCK-----');
+        expect(allResult).to.include('-----BEGIN PGP PUBLIC KEY BLOCK-----');
 
-        // Two key pairs: Ed25519 primary + cv25519 subkey + UID + 2 signatures ≈ 350–400 bytes each;
-        // 600 is a conservative lower bound for two key pairs
-        expect((pairsResult as Uint8Array).length, "two key pairs must be at least 600 bytes").to.be.greaterThanOrEqual(600);
+        // Two key pairs in armor: conservative lower bound of 800 chars
+        expect((pairsResult as string).length, "two key pairs must be at least 800 chars").to.be.greaterThanOrEqual(800);
 
         // 'all' includes the public-only key so its export must be strictly larger than 'pairs'
-        expect((allResult as Uint8Array).length, "'all' must include more data than 'pairs' (public-only key adds bytes)")
-            .to.be.greaterThan((pairsResult as Uint8Array).length);
+        expect((allResult as string).length, "'all' must include more data than 'pairs' (public-only key adds chars)")
+            .to.be.greaterThan((pairsResult as string).length);
     });
 
-    it('2. filter=<fingerprint>: returns ≥300 bytes for that specific key pair', async function () {
-        const result = await vscode.commands.executeCommand<Uint8Array | undefined>(
+    it('2. filter=<fingerprint>: returns ≥400 chars for that specific key pair', async function () {
+        const result = await vscode.commands.executeCommand<string | undefined>(
             '_gpg-bridge-agent.exportPublicKeys', fp1
         );
-        expect(result, 'filter by fingerprint should return key bytes').to.be.instanceOf(Uint8Array);
-        // Ed25519 primary + cv25519 subkey + UID + 2 signatures ≈ 350–400 bytes;
-        // 300 is a conservative lower bound for a single key pair
-        expect((result as Uint8Array).length, 'exported bytes should be at least 300').to.be.greaterThanOrEqual(300);
+        expect(result, 'filter by fingerprint should return armored key data').to.be.a('string');
+        expect(result).to.include('-----BEGIN PGP PUBLIC KEY BLOCK-----');
+        // Armored Ed25519 primary + cv25519 subkey + UID + signatures ≈ 500–600 chars;
+        // 400 is a conservative lower bound for a single key pair
+        expect((result as string).length, 'exported armor should be at least 400 chars').to.be.greaterThanOrEqual(400);
     });
 
-    it('3. filter=<email>: returns ≥300 bytes for the matching key pair', async function () {
-        const result = await vscode.commands.executeCommand<Uint8Array | undefined>(
+    it('3. filter=<email>: returns ≥400 chars for the matching key pair', async function () {
+        const result = await vscode.commands.executeCommand<string | undefined>(
             '_gpg-bridge-agent.exportPublicKeys', 'phase4-export@example.com'
         );
-        expect(result, 'filter by email should return key bytes').to.be.instanceOf(Uint8Array);
-        expect((result as Uint8Array).length, 'exported bytes should be at least 300').to.be.greaterThanOrEqual(300);
+        expect(result, 'filter by email should return armored key data').to.be.a('string');
+        expect(result).to.include('-----BEGIN PGP PUBLIC KEY BLOCK-----');
+        expect((result as string).length, 'exported armor should be at least 400 chars').to.be.greaterThanOrEqual(400);
     });
 
     it("4. filter='unknown@nomatch.invalid': gpg --export returns zero bytes → returns undefined", async function () {
-        const result = await vscode.commands.executeCommand<Uint8Array | undefined>(
+        const result = await vscode.commands.executeCommand<string | undefined>(
             '_gpg-bridge-agent.exportPublicKeys', 'unknown@nomatch.invalid'
         );
         expect(result, 'unknown filter should return undefined').to.be.undefined;
