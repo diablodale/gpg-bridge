@@ -71,6 +71,10 @@
       {
         "command": "gpg-bridge-request.stop",
         "title": "GPG Bridge Request: Stop"
+      },
+      {
+        "command": "gpg-bridge-request.syncPublicKeys",
+        "title": "GPG Bridge Request: Sync public keys"
       }
     ],
     "configuration": {
@@ -80,6 +84,21 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for troubleshooting"
+        },
+        "gpgBridgeRequest.autoSyncPublicKeys": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Automatically sync public keys from the local keyring on extension activation. Set to a non-empty value to enable.\n\n| Value | Effect |\n|---|---|\n| *(empty)* | Disabled — no auto-sync |\n| `all` | Export all public keys from the local keyring |\n| `pairs` | Export only public keys from matching key pairs |\n| any other string | Passed verbatim to `gpg --export` as an identifier (fingerprint, email, etc.) |",
+          "enum": [
+            "",
+            "all",
+            "pairs"
+          ],
+          "enumDescriptions": [
+            "Disabled — no auto-sync on activation",
+            "Export all public keys",
+            "Export only public keys from matching key pairs"
+          ]
         }
       }
     }

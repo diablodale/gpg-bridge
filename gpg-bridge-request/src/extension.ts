@@ -11,11 +11,14 @@
 
 import * as vscode from 'vscode';
 import { RequestProxy } from './services/requestProxy';
+import { PublicKeySync } from './services/publicKeySync';
 import { extractErrorMessage } from '@gpg-bridge/shared';
+import type { KeyFilter } from '@gpg-bridge/shared';
 import { VSCodeCommandExecutor } from './services/commandExecutor';
 import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-bridge/shared';
 
 let requestProxyService: RequestProxy | null = null;
+let publicKeySyncService: PublicKeySync | null = null;
 let outputChannel: vscode.OutputChannel;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -42,16 +45,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             vscode.commands.registerCommand('gpg-bridge-request.stop', async () => {
                 await stopRequestProxy();
             }),
+            vscode.commands.registerCommand('gpg-bridge-request.syncPublicKeys', async (filter?: KeyFilter) => {
+                await publicKeySyncService?.syncPublicKeys(filter);
+            }),
             outputChannel
         );
 
-        // Integration test helper command — only registered when integration tests are running
-        // without a configured GNUPGHOME (Phase 2 and Phase 5 runners). Tests connect to the
-        // proxy socket directly via AssuanSocketClient and need the socket path via this command.
-        // Phase 3 sets GNUPGHOME so gpg finds the socket at $GNUPGHOME/S.gpg-agent naturally;
-        // this command is not needed and must not be registered there.
+        // Integration test helper commands — only registered when integration tests are running
+        // without a configured GNUPGHOME (e.g. Phase 2 and Phase 5 runners).
         if (isIntegrationTestEnvironment() && !process.env.GNUPGHOME) {
             context.subscriptions.push(
+                // Returns the socket path that the request proxy is listening on, or null if not running.
+                // Tests connect to the proxy socket directly via AssuanSocketClient and need the socket
+                // path via this command. Phase 3 sets GNUPGHOME so gpg finds the socket
+                // at $GNUPGHOME/S.gpg-agent naturally; this command is not needed and must not be registered there.
                 vscode.commands.registerCommand('_gpg-bridge-request.test.getSocketPath', () => {
                     return requestProxyService?.getSocketPath() ?? null;
                 })
@@ -63,6 +70,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // tests get full extension initialization (unit tests still skip init).
         if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
             try {
+                void startPublicKeySync(); // fire and forget
                 await startRequestProxy();
             } catch (err) {
                 // Error already logged by handler, but show output
@@ -73,6 +81,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const message = extractErrorMessage(error);
         outputChannel.appendLine(`Error: ${message}`);
         outputChannel.show(true);
+    }
+}
+
+// Export public keys from the agent and import remotely on the request
+// Run once on extension activation, should not re-run on request stop/restart
+async function startPublicKeySync(): Promise<void> {
+    if (publicKeySyncService) {
+        return;
+    }
+
+    try {
+        // Create a log callback that respects the debugLogging setting
+        const config = vscode.workspace.getConfiguration('gpgBridgeRequest');
+        const debugLogging = config.get<boolean>('debugLogging') || true;   // TODO remove forced debug logging
+        const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
+
+        // Create the service and start auto-syncing with the current filter config
+        publicKeySyncService = new PublicKeySync({ logCallback });
+        const autoSyncFilter = config.get<string>('autoSyncPublicKeys') ?? '';
+        void publicKeySyncService.autoSync(autoSyncFilter);
+    } catch (error) {
+        const message = `Failed to start public key sync: ${extractErrorMessage(error)}`;
+        outputChannel.appendLine(message);
+        outputChannel.show(true);
+        vscode.window.showErrorMessage(message);
+        throw error
     }
 }
 

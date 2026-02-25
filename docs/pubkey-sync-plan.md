@@ -661,42 +661,46 @@ suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyEx
 
 ---
 
-### Phase 6 — Request extension: `syncPublicKeys` command and auto-sync
+### Phase 6 — Request extension: `syncPublicKeys` command and auto-sync ✅ complete
 
 **Files changed**: `gpg-bridge-request/src/services/publicKeySync.ts` (new),
-`gpg-bridge-request/src/extension.ts`, `gpg-bridge-request/package.json`
+`gpg-bridge-request/src/extension.ts`,
+`gpg-bridge-request/package.json`,
+`gpg-bridge-request/src/test/publicKeySync.test.ts` (new),
+`gpg-bridge-request/test/integration/requestProxyIntegration.test.ts` (Phase 6 integration tests)
 
 #### Work items
-- [ ] Create `gpg-bridge-request/src/services/publicKeySync.ts`
-- [ ] Implement `syncPublicKeys(filter?: KeyFilter)`: call
+- [x] Create `gpg-bridge-request/src/services/publicKeySync.ts`
+- [x] Implement `syncPublicKeys(filter?: KeyFilter)`: call
   `executeCommand('_gpg-bridge-agent.exportPublicKeys', filter)` → if `undefined`, no-op →
   else call `gpgcli.importPublicKeys(data)` → show info message + log to output channel
-- [ ] Handle `executeCommand` rejection (agent absent): show VS Code error message
-- [ ] Register `gpg-bridge-request.syncPublicKeys` user command in `extension.ts`
-- [ ] Add auto-sync `onActivate` hook in `extension.ts`: if `autoSyncPublicKeys` setting is
+- [x] Handle `executeCommand` rejection (agent absent): show VS Code error message
+- [x] Register `gpg-bridge-request.syncPublicKeys` user command in `extension.ts`
+- [x] Add auto-sync `onActivate` hook in `extension.ts`: if `autoSyncPublicKeys` setting is
   non-empty, call `syncPublicKeys(settingValue)` once on activation
-- [ ] Add `gpg-bridge-request.syncPublicKeys` to `contributes.commands` in `package.json`
-- [ ] Add `gpgBridgeRequest.autoSyncPublicKeys` string setting in `package.json` (default
+- [x] Add `gpg-bridge-request.syncPublicKeys` to `contributes.commands` in `package.json`
+- [x] Add `gpgBridgeRequest.autoSyncPublicKeys` string setting in `package.json` (default
   `""`, enum suggestions `"all"` and `"pairs"`, with descriptions)
 
 #### Test cases (`gpg-bridge-request/src/test/publicKeySync.test.ts`)
 
 **Unit tests** (mocked `GpgCli` and mocked `executeCommand` — no real gpg or cross-host call):
-- [ ] Manual trigger with no `autoSyncPublicKeys` setting: calls `executeCommand('_gpg-bridge-agent.exportPublicKeys')` with no filter
-- [ ] Auto-sync with `autoSyncPublicKeys = "pairs"`: calls `executeCommand` with `"pairs"` as filter
-- [ ] Auto-sync with `autoSyncPublicKeys = "all"`: calls `executeCommand` with `"all"` as filter
-- [ ] Auto-sync with `autoSyncPublicKeys = "user@example.com"`: calls `executeCommand` with the email as filter
-- [ ] `executeCommand` returns `undefined` (user cancelled / empty export): `importPublicKeys` not called; no error
-- [ ] Successful import: `importPublicKeys` is called with the `Uint8Array`; VS Code info message shown; result written to output channel
-- [ ] Agent absent (`executeCommand` rejects): VS Code error message shown; no import attempted
-- [ ] Auto-sync does not fire when `autoSyncPublicKeys` is empty string
-- [ ] Auto-sync fires exactly once at activation; a subsequent proxy stop/restart does not re-trigger it
+- [x] Manual trigger with no `autoSyncPublicKeys` setting: calls `executeCommand('_gpg-bridge-agent.exportPublicKeys')` with no filter
+- [x] Auto-sync with `autoSyncPublicKeys = "pairs"`: calls `executeCommand` with `"pairs"` as filter
+- [x] Auto-sync with `autoSyncPublicKeys = "all"`: calls `executeCommand` with `"all"` as filter
+- [x] Auto-sync with `autoSyncPublicKeys = "user@example.com"`: calls `executeCommand` with the email as filter
+- [x] `executeCommand` returns `undefined` (user cancelled / empty export): `importPublicKeys` not called; no error
+- [x] Successful import: `importPublicKeys` is called with the `Uint8Array`; VS Code info message shown; result written to output channel
+- [x] Agent absent (`executeCommand` rejects): VS Code error message shown; no import attempted
+- [x] Auto-sync does not fire when `autoSyncPublicKeys` is empty string
+- [x] Auto-sync fires exactly once at activation; a subsequent proxy stop/restart does not re-trigger it
 
 **Integration tests** (real gpg via `GpgTestHelper` on the remote host; `executeCommand`
 stubbed to supply key bytes — the cross-host VS Code bridge cannot be replicated in automated tests,
-but the gpg import subprocess is real and isolated):
-- [ ] Import round-trip: stub `executeCommand` to return the key bytes exported in Phase 4
+but the gpg import subprocess is real. Registered as `_gpg-bridge-request.test.syncPublicKeysWithBytes`
+test helper command in extension.ts; only registered in integration test environment without GNUPGHOME):
+- [x] Import round-trip: stub `executeCommand` to return the key bytes exported in Phase 4
   integration tests; `importPublicKeys` runs real `gpg --import` against the isolated remote
   keyring; result has `imported: 1`; key appears in that keyring
-- [ ] Re-import of the same key against the same isolated keyring: result has `unchanged: 1, imported: 0`
-- [ ] VS Code info message content includes the correct imported count from the parsed result
+- [x] Re-import of the same key against the same isolated keyring: result has `unchanged: 1, imported: 0`
+- [x] VS Code info message content includes the correct imported count from the parsed result
