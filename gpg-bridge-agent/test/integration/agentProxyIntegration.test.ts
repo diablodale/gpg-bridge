@@ -371,6 +371,104 @@ describe('Phase 3 — AgentProxy start/stop lifecycle', function () {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 4 — exportPublicKeys command
+// ---------------------------------------------------------------------------
+
+describe('Phase 4 — exportPublicKeys command', function () {
+    this.timeout(60000);
+
+    let gpg: GpgTestHelper;
+    let fp1: string;   // full key pair #1
+    let fp2: string;   // full key pair #2
+    let fpPubOnly: string; // public-only key
+
+    before(async function () {
+        gpg = new GpgTestHelper({ gnupgHome: process.env.GNUPGHOME! });
+
+        // Two full key pairs owned by this keyring
+        await gpg.generateKey('Phase4 Export User', 'phase4-export@example.com');
+        fp1 = await gpg.getFingerprint('phase4-export@example.com');
+
+        await gpg.generateKey('Phase4 Second User', 'phase4-second@example.com');
+        fp2 = await gpg.getFingerprint('phase4-second@example.com');
+
+        // Public-only key: generate in an isolated temp keyring, export the public portion,
+        // import it into GNUPGHOME.  No private key exists here for this identity, so
+        // listPairedKeys() must exclude it from 'pairs' filter results.
+        const tempGpg = new GpgTestHelper(); // owns its own temp dir
+        try {
+            await tempGpg.generateKey('Phase4 PubOnly', 'phase4-pubonly@example.com');
+            fpPubOnly = await tempGpg.getFingerprint('phase4-pubonly@example.com');
+            const armoredPub = await tempGpg.exportPublicKey(fpPubOnly);
+            await gpg.importPublicKey(armoredPub);
+
+        } finally {
+            await tempGpg.cleanup();
+        }
+
+        // stop any running agent to ensure a clean state for the tests
+        await vscode.commands.executeCommand('gpg-bridge-agent.stop');
+    });
+
+    after(async function () {
+        // Delete all key pairs (secret and/or public).
+        await gpg.deleteKey(fp1);
+        await gpg.deleteKey(fp2);
+        await gpg.deleteKey(fpPubOnly);
+    });
+
+    beforeEach(async function () {
+        await vscode.commands.executeCommand('gpg-bridge-agent.start');
+    });
+
+    afterEach(async function () {
+        await vscode.commands.executeCommand('gpg-bridge-agent.stop');
+    });
+
+    it("1. filter='pairs': returns both key pairs and excludes the public-only key", async function () {
+        const [pairsResult, allResult] = await Promise.all([
+            vscode.commands.executeCommand<Uint8Array | undefined>('_gpg-bridge-agent.exportPublicKeys', 'pairs'),
+            vscode.commands.executeCommand<Uint8Array | undefined>('_gpg-bridge-agent.exportPublicKeys', 'all')
+        ]);
+        expect(pairsResult, "filter='pairs' should return key bytes").to.be.instanceOf(Uint8Array);
+        expect(allResult,   "filter='all' should return key bytes").to.be.instanceOf(Uint8Array);
+
+        // Two key pairs: Ed25519 primary + cv25519 subkey + UID + 2 signatures ≈ 350–400 bytes each;
+        // 600 is a conservative lower bound for two key pairs
+        expect((pairsResult as Uint8Array).length, "two key pairs must be at least 600 bytes").to.be.greaterThanOrEqual(600);
+
+        // 'all' includes the public-only key so its export must be strictly larger than 'pairs'
+        expect((allResult as Uint8Array).length, "'all' must include more data than 'pairs' (public-only key adds bytes)")
+            .to.be.greaterThan((pairsResult as Uint8Array).length);
+    });
+
+    it('2. filter=<fingerprint>: returns ≥300 bytes for that specific key pair', async function () {
+        const result = await vscode.commands.executeCommand<Uint8Array | undefined>(
+            '_gpg-bridge-agent.exportPublicKeys', fp1
+        );
+        expect(result, 'filter by fingerprint should return key bytes').to.be.instanceOf(Uint8Array);
+        // Ed25519 primary + cv25519 subkey + UID + 2 signatures ≈ 350–400 bytes;
+        // 300 is a conservative lower bound for a single key pair
+        expect((result as Uint8Array).length, 'exported bytes should be at least 300').to.be.greaterThanOrEqual(300);
+    });
+
+    it('3. filter=<email>: returns ≥300 bytes for the matching key pair', async function () {
+        const result = await vscode.commands.executeCommand<Uint8Array | undefined>(
+            '_gpg-bridge-agent.exportPublicKeys', 'phase4-export@example.com'
+        );
+        expect(result, 'filter by email should return key bytes').to.be.instanceOf(Uint8Array);
+        expect((result as Uint8Array).length, 'exported bytes should be at least 300').to.be.greaterThanOrEqual(300);
+    });
+
+    it("4. filter='unknown@nomatch.invalid': gpg --export returns zero bytes → returns undefined", async function () {
+        const result = await vscode.commands.executeCommand<Uint8Array | undefined>(
+            '_gpg-bridge-agent.exportPublicKeys', 'unknown@nomatch.invalid'
+        );
+        expect(result, 'unknown filter should return undefined').to.be.undefined;
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

@@ -13,8 +13,9 @@ import * as fs from 'fs';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { log, encodeProtocolData, decodeProtocolData, parseSocketFile, extractErrorMessage, sanitizeForLog, detectResponseCompletion, cleanupSocket } from '@gpg-bridge/shared';
-import type { LogConfig, IFileSystem, ISocketFactory, ISessionManager, IGpgCliFactory } from '@gpg-bridge/shared';
+import type { LogConfig, IFileSystem, ISocketFactory, ISessionManager, IGpgCliFactory, KeyFilter } from '@gpg-bridge/shared';
 import { GpgCli } from '@gpg-bridge/shared';
+import { exportPublicKeys, type PublicKeyExportDeps } from './publicKeyExport';
 
 // ============================================================================
 // State Machine Type Definitions
@@ -911,6 +912,17 @@ export class AgentProxy {
                 });
             }
         });
+    }
+
+    /**
+     * Export public keys from the GPG keyring.
+     * Delegates to the `publicKeyExport` service; throws if `start()` has not been called.
+     */
+    public async exportPublicKeys(filter?: KeyFilter, deps?: Partial<PublicKeyExportDeps>): Promise<Uint8Array | undefined> {
+        if (!this.gpgCli) {
+            throw new Error('Agent proxy not started — call start() first');
+        }
+        return exportPublicKeys(this.gpgCli, filter, deps);
     }
 
     public isRunning(): boolean {

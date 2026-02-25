@@ -584,44 +584,46 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 
 ---
 
-### Phase 4 — Agent extension: `exportPublicKeys` command
+### Phase 4 — Agent extension: `exportPublicKeys` command ✅ complete
 
 **Files changed**: `gpg-bridge-agent/src/services/publicKeyExport.ts` (new),
-`gpg-bridge-agent/src/extension.ts`
+`gpg-bridge-agent/src/extension.ts`, `gpg-bridge-agent/src/services/agentProxy.ts`
 
 #### Work items
-- [ ] Create `gpg-bridge-agent/src/services/publicKeyExport.ts`
-- [ ] Implement headless path: `filter === 'pairs'` → `listPairedKeys()` →
+- [x] Create `gpg-bridge-agent/src/services/publicKeyExport.ts`
+- [x] Implement headless path: `filter === 'pairs'` → `listPairedKeys()` →
   `exportPublicKeys(keys.map(k => k.fingerprint).join(' '))`
-- [ ] Implement headless path: `filter === 'all'` → `exportPublicKeys()` (no args)
-- [ ] Implement headless path: any other string → `exportPublicKeys(filter)` directly
-- [ ] Implement interactive path: no filter → `listPairedKeys()` → build QuickPick items
+- [x] Implement headless path: `filter === 'all'` → `exportPublicKeys()` (no args)
+- [x] Implement headless path: any other string → `exportPublicKeys(filter)` directly
+- [x] Implement interactive path: no filter → `listPairedKeys()` → build QuickPick items
   as `<User-ID> [<short-key-ID>]` from `PairedKeyInfo.userIds[0]` + last 8 chars of `fingerprint`
   → multi-select → `exportPublicKeys(selected.map(k => k.fingerprint).join(' '))`
-- [ ] Handle user cancels QuickPick → return `undefined`
-- [ ] Handle zero-byte export result → show VS Code warning message → return `undefined`
-- [ ] Register `_gpg-bridge-agent.exportPublicKeys` internal command in `extension.ts`,
-  wired to the service function
+- [x] Handle user cancels QuickPick → return `undefined`
+- [x] Handle zero-byte export result → show VS Code warning message → return `undefined`
+- [x] Register `_gpg-bridge-agent.exportPublicKeys` internal command in `extension.ts`,
+  wired to the service function via `AgentProxy.exportPublicKeys(filter, deps?)`
 
 #### Test cases (`gpg-bridge-agent/src/test/publicKeyExport.test.ts`)
 
 **Unit tests** (mocked `GpgCli` via `*Deps` — no real gpg required):
-- [ ] `filter = 'pairs'`: calls `listPairedKeys()`, passes all fingerprints joined to `exportPublicKeys()`
-- [ ] `filter = 'all'`: calls `exportPublicKeys()` with no args
-- [ ] `filter = 'user@example.com'`: passes string directly to `exportPublicKeys()`
-- [ ] `filter = undefined`: QuickPick is shown, populated with items from `listPairedKeys()`
-- [ ] `filter = undefined`, user cancels QuickPick: returns `undefined`; `exportPublicKeys()` not called
-- [ ] Zero-byte export result: VS Code warning message shown; returns `undefined`
-- [ ] QuickPick items are formatted as `<User-ID> [<short-key-ID>]`
-- [ ] Multi-select: all selected fingerprints are passed in a single `exportPublicKeys()` call
+- [x] `filter = 'pairs'`: calls `listPairedKeys()`, passes all fingerprints joined to `exportPublicKeys()`
+- [x] `filter = 'all'`: calls `exportPublicKeys()` with no args
+- [x] `filter = 'user@example.com'`: passes string directly to `exportPublicKeys()`
+- [x] `filter = undefined`: QuickPick is shown, populated with items from `listPairedKeys()`
+- [x] `filter = undefined`, user cancels QuickPick: returns `undefined`; `exportPublicKeys()` not called
+- [x] Zero-byte export result: VS Code warning message shown; returns `undefined`
+- [x] QuickPick items are formatted as `<User-ID> [<short-key-ID>]`
+- [x] Multi-select: all selected fingerprints are passed in a single `exportPublicKeys()` call
 
 **Integration tests** (real gpg via `GpgTestHelper`; tests share the existing agent integration
 suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyExport.test.ts` to
 `suite/index.ts` if the glob doesn't already support it; the GNUPGHOME and live gpg-agent are already in place):
-- [ ] `filter = 'pairs'`: returns non-empty `Uint8Array` containing the test key pair's public key
-- [ ] `filter = 'all'`: returns non-empty `Uint8Array`
-- [ ] `filter = <test key fingerprint>`: returns non-empty `Uint8Array` matching that key
-- [ ] `filter = 'unknown@nomatch.invalid'`: `gpg --export` returns zero bytes → warning shown; returns `undefined`
+- [x] Keyring has 2 full key pairs + 1 public-only key (imported from isolated temp keyring)
+- [x] `filter = 'pairs'`: returns `Uint8Array` ≥ 600 bytes (2 pairs); `filter = 'all'` strictly
+  larger than `'pairs'` result (proves public-only key is included in `all` but excluded from `pairs`)
+- [x] `filter = <test key fingerprint>`: returns `Uint8Array` ≥ 300 bytes matching that key
+- [x] `filter = <email>`: returns `Uint8Array` ≥ 300 bytes matching that key
+- [x] `filter = 'unknown@nomatch.invalid'`: `gpg --export` returns zero bytes → warning shown; returns `undefined`
 
 ---
 

@@ -1,6 +1,7 @@
 ﻿import * as vscode from 'vscode';
 import { AgentProxy } from './services/agentProxy';
 import { GpgCli, isTestEnvironment, isIntegrationTestEnvironment, extractErrorMessage } from '@gpg-bridge/shared';
+import type { KeyFilter } from '@gpg-bridge/shared';
 
 // Global agent proxy service instance
 let agentProxyService: AgentProxy | null = null;
@@ -29,6 +30,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand('_gpg-bridge-agent.connectAgent', connectAgent),
 		vscode.commands.registerCommand('_gpg-bridge-agent.sendCommands', sendCommands),
 		vscode.commands.registerCommand('_gpg-bridge-agent.disconnectAgent', disconnectAgent),
+		vscode.commands.registerCommand('_gpg-bridge-agent.exportPublicKeys', exportPublicKeysCommand),
 		// UI commands visible to user
 		vscode.commands.registerCommand('gpg-bridge-agent.start', startAgentProxy),
 		vscode.commands.registerCommand('gpg-bridge-agent.stop', stopAgentProxy),
@@ -70,6 +72,27 @@ export function deactivate() {
 // ==============================================================================
 // Command handlers for inter-extension communication
 // ==============================================================================
+
+/**
+ * Command: _gpg-bridge-agent.exportPublicKeys
+ *
+ * Called by request-proxy (or for manual use) to export public keys from the GPG keyring.
+ * Returns the exported key bytes as a Uint8Array, or undefined if nothing was exported.
+ */
+async function exportPublicKeysCommand(filter?: KeyFilter): Promise<Uint8Array | undefined> {
+	if (!agentProxyService) {
+		throw new Error('Agent proxy not initialized. Please start the extension.');
+	}
+	try {
+		const result = await agentProxyService.exportPublicKeys(filter);
+		outputChannel.appendLine(`[exportPublicKeys] filter=${filter ?? '(interactive)'} → ${result ? result.length : 0} bytes`);
+		return result;
+	} catch (error) {
+		const msg = extractErrorMessage(error);
+		outputChannel.appendLine(`[exportPublicKeys] Error: ${msg}`);
+		throw error;
+	}
+}
 
 /**
  * Command: _gpg-agent-proxy.connectAgent
