@@ -36,7 +36,7 @@ export interface PublicKeyExportDeps {
  *   - other string         → pass directly to `gpg --export` as an identifier
  *
  * Interactive path (UI required):
- *   - `filter === undefined` → show a multi-select QuickPick populated from paired keys;
+ *   - `filter === undefined` → show a multi-select QuickPick populated from all public keys;
  *     QuickPick item label is `<first-user-ID> [<last-8-chars-of-fingerprint>]`.
  *     User cancel → returns `undefined` without exporting.
  *
@@ -67,8 +67,8 @@ export async function exportPublicKeys(
     } else if (filter !== undefined) {
         keyData = await gpgCli.exportPublicKeys(filter);
     } else {
-        // Interactive: populate QuickPick from owned key pairs
-        const keys = await gpgCli.listPairedKeys();
+        // Interactive: populate QuickPick from all public keys
+        const keys = await gpgCli.listPublicKeys();
         const items: vscode.QuickPickItem[] = keys.map(k => ({
             label: `${k.userIds[0] ?? '(no user ID)'} [${k.fingerprint.slice(-8)}]`,
             description: k.fingerprint,

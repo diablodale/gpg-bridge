@@ -200,7 +200,7 @@ describe('PublicKeySync', () => {
 
         expect(m.gpgCli.importCalls, 'importPublicKeys must not be called').to.have.length(0);
         expect(m.errorMessages, 'exactly one error message expected').to.have.length(1);
-        expect(m.errorMessages[0]).to.include('Could not export public keys');
+        expect(m.errorMessages[0]).to.include('Request agent export public keys failed');
         expect(m.infoMessages, 'no info message expected').to.have.length(0);
     });
 

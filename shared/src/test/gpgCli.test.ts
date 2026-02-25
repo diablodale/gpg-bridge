@@ -1,5 +1,5 @@
 /**
- * Unit tests for GpgCli, parsePairedKeys, and parseImportResult.
+ * Unit tests for GpgCli, parsePairedKeys, parsePublicKeys, and parseImportResult.
  *
  * All subprocess calls are mocked — no real gpg required, no keyring access.
  * Dependency injection via GpgCliDeps parameter of the GpgCli constructor.
@@ -11,7 +11,9 @@ import * as path from 'path';
 import {
     GpgCli,
     parsePairedKeys,
+    parsePublicKeys,
     parseImportResult,
+    unescapeGpgColonField,
     type GpgCliDeps,
     type ExecFileFn,
     type SpawnForStdinFn,
@@ -212,6 +214,68 @@ describe('GpgCli', () => {
             expect(capture.lastArgs!.binary).to.equal(FAKE_GPG_EXE);
             expect(capture.lastArgs!.args).to.deep.equal(['--list-secret-keys', '--with-colons']);
         });
+
+        it('decodes UTF-8 UIDs correctly (e.g. umlauts appear as single characters)', async () => {
+            // run() is called with encoding:'utf8' for --with-colons output;
+            // the mock returns the UTF-8 string directly, as Node would.
+            const utf8Uid = 'Horst M\u00fcller <horst@example.com>';  // \u00fc = ü
+            const output = [
+                'sec::255:::::::AABBCCDD:::sc:',
+                'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+                `uid:::::::::${utf8Uid}::::::::::0:`,
+            ].join('\n');
+            const cli = makeCli(execReturns(output));
+            const keys = await cli.listPairedKeys();
+            expect(keys[0].userIds[0]).to.equal(utf8Uid);
+        });
+    });
+
+    // ============================================================================
+    // listPublicKeys
+    // ============================================================================
+
+    describe('listPublicKeys()', () => {
+        it('parses --with-colons output and returns PairedKeyInfo[]', async () => {
+            // Minimal colon-format output for one public key with one UID
+            const output = [
+                'pub::255:20230101T000000Z:::::::sc:::::23::0:',
+                'fpr:::::::::AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD:',
+                'uid:::1::::::Alice <alice@example.com>:::::::::0:',
+            ].join('\n');
+            const cli = makeCli(execReturns(output));
+            const keys = await cli.listPublicKeys();
+            expect(keys).to.have.length(1);
+            expect(keys[0].fingerprint).to.equal('AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD');
+            expect(keys[0].userIds).to.deep.equal(['Alice <alice@example.com>']);
+        });
+
+        it('returns empty array when output is empty', async () => {
+            const cli = makeCli(execReturns(''));
+            const keys = await cli.listPublicKeys();
+            expect(keys).to.deep.equal([]);
+        });
+
+        it('passes correct arguments to execFileAsync', async () => {
+            const capture = execCapture('');
+            const cli = makeCli(capture.fn);
+            await cli.listPublicKeys();
+            expect(capture.lastArgs!.binary).to.equal(FAKE_GPG_EXE);
+            expect(capture.lastArgs!.args).to.deep.equal(['--list-keys', '--with-colons']);
+        });
+
+        it('decodes UTF-8 UIDs correctly (e.g. umlauts appear as single characters)', async () => {
+            // run() is called with encoding:'utf8' for --with-colons output;
+            // the mock returns the UTF-8 string directly, as Node would.
+            const utf8Uid = 'K\u00f6nig Josef <josef@example.com>';  // \u00f6 = ö
+            const output = [
+                'pub::255:::::::AABBCCDD:::sc:',
+                'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+                `uid:::::::::${utf8Uid}::::::::::0:`,
+            ].join('\n');
+            const cli = makeCli(execReturns(output));
+            const keys = await cli.listPublicKeys();
+            expect(keys[0].userIds[0]).to.equal(utf8Uid);
+        });
     });
 
     // ============================================================================
@@ -394,6 +458,18 @@ describe('parsePairedKeys()', () => {
         expect(result).to.deep.equal([]);
     });
 
+    it('unescapes \\xNN sequences in UID field (e.g. \\x3a → colon)', () => {
+        // GPG escapes `:` as `\x3a` to avoid breaking the colon-delimited format;
+        // any UID containing a literal colon must be round-tripped correctly.
+        const output = [
+            'sec::255:::::::KEY1:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Display Name \\x3a Subtitle <test@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePairedKeys(output);
+        expect(result[0].userIds[0]).to.equal('Display Name : Subtitle <test@example.com>');
+    });
+
     it('ignores grp: records between fpr: and uid: without affecting parsing', () => {
         // grp: (keygrip) records appear after every fpr: in real gpg output
         const output = [
@@ -537,6 +613,147 @@ describe('parsePairedKeys()', () => {
             'Test User Two <two@example.com>',
             'Test User Two Alt <two.alt@example.com>',
         ]);
+    });
+});
+
+// ============================================================================
+// parsePublicKeys (pure function — no subprocess)
+// ============================================================================
+
+describe('parsePublicKeys()', () => {
+    it('returns empty array for empty input', () => {
+        expect(parsePublicKeys('')).to.deep.equal([]);
+    });
+
+    it('parses a single public key with one UID', () => {
+        const output = [
+            'pub::255:::::::AABBCCDD:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.have.length(1);
+        expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+        expect(result[0].userIds).to.deep.equal(['Alice <alice@example.com>']);
+    });
+
+    it('parses multiple public keys', () => {
+        const output = [
+            'pub::255:::::::KEY1:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+            'pub::255:::::::KEY2:::sc:',
+            'fpr:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB:',
+            'uid:::::::::Bob <bob@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.have.length(2);
+        expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+        expect(result[1].fingerprint).to.equal('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB');
+    });
+
+    it('collects multiple UIDs for a single public key', () => {
+        const output = [
+            'pub::255:::::::KEY1:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+            'uid:::::::::Alice Work <alice@work.example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result[0].userIds).to.deep.equal([
+            'Alice <alice@example.com>',
+            'Alice Work <alice@work.example.com>',
+        ]);
+    });
+
+    it('does not include subkey fingerprints as the primary fingerprint', () => {
+        // sub: is the public-keyring equivalent of ssb: in the secret keyring
+        const output = [
+            'pub::255:::::::KEY1:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+            'sub::255:::::::SUB1:::e:',
+            'fpr:::::::::CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.have.length(1);
+        expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    });
+
+    it('skips keys with no fingerprint', () => {
+        const output = [
+            'pub::255:::::::KEY1:::sc:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.deep.equal([]);
+    });
+
+    it('unescapes \\xNN sequences in UID field (e.g. \\x3a → colon)', () => {
+        const output = [
+            'pub::255:::::::KEY1:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Display Name \\x3a Subtitle <test@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result[0].userIds[0]).to.equal('Display Name : Subtitle <test@example.com>');
+    });
+
+    it('ignores grp: records between fpr: and uid: without affecting parsing', () => {
+        const output = [
+            'pub::255:::::::KEY1:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'grp:::::::::0000000000000000000000000000000000000000:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.have.length(1);
+        expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+        expect(result[0].userIds).to.deep.equal(['Alice <alice@example.com>']);
+    });
+
+    it('does not parse sec: records (secret keyring format — wrong function)', () => {
+        // parsePairedKeys handles sec:; parsePublicKeys must ignore sec: records
+        const output = [
+            'sec::255:::::::KEY1:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.deep.equal([]);
+    });
+});
+
+// ============================================================================
+// unescapeGpgColonField (pure function — no subprocess)
+// ============================================================================
+
+describe('unescapeGpgColonField()', () => {
+    it('returns plain strings unchanged', () => {
+        expect(unescapeGpgColonField('Alice <alice@example.com>')).to.equal('Alice <alice@example.com>');
+    });
+
+    it('unescapes \\x3a to a colon', () => {
+        // GPG escapes `:` as `\x3a` to avoid breaking its colon-delimited format
+        expect(unescapeGpgColonField('Display Name \\x3a Extra')).to.equal('Display Name : Extra');
+    });
+
+    it('unescapes \\x0a to a newline', () => {
+        expect(unescapeGpgColonField('line1\\x0aline2')).to.equal('line1\nline2');
+    });
+
+    it('unescapes multiple escape sequences in a single field', () => {
+        expect(unescapeGpgColonField('a\\x3ab\\x3ac')).to.equal('a:b:c');
+    });
+
+    it('is case-insensitive for hex digits', () => {
+        expect(unescapeGpgColonField('a\\x3Ab')).to.equal('a:b');
+        expect(unescapeGpgColonField('a\\x3ab')).to.equal('a:b');
+    });
+
+    it('does not alter UTF-8 characters', () => {
+        // UIDs come in as proper UTF-8 strings; unescapeGpgColonField must not corrupt them
+        expect(unescapeGpgColonField('M\u00fcller')).to.equal('M\u00fcller');
     });
 });
 

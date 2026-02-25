@@ -80,7 +80,7 @@ export class PublicKeySync {
      *   - omitted    — agent shows an interactive QuickPick; may return `undefined`
      */
     async syncPublicKeys(filter?: KeyFilter): Promise<void> {
-        log(this.config, `[syncPublicKeys] Requesting export. filter=${filter ?? '(interactive)'}`);
+        log(this.config, `[syncPublicKeys] Request agent export public keys: ${filter ?? '(interactive)'}`);
 
         let keyData: string | undefined;
         try {
@@ -88,7 +88,7 @@ export class PublicKeySync {
             keyData = await this.executeCommandFn('_gpg-bridge-agent.exportPublicKeys', ...args) as string | undefined;
         } catch (err) {
             // Agent extension is absent, not initialized, or threw during export
-            const msg = `Could not export public keys from agent: ${extractErrorMessage(err)}`;
+            const msg = `Request agent export public keys failed: ${extractErrorMessage(err)}`;
             log(this.config, `[syncPublicKeys] ${msg}`);
             this.showErrorMessageFn(msg);
             return;
@@ -96,13 +96,13 @@ export class PublicKeySync {
 
         if (keyData === undefined) {
             // User cancelled the interactive QuickPick — nothing to import, no error
-            log(this.config, '[syncPublicKeys] No keys to import (agent returned undefined)');
+            log(this.config, '[syncPublicKeys] No public keys to import');
             return;
         }
 
         const result = await this.gpgCli.importPublicKeys(keyData);
         const summary = `imported: ${result.imported}, unchanged: ${result.unchanged}, errors: ${result.errors}`;
-        log(this.config, `[syncPublicKeys] Import complete — ${summary}`);
-        this.showInformationMessageFn(`GPG Bridge: public key sync complete — ${summary}`);
+        log(this.config, `[syncPublicKeys] Public key import complete - ${summary}`);
+        this.showInformationMessageFn(`GPG Bridge: public key sync complete - ${summary}`);
     }
 }

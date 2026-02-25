@@ -6,6 +6,7 @@
  *     well-known Gpg4win locations (Windows fallback)
  *   - Optional GNUPGHOME injection into every subprocess call
  *   - gpgconf --list-dirs<br>   - gpg --list-secret-keys --with-colons  (listPairedKeys)
+ *   - gpg --list-keys         --with-colons  (listPublicKeys)
  *   - gpg --export                             (exportPublicKeys)
  *   - gpg --import via stdin                   (importPublicKeys)
  *
@@ -146,6 +147,25 @@ function defaultSpawnForStdin(
 }
 
 // ============================================================================
+// --with-colons field decoder (pure function — unit testable without subprocess)
+// ============================================================================
+
+/**
+ * Unescape a single field from GPG's `--with-colons` output.
+ *
+ * GPG escapes characters that would break the colon-delimited format:
+ *   `:` → `\x3a`,  `\n` → `\x0a`,  `\r` → `\x0d`,  NUL → `\x00`
+ *
+ * Other bytes — including raw UTF-8 sequences for non-ASCII characters — are
+ * passed through unchanged.
+ */
+export function unescapeGpgColonField(s: string): string {
+    return s.replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+    );
+}
+
+// ============================================================================
 // --with-colons output parser (pure function — unit testable without subprocess)
 // ============================================================================
 
@@ -183,11 +203,67 @@ export function parsePairedKeys(output: string): PairedKeyInfo[] {
             }
             expectingPrimaryFpr = false;
         } else if (recType === 'uid' && current) {
-            const uid = fields[9]?.trim() ?? '';
+            const uid = unescapeGpgColonField(fields[9]?.trim() ?? '');
             if (uid) {
                 current.userIds.push(uid);
             }
         } else if (recType === 'ssb') {
+            // Subkey — following fpr: records belong to the subkey, not the primary
+            expectingPrimaryFpr = false;
+        }
+    }
+
+    // Flush the last entry
+    if (current?.fingerprint) {
+        results.push(current);
+    }
+
+    return results;
+}
+
+// ============================================================================
+// gpg --list-keys parser (pure function — unit testable)
+// ============================================================================
+
+/**
+ * Parse `gpg --list-keys --with-colons` output into a flat array of public key info.
+ *
+ * Record layout (relevant fields only):
+ *   pub:  — primary key marker; starts a new entry
+ *   fpr:  — fingerprint; field[9] is the 40-char hex fingerprint
+ *   uid:  — user ID; field[9] is the UID string
+ *   sub:  — subkey marker; following fpr: records belong to the subkey, not primary
+ *
+ * The fingerprint immediately following a `pub:` record is the primary key fingerprint.
+ * All `uid:` records up to the next `pub:` (or end of output) belong to that key.
+ */
+export function parsePublicKeys(output: string): PairedKeyInfo[] {
+    const results: PairedKeyInfo[] = [];
+    let current: PairedKeyInfo | null = null;
+    let expectingPrimaryFpr = false;
+
+    for (const line of output.split('\n')) {
+        const fields = line.split(':');
+        const recType = fields[0];
+
+        if (recType === 'pub') {
+            // Save the previous complete entry before starting a new one
+            if (current?.fingerprint) {
+                results.push(current);
+            }
+            current = { fingerprint: '', userIds: [] };
+            expectingPrimaryFpr = true;
+        } else if (recType === 'fpr' && expectingPrimaryFpr) {
+            if (current) {
+                current.fingerprint = fields[9]?.trim() ?? '';
+            }
+            expectingPrimaryFpr = false;
+        } else if (recType === 'uid' && current) {
+            const uid = unescapeGpgColonField(fields[9]?.trim() ?? '');
+            if (uid) {
+                current.userIds.push(uid);
+            }
+        } else if (recType === 'sub') {
             // Subkey — following fpr: records belong to the subkey, not the primary
             expectingPrimaryFpr = false;
         }
@@ -319,9 +395,9 @@ export class GpgCli {
      * Run a subprocess. Rejects (throws) on non-zero exit or spawn error.
      * Use for operations where failure is unexpected (gpgconf, key listing, export).
      */
-    protected async run(binary: string, args: string[]): Promise<GpgExecResult> {
+    protected async run(binary: string, args: string[], encoding: BufferEncoding = 'latin1'): Promise<GpgExecResult> {
         const { stdout, stderr } = await this._execFileAsync(binary, args, {
-            encoding: 'latin1',
+            encoding,
             env: this.env,
             shell: false,   // never allow shell interpolation — binary is invoked directly
             timeout: 10000,
@@ -376,8 +452,18 @@ export class GpgCli {
      * Returns an empty array if the keyring has no secret keys.
      */
     async listPairedKeys(): Promise<PairedKeyInfo[]> {
-        const { stdout } = await this.run(this.gpgBin, ['--list-secret-keys', '--with-colons']);
+        const { stdout } = await this.run(this.gpgBin, ['--list-secret-keys', '--with-colons'], 'utf8');
         return parsePairedKeys(stdout);
+    }
+
+    /**
+     * List all public keys in the keyring (including keys without a corresponding secret key).
+     * Runs `gpg --list-keys --with-colons` and parses the output.
+     * Returns an empty array if the keyring has no public keys.
+     */
+    async listPublicKeys(): Promise<PairedKeyInfo[]> {
+        const { stdout } = await this.run(this.gpgBin, ['--list-keys', '--with-colons'], 'utf8');
+        return parsePublicKeys(stdout);
     }
 
     /**

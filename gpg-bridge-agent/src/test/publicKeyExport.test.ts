@@ -18,9 +18,11 @@ import type * as vscode from 'vscode';
 
 class MockExportGpgCli extends GpgCli {
     public listPairedKeysResult: PairedKeyInfo[] = [];
+    public listPublicKeysResult: PairedKeyInfo[] = [];
     public exportPublicKeysResult: string = 'FAKEARMOR';
     public exportPublicKeysCalls: Array<string | undefined> = [];
     public listPairedKeysCalled = false;
+    public listPublicKeysCalled = false;
 
     constructor() {
         // Explicit gpgBinDir + stubbed existsSync prevents base-class detection
@@ -30,6 +32,11 @@ class MockExportGpgCli extends GpgCli {
     override async listPairedKeys(): Promise<PairedKeyInfo[]> {
         this.listPairedKeysCalled = true;
         return this.listPairedKeysResult;
+    }
+
+    override async listPublicKeys(): Promise<PairedKeyInfo[]> {
+        this.listPublicKeysCalled = true;
+        return this.listPublicKeysResult;
     }
 
     override async exportPublicKeys(filter?: string): Promise<string> {
@@ -102,22 +109,23 @@ describe('exportPublicKeys', () => {
         expect(gpgCli.listPairedKeysCalled, 'listPairedKeys should not be called').to.be.false;
     });
 
-    it('filter=undefined: QuickPick is shown, populated with items from listPairedKeys()', async () => {
-        gpgCli.listPairedKeysResult = sampleKeys;
+    it('filter=undefined: QuickPick is shown, populated with items from listPublicKeys()', async () => {
+        gpgCli.listPublicKeysResult = sampleKeys;
         const { quickPick, calls } = makeQuickPickDep([
             { label: 'Alice <alice@example.com> [AAAABBBB]', description: sampleKeys[0].fingerprint },
         ]);
 
         await exportPublicKeys(gpgCli, undefined, { quickPick });
 
-        expect(gpgCli.listPairedKeysCalled, 'listPairedKeys should be called for QuickPick items').to.be.true;
+        expect(gpgCli.listPublicKeysCalled, 'listPublicKeys should be called for QuickPick items').to.be.true;
+        expect(gpgCli.listPairedKeysCalled, 'listPairedKeys should not be called in interactive mode').to.be.false;
         expect(calls).to.have.length(1);
         expect(calls[0].options.canPickMany).to.be.true;
         expect(calls[0].items).to.have.length(2);
     });
 
     it('filter=undefined, user cancels QuickPick: returns undefined; exportPublicKeys() not called', async () => {
-        gpgCli.listPairedKeysResult = sampleKeys;
+        gpgCli.listPublicKeysResult = sampleKeys;
         const { quickPick } = makeQuickPickDep(undefined);
 
         const result = await exportPublicKeys(gpgCli, undefined, { quickPick });
@@ -139,7 +147,7 @@ describe('exportPublicKeys', () => {
     });
 
     it("QuickPick items are formatted as '<User-ID> [<short-key-ID>]'", async () => {
-        gpgCli.listPairedKeysResult = sampleKeys;
+        gpgCli.listPublicKeysResult = sampleKeys;
         const { quickPick, calls } = makeQuickPickDep([]);
 
         await exportPublicKeys(gpgCli, undefined, { quickPick });
@@ -152,7 +160,7 @@ describe('exportPublicKeys', () => {
     });
 
     it('multi-select: all selected fingerprints are passed in a single exportPublicKeys() call', async () => {
-        gpgCli.listPairedKeysResult = sampleKeys;
+        gpgCli.listPublicKeysResult = sampleKeys;
         const selectedItems: vscode.QuickPickItem[] = [
             { label: 'Alice <alice@example.com> [AAAABBBB]', description: sampleKeys[0].fingerprint },
             { label: 'Bob <bob@example.com> [CCCCDDDD]', description: sampleKeys[1].fingerprint },
