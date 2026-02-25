@@ -2,7 +2,7 @@
   "name": "gpg-bridge-agent",
   "displayName": "GPG Bridge Agent",
   "description": "Windows agent proxy component for GPG Bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "icon": "icon.png",
   "preview": true,
   "publisher": "hidale",

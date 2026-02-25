@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for guidelines.
+## [0.2.0](https://github.com/diablodale/gpg-bridge/compare/v0.1.0...v0.2.0) (2026-02-25)
+
+
+### Added
+
+* **agent:** add exportPublicKeys command - Phase 4 ([6510d63](https://github.com/diablodale/gpg-bridge/commit/6510d63458d6440bbe6fe1c3daed67ebe6775ad3))
+* change to public key as source of quick pick ([51c8d41](https://github.com/diablodale/gpg-bridge/commit/51c8d4184514561c14f42a16f949cb98b4d44f1c))
+* **request:** add public key synchronization feature to request -- Phase 6 ([2249350](https://github.com/diablodale/gpg-bridge/commit/2249350787598ba720c7414ba5e25345128d16b8))
+
+
+### Fixed
+
+* add --no-autostart to importPublicKeys() to prevent gpg-agent launch ([896910d](https://github.com/diablodale/gpg-bridge/commit/896910dc51062ffde80e5bc4b6fb1b3497d612e5))
+* change public key export to armored strings ([597464f](https://github.com/diablodale/gpg-bridge/commit/597464ff79059319ca37a6ef26186e392c0307b9))
+* **request:** prevent starting the request proxy if already running ([cc3843a](https://github.com/diablodale/gpg-bridge/commit/cc3843a386cb7aa65ef188c92a100d6fa636fabe))
+
 ## [0.1.0](https://github.com/diablodale/gpg-bridge/compare/v0.0.0...v0.1.0) (2026-02-24)
 
 
