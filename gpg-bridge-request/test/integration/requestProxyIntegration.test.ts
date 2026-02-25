@@ -24,7 +24,9 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as crypto from 'crypto';
+import { spawnSync } from 'child_process';
 import { expect } from 'chai';
 import { AssuanSocketClient } from '@gpg-bridge/shared/test/integration';
 
@@ -277,6 +279,98 @@ describe('Phase 2 — request-proxy → agent-proxy → Real gpg-agent', functio
 
         // Socket file should be removed by stop()
         expect(fs.existsSync(socketPath), 'socket file should be removed after stop').to.be.false;
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5 — RequestProxy uses GpgCli for socket path and stale file removal
+// ---------------------------------------------------------------------------
+
+describe('Phase 5 — RequestProxy uses GpgCli for socket path', function () {
+    // gpgconf subprocess + proxy restart; 30 s is generous for both.
+    this.timeout(30000);
+
+    let listdirs = (name: string) => spawnSync('gpgconf', ['--list-dirs', name], { encoding: 'utf-8', timeout: 5000, shell: false });
+    let proxySocketPath: string;
+
+    before(async function () {
+        // Phase 2 test 8 stops the proxy; restart it so Phase 5 can run.
+        // extension.ts startRequestProxy() is idempotent — safe to call when already running.
+        await vscode.commands.executeCommand('gpg-bridge-request.start');
+        // Allow async proxy start to fully settle before reading the socket path.
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const p = await vscode.commands.executeCommand<string | null>(
+            '_gpg-bridge-request.test.getSocketPath'
+        );
+        if (!p) {
+            throw new Error('_gpg-bridge-request.test.getSocketPath returned null — proxy did not start');
+        }
+        proxySocketPath = p;
+        await vscode.commands.executeCommand('gpg-bridge-request.stop');
+    });
+
+    beforeEach(async function () {
+        await vscode.commands.executeCommand('gpg-bridge-request.start');
+    });
+
+    afterEach(async function () {
+        await vscode.commands.executeCommand('gpg-bridge-request.stop');
+    });
+
+    // -----------------------------------------------------------------------
+    // 1. Socket path comes from gpgconf
+    // -----------------------------------------------------------------------
+    it('1. active socket path matches gpgconf --list-dirs agent-socket', function () {
+        const result = listdirs('agent-socket');
+        expect(result.status, 'gpgconf should exit 0').to.equal(0);
+        const expectedPath = result.stdout.trim();
+        expect(expectedPath, 'gpgconf must return a non-empty path').to.have.length.greaterThan(0);
+        expect(proxySocketPath, 'proxy socket path must match gpgconf agent-socket').to.equal(expectedPath);
+    });
+
+    // -----------------------------------------------------------------------
+    // 2. Stale socket files at both agent-socket and agent-extra-socket are
+    //    removed before the proxy binds on start()
+    // -----------------------------------------------------------------------
+    it('2. stale files at agent-socket and agent-extra-socket are removed on start()', async function () {
+        // Resolve both paths via gpgconf so the test is independent of hard-coded paths.
+        const agentResult = listdirs('agent-socket');
+        const extraResult = listdirs('agent-extra-socket');
+        const agentPath = agentResult.stdout.trim();
+        const extraPath = extraResult.stdout.trim();
+        expect(agentPath, 'gpgconf must return agent-socket path').to.have.length.greaterThan(0);
+        expect(extraPath, 'gpgconf must return agent-extra-socket path').to.have.length.greaterThan(0);
+
+        // Stop the proxy so we can safely plant stale marker files.
+        await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+        // Plant regular files (not sockets) at both paths as stale markers.
+        // mkdirSync is a safety net; the parent directory should already exist
+        // from the proxy's previous run.
+        fs.mkdirSync(path.dirname(agentPath), { recursive: true });
+        fs.mkdirSync(path.dirname(extraPath), { recursive: true });
+        fs.writeFileSync(agentPath, 'stale-agent-socket-marker');
+        fs.writeFileSync(extraPath, 'stale-extra-socket-marker');
+        expect(fs.existsSync(agentPath), 'stale agent-socket file must exist before start').to.be.true;
+        expect(fs.existsSync(extraPath), 'stale extra-socket file must exist before start').to.be.true;
+
+        // Start the proxy — it must remove both stale files before binding.
+        await vscode.commands.executeCommand('gpg-bridge-request.start');
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // agent-extra-socket: removed and NOT recreated by the proxy (it only binds to agent-socket).
+        expect(fs.existsSync(extraPath), 'stale agent-extra-socket file must be removed on start()').to.be.false;
+
+        // agent-socket: stale file removed; proxy created a real socket in its place.
+        // Verify by connecting and getting a valid greeting (proves the socket is live).
+        const client = new AssuanSocketClient();
+        try {
+            const greeting = await client.connect(agentPath);
+            expect(greeting, 'proxy must accept connections at the gpgconf-resolved agent-socket path').to.match(/^OK/);
+        } finally {
+            client.close();
+        }
     });
 });
 

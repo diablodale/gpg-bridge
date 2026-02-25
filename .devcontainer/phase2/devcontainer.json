@@ -3,11 +3,13 @@
     // (npm run test:integration:request-proxy via requestProxyRunTest.ts, which passes configFile pointing here).
     // Also available in the VS Code manual container picker.
     //
-    // Phase 2: gpg-bridge-request (workspace extension) runs here; gpg-bridge-agent runs on Windows.
+    // Phase 2 and Phase 5: gpg-bridge-request (workspace extension) runs here; gpg-bridge-agent runs on Windows.
     //   The full chain: AssuanSocketClient → Unix socket → gpg-bridge-request → VS Code commands
     //   → gpg-bridge-agent (Windows) → gpg-agent (Windows).
     //
-    // No gpg binary is needed — tests use AssuanSocketClient (raw socket I/O).
+    // Phase 5 (GpgCli socket path): gpgconf is called at startup to resolve the socket path.
+    // gnupg2 is pre-installed in the base image — no apt-get step is needed, and no
+    // gpg-agent is started: gpgconf --list-dirs is used only for the socket path.
     //
     // See docs/integration-test-plan.md for details.
     "name": "gpg-bridge phase 2 integration tests",

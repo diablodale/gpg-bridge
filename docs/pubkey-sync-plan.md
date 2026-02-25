@@ -627,29 +627,37 @@ suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyEx
 
 ---
 
-### Phase 5 — Request extension: refactor `getLocalGpgSocketPath`
+### Phase 5 — Request extension: refactor `getLocalGpgSocketPath` ✅ complete
 
-**Files changed**: `gpg-bridge-request/src/services/requestProxy.ts`
+**Files changed**: `gpg-bridge-request/src/services/requestProxy.ts`,
+`gpg-bridge-request/src/test/requestProxy.test.ts`,
+`gpg-bridge-request/src/extension.ts` (removed stale `getSocketPath` bypass),
+`gpg-bridge-request/test/integration/requestProxyIntegration.test.ts` (Phase 5 integration tests),
+`.devcontainer/phase2/devcontainer.json` (updated comment — gnupg2 pre-installed in base image)
 
 #### Work items
-- [ ] Add `gpgCliFactory?: IGpgCliFactory` to `RequestProxyDeps`; construct `gpgCli` inside `RequestProxy.start()` via `this.gpgCliFactory?.create() ?? new GpgCli()`
-- [ ] Replace inline `spawnSync` + `new Promise()` wrapper in `getLocalGpgSocketPath()` with
+- [x] Add `gpgCliFactory?: IGpgCliFactory` to `RequestProxyDeps`; construct `gpgCli` inside `RequestProxy.start()` via `this.gpgCliFactory?.create() ?? new GpgCli()`
+- [x] Replace inline `spawnSync` + `new Promise()` wrapper in `getLocalGpgSocketPath()` with
   `gpgcli.gpgconfListDirs('agent-socket')`
-- [ ] Replace the `agent-extra-socket` `spawnSync` call in `requestProxy.ts` with
+- [x] Replace the `agent-extra-socket` `spawnSync` call in `requestProxy.ts` with
   `gpgcli.gpgconfListDirs('agent-extra-socket')`
-- [ ] Verify socket file removal logic is unchanged
+- [x] Move socket file removal logic inline in `start()` using `this.fileSystem` (injectable)
+- [x] `stop()` calls `await this.gpgCli?.cleanup()` then nulls the field — mirrors `AgentProxy`
+- [x] Remove `getLocalGpgSocketPath()` module-level function and `spawnSync` import
+- [x] Remove `getSocketPathFn` and `usingMocks` fields; add `gpgCli` and `gpgCliFactory` fields
+- [x] Verify socket file removal logic is unchanged (both paths still removed before binding)
 
 #### Test cases (`gpg-bridge-request/src/test/requestProxy.test.ts`)
 
-**Unit tests** (mocked `GpgCli` via `*Deps` — no real gpg required):
-- [ ] `start()` throws if called a second time without an intervening `stop()` (guard added in Phase 3)
-- [ ] `getLocalGpgSocketPath` uses `gpgconfListDirs('agent-socket')` result as the returned path
-- [ ] `getLocalGpgSocketPath` propagates errors thrown by `gpgconfListDirs`
-- [ ] Socket file removal logic executes correctly (mock filesystem)
+**Unit tests** (mocked `GpgCli` via `RequestProxyDeps.gpgCliFactory` — no real gpg required):
+- [x] `start()` throws if called a second time without an intervening `stop()`
+- [x] `getLocalGpgSocketPath` uses `gpgconfListDirs('agent-socket')` result as the returned path
+- [x] `getLocalGpgSocketPath` propagates errors thrown by `gpgconfListDirs`
+- [x] Socket file removal logic executes correctly (mock filesystem; `DualPathMockGpgCli` returns distinct paths for agent-socket vs agent-extra-socket; both are pre-seeded in `MockFileSystem`; verifies `unlinkSync` called for both)
 
 **Integration tests** (real gpg via `GpgTestHelper` on the remote host):
-- [ ] `gpgconfListDirs('agent-socket')` returns a non-empty path string for the isolated keyring
-- [ ] Socket file removal: create a temp file at the returned path; verify the cleanup logic removes it
+- [x] `gpgconfListDirs('agent-socket')` returns a non-empty path string for the isolated keyring
+- [x] Socket file removal: create a temp file at the returned path; verify the cleanup logic removes it
 
 ---
 

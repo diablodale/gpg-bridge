@@ -7,7 +7,8 @@
 
 import { expect } from 'chai';
 import { RequestProxy } from '../services/requestProxy';
-import { MockCommandExecutor, MockServerFactory, MockFileSystem, MockSocket, MockLogConfig } from '@gpg-bridge/shared/test';
+import { MockCommandExecutor, MockServerFactory, MockFileSystem, MockLogConfig, MockGpgCli } from '@gpg-bridge/shared/test';
+import type { IGpgCliFactory } from '@gpg-bridge/shared';
 
 describe('RequestProxy', () => {
     let mockLogConfig: MockLogConfig;
@@ -22,12 +23,12 @@ describe('RequestProxy', () => {
         mockFileSystem = new MockFileSystem();
     });
 
-    // Helper to create deps with all mocks including getSocketPath
+    // Helper to create deps using MockGpgCli — prevents calling real gpgconf
     const createMockDeps = () => ({
         commandExecutor: mockCommandExecutor,
         serverFactory: mockServerFactory,
         fileSystem: mockFileSystem,
-        getSocketPath: async () => '/tmp/test-gpg-agent'  // Mock path - prevents calling real gpgconf
+        gpgCliFactory: { create: () => new MockGpgCli('/tmp/test-gpg-agent') } as IGpgCliFactory
     });
 
     describe('State Machine Validation', () => {
@@ -3561,6 +3562,96 @@ describe('RequestProxy', () => {
             // Verify cleanup occurred (socket closed, cleanup started)
             const cleanupLogs = logs.filter(log => log.includes('Starting cleanup') || log.includes('Client socket closed'));
             expect(cleanupLogs.length).to.be.greaterThan(0);
+
+            await instance.stop();
+        });
+    });
+
+    // ─── Phase 5: GpgCli supercedes in agent ──────────────────────────────────────────
+
+    describe('Phase 5 — GpgCli replaces spawnSync in start()', () => {
+        it('start() throws if called a second time without an intervening stop()', async () => {
+            const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, createMockDeps());
+            await instance.start();
+            let threw = false;
+            let errorMsg = '';
+            try {
+                await instance.start();
+            } catch (err) {
+                threw = true;
+                errorMsg = err instanceof Error ? err.message : String(err);
+            }
+            expect(threw, 'second start() should throw').to.be.true;
+            expect(errorMsg).to.match(/already started/i);
+            await instance.stop();
+        });
+
+        it('uses gpgconfListDirs(\'agent-socket\') result as the socket path', async () => {
+            const agentSocketPath = '/tmp/custom-agent.socket';
+            const deps = {
+                ...createMockDeps(),
+                gpgCliFactory: { create: () => new MockGpgCli(agentSocketPath) } as IGpgCliFactory
+            };
+            const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+            await instance.start();
+            expect(instance.getSocketPath()).to.equal(agentSocketPath);
+            await instance.stop();
+        });
+
+        it('propagates errors thrown by gpgconfListDirs', async () => {
+            class FailingMockGpgCli extends MockGpgCli {
+                constructor() { super('/tmp/unused'); }
+                override async gpgconfListDirs(_dirName: string): Promise<string> {
+                    throw new Error('gpgconf: command not found');
+                }
+            }
+            const deps = {
+                ...createMockDeps(),
+                gpgCliFactory: { create: () => new FailingMockGpgCli() } as IGpgCliFactory
+            };
+            const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+            let threw = false;
+            let errorMsg = '';
+            try {
+                await instance.start();
+            } catch (err) {
+                threw = true;
+                errorMsg = err instanceof Error ? err.message : String(err);
+            }
+            expect(threw, 'start() should reject when gpgconfListDirs throws').to.be.true;
+            expect(errorMsg).to.include('gpgconf');
+        });
+
+        it('removes stale socket files at both agent-socket and agent-extra-socket paths', async () => {
+            const agentSocket = '/tmp/S.gpg-agent';
+            const agentExtraSocket = '/tmp/S.gpg-agent.extra';
+
+            // MockGpgCli returns the same path for every dirName call.
+            // Use a custom mock that returns distinct paths.
+            class DualPathMockGpgCli extends MockGpgCli {
+                constructor() { super(agentSocket); }
+                override async gpgconfListDirs(dirName: string): Promise<string> {
+                    return dirName === 'agent-extra-socket' ? agentExtraSocket : agentSocket;
+                }
+            }
+
+            // Seed both socket files as "existing" in the mock filesystem
+            mockFileSystem.setFile(agentSocket, Buffer.alloc(0));
+            mockFileSystem.setFile(agentExtraSocket, Buffer.alloc(0));
+
+            const deps = {
+                ...createMockDeps(),
+                gpgCliFactory: { create: () => new DualPathMockGpgCli() } as IGpgCliFactory
+            };
+            const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+            await instance.start();
+
+            // Both stale socket files must have been removed before the server bound
+            const unlinkCalls = mockFileSystem.callLog
+                .filter(c => c.method === 'unlinkSync')
+                .map(c => c.args[0] as string);
+            expect(unlinkCalls).to.include(agentSocket, 'agent-socket should be removed');
+            expect(unlinkCalls).to.include(agentExtraSocket, 'agent-extra-socket should be removed');
 
             await instance.stop();
         });

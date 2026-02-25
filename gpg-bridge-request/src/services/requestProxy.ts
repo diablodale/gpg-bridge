@@ -16,9 +16,9 @@ import * as net from 'net';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { spawnSync } from 'child_process';
 import { log, encodeProtocolData, decodeProtocolData, sanitizeForLog, extractErrorMessage, cleanupSocket, extractCommand, extractInquireBlock, detectResponseCompletion } from '@gpg-bridge/shared';
-import type { LogConfig, ICommandExecutor, IFileSystem, IServerFactory, ISessionManager } from '@gpg-bridge/shared';
+import { GpgCli } from '@gpg-bridge/shared';
+import type { LogConfig, ICommandExecutor, IFileSystem, IServerFactory, ISessionManager, IGpgCliFactory } from '@gpg-bridge/shared';
 import { v4 as uuidv4 } from 'uuid';
 import { VSCodeCommandExecutor } from './commandExecutor';
 
@@ -155,7 +155,7 @@ export interface RequestProxyDeps {
     commandExecutor?: ICommandExecutor;  // Optional for testing/injection; defaults to VSCodeCommandExecutor
     serverFactory?: IServerFactory;
     fileSystem?: IFileSystem;
-    getSocketPath?: () => Promise<string | null>;
+    gpgCliFactory?: IGpgCliFactory;
 }
 
 // Internal config type used by handlers - always has commandExecutor after DI
@@ -585,8 +585,8 @@ export class RequestProxy {
     private readonly commandExecutor: ICommandExecutor;
     private readonly serverFactory: IServerFactory;
     private readonly fileSystem: IFileSystem;
-    private readonly getSocketPathFn: () => Promise<string | null>;
-    private readonly usingMocks: boolean;
+    private gpgCli: GpgCli | null = null;
+    private readonly gpgCliFactory?: IGpgCliFactory;
     private sessions: Map<string, RequestSessionManager> = new Map();
     private server: net.Server | null = null;
     private _socketPath: string | null = null;
@@ -596,8 +596,7 @@ export class RequestProxy {
         this.commandExecutor = deps?.commandExecutor ?? new VSCodeCommandExecutor();
         this.serverFactory = deps?.serverFactory ?? { createServer: net.createServer };
         this.fileSystem = deps?.fileSystem ?? { existsSync: fs.existsSync, readFileSync: fs.readFileSync, mkdirSync: fs.mkdirSync, chmodSync: fs.chmodSync, unlinkSync: fs.unlinkSync };
-        this.getSocketPathFn = deps?.getSocketPath ?? getLocalGpgSocketPath;
-        this.usingMocks = !!(deps?.serverFactory || deps?.fileSystem);
+        this.gpgCliFactory = deps?.gpgCliFactory;
     }
 
     /** Socket path this proxy is listening on, or null if not started */
@@ -625,21 +624,36 @@ export class RequestProxy {
             commandExecutor: this.commandExecutor,
         };
 
-        log(fullConfig, `[RequestProxy.start] using mocked deps: ${this.usingMocks}`);
+        // Construct GpgCli via injected factory or default — throws if gpgconf not found
+        this.gpgCli = this.gpgCliFactory?.create() ?? new GpgCli();
 
-        const socketPath = await this.getSocketPathFn();
-        if (!socketPath) {
+        // Query both socket paths and remove any stale socket files before binding
+        const agentSocketPath = await this.gpgCli.gpgconfListDirs('agent-socket');
+        const agentExtraSocketPath = await this.gpgCli.gpgconfListDirs('agent-extra-socket');
+
+        if (!agentSocketPath) {
             throw new Error('Could not determine local GPG socket path. Is gpg installed? Try: gpgconf --list-dirs');
         }
 
+        // Remove stale socket files if they exist
+        for (const sp of [agentSocketPath, agentExtraSocketPath]) {
+            if (sp && this.fileSystem.existsSync(sp)) {
+                try {
+                    this.fileSystem.unlinkSync(sp);
+                } catch {
+                    // Ignore — socket may be in use, or may not have permission to delete it
+                }
+            }
+        }
+
         // Ensure parent directory exists
-        log(fullConfig, `Creating socket server at ${socketPath}`);
-        const socketDir = path.dirname(socketPath);
+        log(fullConfig, `Creating socket server at ${agentSocketPath}`);
+        const socketDir = path.dirname(agentSocketPath);
         if (!this.fileSystem.existsSync(socketDir)) {
             this.fileSystem.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
         }
 
-        this._socketPath = socketPath;
+        this._socketPath = agentSocketPath;
 
         // Create the Unix socket server
         const server = this.serverFactory.createServer({ pauseOnConnect: true }, (clientSocket) => {
@@ -707,10 +721,10 @@ export class RequestProxy {
         });
 
         return new Promise((resolve, reject) => {
-            server.listen(socketPath, () => {
+            server.listen(agentSocketPath, () => {
                 // Make socket readable/writable by all users
                 try {
-                    this.fileSystem.chmodSync(socketPath, 0o666);
+                    this.fileSystem.chmodSync(agentSocketPath, 0o666);
                 } catch (err) {
                     log(this.config, `Warning: could not chmod socket: ${err}`);
                 }
@@ -752,7 +766,7 @@ export class RequestProxy {
         }
         this.server = null;
 
-        return new Promise((stopResolve) => {
+        await new Promise<void>((stopResolve) => {
             // Stop accepting new connections, then destroy all active sessions.
             // server.close() only calls its callback once all connections are gone;
             // without explicit cleanup it would hang on any open client socket.
@@ -774,47 +788,7 @@ export class RequestProxy {
                 session.emit('CLEANUP_REQUESTED', false);
             }
         });
+        await this.gpgCli?.cleanup();
+        this.gpgCli = null;
     }
-}
-
-/**
- * Get the local GPG socket path by querying gpgconf
- * Calls gpgconf twice to get agent-socket and agent-extra-socket separately,
- * removes both if they exist, and returns the socket path to use.
- */
-async function getLocalGpgSocketPath(): Promise<string | null> {
-    return new Promise((resolve) => {
-        try {
-            // Query each socket separately to avoid parsing issues with URL-encoded colons
-            const agentSocketResult = spawnSync('gpgconf', ['--list-dirs', 'agent-socket'], {
-                encoding: 'utf-8',
-                timeout: 5000
-            });
-
-            const agentExtraSocketResult = spawnSync('gpgconf', ['--list-dirs', 'agent-extra-socket'], {
-                encoding: 'utf-8',
-                timeout: 5000
-            });
-
-            const agentSocketPath = agentSocketResult.status === 0 ? (agentSocketResult.stdout.trim() || null) : null;
-            const agentExtraSocketPath = agentExtraSocketResult.status === 0 ? (agentExtraSocketResult.stdout.trim() || null) : null;
-
-            // Remove both sockets if they exist
-            const socketsToRemove = [agentSocketPath, agentExtraSocketPath].filter((p) => p !== null);
-            for (const socketPath of socketsToRemove) {
-                if (fs.existsSync(socketPath)) {
-                    try {
-                        fs.unlinkSync(socketPath);
-                    } catch (err) {
-                        // Ignore - socket may be in use
-                    }
-                }
-            }
-
-            // Return standard socket
-            resolve(agentSocketPath);
-        } catch (err) {
-            resolve(null);
-        }
-    });
 }

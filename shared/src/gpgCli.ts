@@ -335,14 +335,7 @@ export class GpgCli {
      */
     protected async runRaw(binary: string, args: string[]): Promise<GpgExecResult> {
         try {
-            const { stdout, stderr } = await this._execFileAsync(binary, args, {
-                encoding: 'latin1',
-                env: this.env,
-                shell: false,   // never allow shell interpolation — binary is invoked directly
-                timeout: 10000,
-                maxBuffer: 1024 * 1024,
-            });
-            return { stdout, stderr, exitCode: 0 };
+            return await this.run(binary, args);
         } catch (err: unknown) {
             // promisify(execFile) rejects with ExecFileError on non-zero exit;
             // code is null only when the process was killed by a signal.
