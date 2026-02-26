@@ -6,7 +6,7 @@
  *     well-known Gpg4win locations (Windows fallback)
  *   - Optional GNUPGHOME injection into every subprocess call
  *   - gpgconf --list-dirs<br>   - gpg --list-secret-keys --with-colons  (listPairedKeys)
- *   - gpg --list-keys         --with-colons  (listPublicKeys)
+ *   - gpg --list-keys         --with-colons --with-secret  (listPublicKeys)
  *   - gpg --export                             (exportPublicKeys)
  *   - gpg --import via stdin                   (importPublicKeys)
  *
@@ -46,6 +46,12 @@ export interface PairedKeyInfo {
     fingerprint: string;
     /** One or more UID strings (e.g. `'Alice <alice@example.com>'`). May be empty if key has no UIDs. */
     userIds: string[];
+    /** `true` when the key was obtained from `listPairedKeys()` — a secret key is accessible. */
+    hasSecret?: boolean;
+    /** `true` when the primary key has validity `r` (revoked) in the colon-format output. */
+    revoked?: boolean;
+    /** `true` when the primary key has validity `e` (expired) in the colon-format output. */
+    expired?: boolean;
 }
 
 export interface GpgCliOpts {
@@ -174,6 +180,7 @@ export function unescapeGpgColonField(s: string): string {
  *
  * Record layout (relevant fields only):
  *   sec:  — primary key marker; starts a new entry
+ *           field[1]: validity ('r' = revoked, 'e' = expired)
  *   fpr:  — fingerprint; field[9] is the 40-char hex fingerprint
  *   uid:  — user ID; field[9] is the UID string
  *   ssb:  — subkey marker; following fpr: records belong to the subkey, not primary
@@ -195,7 +202,7 @@ export function parsePairedKeys(output: string): PairedKeyInfo[] {
             if (current?.fingerprint) {
                 results.push(current);
             }
-            current = { fingerprint: '', userIds: [] };
+            current = { fingerprint: '', userIds: [], hasSecret: true, revoked: fields[1] === 'r', expired: fields[1] === 'e' };
             expectingPrimaryFpr = true;
         } else if (recType === 'fpr' && expectingPrimaryFpr) {
             if (current) {
@@ -222,14 +229,16 @@ export function parsePairedKeys(output: string): PairedKeyInfo[] {
 }
 
 // ============================================================================
-// gpg --list-keys parser (pure function — unit testable)
+// gpg --list-keys --with-secret parser (pure function — unit testable)
 // ============================================================================
 
 /**
- * Parse `gpg --list-keys --with-colons` output into a flat array of public key info.
+ * Parse `gpg --list-keys --with-colons --with-secret` output into a flat array of public key info.
  *
  * Record layout (relevant fields only):
  *   pub:  — primary key marker; starts a new entry
+ *           field[1]:  validity ('r' = revoked, 'e' = expired)
+ *           field[14]: '+' = secret key available, '#' = on smartcard → sets `hasSecret: true`
  *   fpr:  — fingerprint; field[9] is the 40-char hex fingerprint
  *   uid:  — user ID; field[9] is the UID string
  *   sub:  — subkey marker; following fpr: records belong to the subkey, not primary
@@ -251,7 +260,8 @@ export function parsePublicKeys(output: string): PairedKeyInfo[] {
             if (current?.fingerprint) {
                 results.push(current);
             }
-            current = { fingerprint: '', userIds: [] };
+            // field 15 (index 14): '+' = secret key available, '#' = secret key on card not present
+            current = { fingerprint: '', userIds: [], hasSecret: fields[14] === '+' || fields[14] === '#', revoked: fields[1] === 'r', expired: fields[1] === 'e' };
             expectingPrimaryFpr = true;
         } else if (recType === 'fpr' && expectingPrimaryFpr) {
             if (current) {
@@ -458,11 +468,13 @@ export class GpgCli {
 
     /**
      * List all public keys in the keyring (including keys without a corresponding secret key).
-     * Runs `gpg --list-keys --with-colons` and parses the output.
+     * Runs `gpg --list-keys --with-colons --with-secret` and parses the output.
+     * `--with-secret` marks `pub:` records with `+` in field 15 when a secret key is available,
+     * allowing `hasSecret` to be populated without a separate `--list-secret-keys` call.
      * Returns an empty array if the keyring has no public keys.
      */
     async listPublicKeys(): Promise<PairedKeyInfo[]> {
-        const { stdout } = await this.run(this.gpgBin, ['--list-keys', '--with-colons'], 'utf8');
+        const { stdout } = await this.run(this.gpgBin, ['--list-keys', '--with-colons', '--with-secret'], 'utf8');
         return parsePublicKeys(stdout);
     }
 

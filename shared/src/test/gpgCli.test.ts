@@ -261,7 +261,7 @@ describe('GpgCli', () => {
             const cli = makeCli(capture.fn);
             await cli.listPublicKeys();
             expect(capture.lastArgs!.binary).to.equal(FAKE_GPG_EXE);
-            expect(capture.lastArgs!.args).to.deep.equal(['--list-keys', '--with-colons']);
+            expect(capture.lastArgs!.args).to.deep.equal(['--list-keys', '--with-colons', '--with-secret']);
         });
 
         it('decodes UTF-8 UIDs correctly (e.g. umlauts appear as single characters)', async () => {
@@ -414,6 +414,9 @@ describe('parsePairedKeys()', () => {
         expect(result).to.have.length(1);
         expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
         expect(result[0].userIds).to.deep.equal(['Alice <alice@example.com>']);
+        expect(result[0].hasSecret, 'parsePairedKeys sets hasSecret=true').to.be.true;
+        expect(result[0].revoked, 'non-revoked key: revoked=false').to.be.false;
+        expect(result[0].expired, 'non-expired key: expired=false').to.be.false;
     });
 
     it('parses multiple keys', () => {
@@ -506,6 +509,21 @@ describe('parsePairedKeys()', () => {
         expect(result).to.have.length(1);
         expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
         expect(result[0].userIds).to.deep.equal(['Revoked User <revoked@example.com>']);
+        expect(result[0].revoked, 'sec:r: sets revoked=true').to.be.true;
+        expect(result[0].hasSecret, 'revoked paired key still has hasSecret=true').to.be.true;
+    });
+
+    it('includes expired keys (sec:e: status field)', () => {
+        const output = [
+            'sec:e:2048:1:AABBCCDDAABBCCDD:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:e::::::::Expired User <expired@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePairedKeys(output);
+        expect(result).to.have.length(1);
+        expect(result[0].expired, 'sec:e: sets expired=true').to.be.true;
+        expect(result[0].revoked, 'expired key: revoked=false').to.be.false;
+        expect(result[0].hasSecret, 'expired paired key: hasSecret=true').to.be.true;
     });
 
     it('ignores all subkey fpr: and grp: records when key has many subkeys', () => {
@@ -645,6 +663,9 @@ describe('parsePublicKeys()', () => {
         expect(result).to.have.length(1);
         expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
         expect(result[0].userIds).to.deep.equal(['Alice <alice@example.com>']);
+        expect(result[0].hasSecret, 'parsePublicKeys sets hasSecret=false').to.be.false;
+        expect(result[0].revoked, 'non-revoked pub key: revoked=false').to.be.false;
+        expect(result[0].expired, 'non-expired pub key: expired=false').to.be.false;
     });
 
     it('parses multiple public keys', () => {
@@ -720,6 +741,47 @@ describe('parsePublicKeys()', () => {
         expect(result).to.have.length(1);
         expect(result[0].fingerprint).to.equal('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
         expect(result[0].userIds).to.deep.equal(['Alice <alice@example.com>']);
+    });
+
+    it('--with-secret: field 15 "+" sets hasSecret=true, missing field sets hasSecret=false', () => {
+        // pub: record with "+" at index 14 (field 15) → secret key available
+        // pub: record without field 14 → no secret key
+        const output = [
+            'pub::255:::::::KEY1:::sc::+:',  // fields[14] = '+'
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:::::::::Alice <alice@example.com>:::::::::0:',
+            'pub::255:::::::KEY2:::sc:',     // fields[14] = undefined → no secret
+            'fpr:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB:',
+            'uid:::::::::Bob <bob@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result[0].hasSecret, 'key with + at field 15: hasSecret=true').to.be.true;
+        expect(result[1].hasSecret, 'key without field 15: hasSecret=false').to.be.false;
+    });
+
+    it('includes revoked public keys (pub:r: status field)', () => {
+        const output = [
+            'pub:r:2048:1:AABBCCDDAABBCCDD:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:r::::::::Revoked User <revoked@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.have.length(1);
+        expect(result[0].revoked, 'pub:r: sets revoked=true').to.be.true;
+        expect(result[0].hasSecret, 'public key has hasSecret=false').to.be.false;
+    });
+
+    it('includes expired public keys (pub:e: status field)', () => {
+        const output = [
+            'pub:e:2048:1:AABBCCDDAABBCCDD:::sc:',
+            'fpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:',
+            'uid:e::::::::Expired User <expired@example.com>:::::::::0:',
+        ].join('\n');
+        const result = parsePublicKeys(output);
+        expect(result).to.have.length(1);
+        expect(result[0].expired, 'pub:e: sets expired=true').to.be.true;
+        expect(result[0].revoked, 'expired key: revoked=false').to.be.false;
+        expect(result[0].hasSecret, 'expired public key has hasSecret=false').to.be.false;
     });
 
     it('does not parse sec: records (secret keyring format — wrong function)', () => {

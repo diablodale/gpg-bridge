@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { GpgCli, KeyFilter } from '@gpg-bridge/shared';
+import type { GpgCli, KeyFilter, PairedKeyInfo } from '@gpg-bridge/shared';
 
 // ============================================================================
 // Dependency injection
@@ -8,12 +8,12 @@ import type { GpgCli, KeyFilter } from '@gpg-bridge/shared';
 export interface PublicKeyExportDeps {
     /**
      * Injectable QuickPick for unit testing.
-     * Production default: wraps `vscode.window.showQuickPick` with `canPickMany: true`.
+     * Production default: wraps `vscode.window.showQuickPick`.
      * Returns the selected items, or `undefined` if the user cancels.
      */
     quickPick?: (
         items: vscode.QuickPickItem[],
-        options: { canPickMany: true; placeHolder: string }
+        options: vscode.QuickPickOptions
     ) => Promise<readonly vscode.QuickPickItem[] | undefined>;
 
     /**
@@ -21,6 +21,44 @@ export interface PublicKeyExportDeps {
      * Production default: calls `vscode.window.showWarningMessage` (fire-and-forget).
      */
     showWarningMessage?: (message: string) => void;
+}
+
+// ============================================================================
+// QuickPick item builder
+// ============================================================================
+
+/**
+ * Convert a {@link PairedKeyInfo} to a VS Code {@link vscode.QuickPickItem}.
+ *
+ * - `label`: first user ID (or `'(no user ID)'`)
+ * - `iconPath`: icon shown to the left of the label
+ *   - `ThemeIcon('x')`   — revoked key (takes priority)
+ *   - `ThemeIcon('key')` — key pair (secret key accessible)
+ *   - `undefined`        — public-only, non-revoked key
+ * - `description`: last 16 hex characters of the fingerprint in 4-char groups
+ *   (e.g. `'AABB CCDD EEFF 0011'`)
+ */
+export function keyInfoToQuickPickItem(key: PairedKeyInfo): vscode.QuickPickItem {
+    const label = key.userIds[0] ?? '(no user ID)';
+    const shortFp = key.fingerprint.slice(-16);
+    const description = shortFp.match(/.{1,4}/g)?.join(' ') ?? shortFp;
+    const iconPath = key.revoked
+        ? new vscode.ThemeIcon('error')
+        : key.expired
+        ? new vscode.ThemeIcon('history')
+        : key.hasSecret
+        ? new vscode.ThemeIcon('key')
+        : new vscode.ThemeIcon('blank'); // reserves icon gutter space for alignment
+    return { label, description, iconPath };
+}
+
+// ============================================================================
+// Internal type: QuickPickItem extended with the full fingerprint
+// ============================================================================
+
+/** Carries the full 40-char fingerprint alongside the display-only description. */
+interface KeyPickItem extends vscode.QuickPickItem {
+    readonly _fingerprint: string;
 }
 
 // ============================================================================
@@ -37,10 +75,12 @@ export interface PublicKeyExportDeps {
  *
  * Interactive path (UI required):
  *   - `filter === undefined` → show a multi-select QuickPick populated from all public keys;
- *     QuickPick item label is `<first-user-ID> [<last-8-chars-of-fingerprint>]`.
+ *     icons indicate key-pair / revoked; description shows the last 16 fingerprint chars in
+ *     4-char groups. Keys are grouped: normal keys first (sorted by UID), then a separator
+ *     labeled 'Expired and revoked', then revoked/expired keys (sorted by UID).
  *     User cancel → returns `undefined` without exporting.
  *
- * In all cases a zero-byte result shows a VS Code warning and returns `undefined`.
+ * In all cases a zero-length result shows a VS Code warning and returns `undefined`.
  *
  * @param gpgCli  Active `GpgCli` instance (provided internally by `AgentProxy.exportPublicKeys()`).
  * @param filter  Export filter — see `KeyFilter` type docs.
@@ -53,7 +93,7 @@ export async function exportPublicKeys(
     deps: Partial<PublicKeyExportDeps> = {}
 ): Promise<string | undefined> {
     const quickPick = deps.quickPick ??
-        ((items, options) => vscode.window.showQuickPick(items, options));
+        ((items, options) => vscode.window.showQuickPick(items, options) as Promise<readonly vscode.QuickPickItem[] | undefined>);
     const showWarningMessage = deps.showWarningMessage ??
         ((message) => { void vscode.window.showWarningMessage(message); });
 
@@ -67,20 +107,43 @@ export async function exportPublicKeys(
     } else if (filter !== undefined) {
         keyData = await gpgCli.exportPublicKeys(filter);
     } else {
-        // Interactive: populate QuickPick from all public keys
+        // Interactive: populate QuickPick from all public keys.
+        // listPublicKeys() uses --with-secret so hasSecret is already populated.
         const keys = await gpgCli.listPublicKeys();
-        const items: vscode.QuickPickItem[] = keys.map(k => ({
-            label: `${k.userIds[0] ?? '(no user ID)'} [${k.fingerprint.slice(-8)}]`,
-            description: k.fingerprint,
-        }));
+
+        // Group B: normal keys (neither revoked nor expired) — shown first, sorted by first UID
+        // Group A: revoked or expired keys — shown after a separator, sorted by first UID
+        const compareUid = (a: typeof keys[0], b: typeof keys[0]) =>
+            (a.userIds[0] ?? '').localeCompare(b.userIds[0] ?? '');
+        const groupB = keys.filter(k => !k.revoked && !k.expired).sort(compareUid);
+        const groupA = keys.filter(k =>  k.revoked || k.expired).sort(compareUid);
+
+        const makeItem = (k: typeof keys[0]): KeyPickItem => ({
+            ...keyInfoToQuickPickItem(k),
+            _fingerprint: k.fingerprint,
+        });
+
+        const items: vscode.QuickPickItem[] = [
+            ...groupB.map(makeItem),
+            ...(groupA.length > 0 ? [
+                { label: 'Expired and revoked', kind: vscode.QuickPickItemKind.Separator } as vscode.QuickPickItem,
+                ...groupA.map(makeItem),
+            ] : []),
+        ];
         const selected = await quickPick(items, {
             canPickMany: true,
+            matchOnDescription: true,
             placeHolder: 'Select public keys to export',
         });
         if (!selected || selected.length === 0) {
             return undefined;
         }
-        keyData = await gpgCli.exportPublicKeys(selected.map(i => i.description!).join(' '));
+        keyData = await gpgCli.exportPublicKeys(
+            Array.from(selected)
+                .map(i => (i as KeyPickItem)._fingerprint)
+                .filter((fp): fp is string => fp !== undefined)
+                .join(' ')
+        );
     }
 
     if (keyData.length === 0) {
