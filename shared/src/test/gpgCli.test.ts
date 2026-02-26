@@ -287,14 +287,14 @@ describe('GpgCli', () => {
         it('returns armored string of key data', async () => {
             const armorText = '-----BEGIN PGP PUBLIC KEY BLOCK-----\nFAKEKEYDATA\n-----END PGP PUBLIC KEY BLOCK-----\n';
             const cli = makeCli(execReturns(armorText));
-            const result = await cli.exportPublicKeys('AABBCCDD');
+            const result = await cli.exportPublicKeys(['AABBCCDD']);
             expect(result).to.be.a('string');
             expect(result).to.equal(armorText);
         });
 
         it('returns empty string when subprocess produces no output', async () => {
             const cli = makeCli(execReturns(''));
-            const result = await cli.exportPublicKeys('nobody@example.com');
+            const result = await cli.exportPublicKeys(['nobody@example.com']);
             expect(result).to.be.a('string');
             expect(result).to.equal('');
         });
@@ -306,11 +306,11 @@ describe('GpgCli', () => {
             expect(capture.lastArgs!.args).to.deep.equal(['--armor', '--export']);
         });
 
-        it('splits space-separated filter into individual arguments', async () => {
+        it('passes string array as individual arguments (preserves spaces in UIDs)', async () => {
             const capture = execCapture('');
             const cli = makeCli(capture.fn);
-            await cli.exportPublicKeys('FPR1 FPR2');
-            expect(capture.lastArgs!.args).to.deep.equal(['--armor', '--export', 'FPR1', 'FPR2']);
+            await cli.exportPublicKeys(['Alice Smith <alice@example.com>', 'AABBCCDD']);
+            expect(capture.lastArgs!.args).to.deep.equal(['--armor', '--export', 'Alice Smith <alice@example.com>', 'AABBCCDD']);
         });
     });
 

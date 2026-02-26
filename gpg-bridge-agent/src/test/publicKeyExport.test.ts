@@ -21,7 +21,7 @@ class MockExportGpgCli extends GpgCli {
     public listPairedKeysResult: PairedKeyInfo[] = [];
     public listPublicKeysResult: PairedKeyInfo[] = [];
     public exportPublicKeysResult: string = 'FAKEARMOR';
-    public exportPublicKeysCalls: Array<string | undefined> = [];
+    public exportPublicKeysCalls: Array<string[] | undefined> = [];
     public listPairedKeysCalled = false;
     public listPublicKeysCalled = false;
 
@@ -40,7 +40,7 @@ class MockExportGpgCli extends GpgCli {
         return this.listPublicKeysResult;
     }
 
-    override async exportPublicKeys(filter?: string): Promise<string> {
+    override async exportPublicKeys(filter?: string[]): Promise<string> {
         this.exportPublicKeysCalls.push(filter);
         return this.exportPublicKeysResult;
     }
@@ -94,7 +94,15 @@ describe('exportPublicKeys', () => {
         expect(gpgCli.listPairedKeysCalled, 'listPairedKeys should not be called').to.be.false;
     });
 
-    it("filter='pairs': calls listPairedKeys() and passes all fingerprints joined to exportPublicKeys()", async () => {
+    it("filter=['Alice Smith <alice@example.com>', 'FP2']: array passed directly to exportPublicKeys()", async () => {
+        const result = await exportPublicKeys(gpgCli, ['Alice Smith <alice@example.com>', 'FP2']);
+
+        expect(result).to.deep.equal(fakeKeyData);
+        expect(gpgCli.exportPublicKeysCalls).to.deep.equal([['Alice Smith <alice@example.com>', 'FP2']]);
+        expect(gpgCli.listPairedKeysCalled, 'listPairedKeys should not be called').to.be.false;
+    });
+
+    it("filter='pairs': calls listPairedKeys() and passes fingerprints as array to exportPublicKeys()", async () => {
         gpgCli.listPairedKeysResult = sampleKeys;
 
         const result = await exportPublicKeys(gpgCli, 'pairs');
@@ -102,16 +110,8 @@ describe('exportPublicKeys', () => {
         expect(result).to.deep.equal(fakeKeyData);
         expect(gpgCli.listPairedKeysCalled).to.be.true;
         expect(gpgCli.exportPublicKeysCalls).to.deep.equal([
-            'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBB CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDDDD',
+            ['AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBB', 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDDDD'],
         ]);
-    });
-
-    it("filter='user@example.com': passes string directly to exportPublicKeys()", async () => {
-        const result = await exportPublicKeys(gpgCli, 'user@example.com');
-
-        expect(result).to.deep.equal(fakeKeyData);
-        expect(gpgCli.exportPublicKeysCalls).to.deep.equal(['user@example.com']);
-        expect(gpgCli.listPairedKeysCalled, 'listPairedKeys should not be called').to.be.false;
     });
 
     it('filter=undefined: QuickPick is shown, populated with items from listPublicKeys()', async () => {
@@ -213,7 +213,7 @@ describe('exportPublicKeys', () => {
         await exportPublicKeys(gpgCli, undefined, { quickPick });
 
         expect(gpgCli.exportPublicKeysCalls).to.deep.equal([
-            'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBB CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDDDD',
+            ['AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBB', 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCDDDD'],
         ]);
     });
 });

@@ -86,18 +86,23 @@
           "description": "Enable debug logging for troubleshooting"
         },
         "gpgBridgeRequest.autoSyncPublicKeys": {
-          "type": "string",
           "default": "",
-          "markdownDescription": "Automatically sync public keys from the local keyring on extension activation. Set to a non-empty value to enable.\n\n| Value | Effect |\n|---|---|\n| *(empty)* | Disabled — no auto-sync |\n| `all` | Export all public keys from the local keyring |\n| `pairs` | Export only public keys from matching key pairs |\n| any other string | Passed verbatim to `gpg --export` as an identifier (fingerprint, email, etc.) |",
-          "enum": [
-            "",
-            "all",
-            "pairs"
-          ],
-          "enumDescriptions": [
-            "Disabled — no auto-sync on activation",
-            "Export all public keys",
-            "Export only public keys from matching key pairs"
+          "markdownDescription": "Automatically sync public keys from the local keyring on extension activation.\n\n| Value | Effect |\n|---|---|\n| *(empty string or empty array)* | Disabled — no auto-sync |\n| `\"all\"` | Export all public keys from the local keyring |\n| `\"pairs\"` | Export only public keys from matching key pairs |\n| `[\"uid1\", \"uid2\", ...]` | Export the specified keys (fingerprints, emails, UIDs, etc.) |",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["", "all", "pairs"],
+              "enumDescriptions": [
+                "Disabled — no auto-sync on activation",
+                "Export all public keys",
+                "Export only public keys from matching key pairs"
+              ]
+            },
+            {
+              "type": "array",
+              "items": { "type": "string" },
+              "markdownDescription": "List of key identifiers to export (fingerprints, emails, UIDs)"
+            }
           ]
         }
       }

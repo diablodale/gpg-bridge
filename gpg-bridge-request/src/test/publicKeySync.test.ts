@@ -141,16 +141,16 @@ describe('PublicKeySync', () => {
     });
 
     // -----------------------------------------------------------------------
-    // 4. syncPublicKeys('user@example.com') forwards the email verbatim
+    // 4. syncPublicKeys(string[]) forwards each element as a separate arg
     // -----------------------------------------------------------------------
-    it('4. syncPublicKeys(\'user@example.com\') forwards the email verbatim', async () => {
+    it('4. syncPublicKeys([\'uid with spaces\', \'FP2\']) forwards array verbatim to executeCommand', async () => {
         const m = createMockState();
         m.setExportResult(undefined);
         const svc = new PublicKeySync({ logCallback: logConfig.logCallback }, m.deps);
 
-        await svc.syncPublicKeys('user@example.com');
+        await svc.syncPublicKeys(['Alice Smith <alice@example.com>', 'FP2']);
 
-        expect(m.executeCommandCalls[0].args).to.deep.equal(['user@example.com']);
+        expect(m.executeCommandCalls[0].args).to.deep.equal([['Alice Smith <alice@example.com>', 'FP2']]);
     });
 
     // -----------------------------------------------------------------------
@@ -183,8 +183,8 @@ describe('PublicKeySync', () => {
         expect(m.gpgCli.importCalls, 'importPublicKeys must be called once').to.have.length(1);
         expect(m.gpgCli.importCalls[0]).to.equal(keyBytes, 'armor string passed verbatim');
         expect(m.infoMessages, 'exactly one info message expected').to.have.length(1);
-        expect(m.infoMessages[0]).to.include('imported: 2');
-        expect(m.infoMessages[0]).to.include('unchanged: 1');
+        expect(m.infoMessages[0]).to.include('2 imported');
+        expect(m.infoMessages[0]).to.include('1 unchanged');
         expect(m.errorMessages, 'no error messages expected').to.have.length(0);
     });
 
@@ -215,6 +215,40 @@ describe('PublicKeySync', () => {
 
         expect(m.executeCommandCalls, 'executeCommand must not be called for empty setting').to.have.length(0);
         expect(m.gpgCli.importCalls).to.have.length(0);
+    });
+
+    it('8b. autoSync([]) — no-op; executeCommand never called for empty array', async () => {
+        const m = createMockState();
+        const svc = new PublicKeySync({ logCallback: logConfig.logCallback }, m.deps);
+
+        await svc.autoSync([]);
+
+        expect(m.executeCommandCalls, 'executeCommand must not be called for empty array').to.have.length(0);
+        expect(m.gpgCli.importCalls).to.have.length(0);
+    });
+
+    it('8c. autoSync([\'Alice Smith <alice@example.com>\']) — syncs array setting', async () => {
+        const m = createMockState();
+        m.setExportResult(undefined);
+        const svc = new PublicKeySync({ logCallback: logConfig.logCallback }, m.deps);
+
+        await svc.autoSync(['Alice Smith <alice@example.com>']);
+
+        expect(m.executeCommandCalls).to.have.length(1);
+        expect(m.executeCommandCalls[0].args).to.deep.equal([['Alice Smith <alice@example.com>']]);
+    });
+
+    it('8d. autoSync(arbitrary string) — shows error and does not call executeCommand', async () => {
+        const m = createMockState();
+        const svc = new PublicKeySync({ logCallback: logConfig.logCallback }, m.deps);
+
+        // Cast needed: TypeScript rejects arbitrary strings; test simulates a bad settings.json value
+        await svc.autoSync('John Doe' as never);
+
+        expect(m.executeCommandCalls, 'executeCommand must not be called for invalid string').to.have.length(0);
+        expect(m.errorMessages).to.have.length(1);
+        expect(m.errorMessages[0]).to.include('John Doe');
+        expect(m.errorMessages[0]).to.include('["John Doe"]');
     });
 
     // -----------------------------------------------------------------------

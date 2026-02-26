@@ -443,8 +443,8 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
 
         expect(errorMessages, 'no error messages on clean import').to.have.length(0);
         expect(infoMessages, 'exactly one info message expected').to.have.length(1);
-        expect(infoMessages[0]).to.include('imported: 1');
-        expect(infoMessages[0]).to.include('unchanged: 0');
+        expect(infoMessages[0]).to.include('1 imported');
+        expect(infoMessages[0]).to.include('0 unchanged');
 
         // Verify the correct key landed in the target keyring — fingerprint must match source.
         const targetFpr = await targetHelper.getFingerprint('phase6sync@example.com');
@@ -465,8 +465,8 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
 
         expect(errorMessages, 'no error messages on re-import').to.have.length(0);
         expect(infoMessages, 'exactly one info message expected').to.have.length(1);
-        expect(infoMessages[0]).to.include('unchanged: 1');
-        expect(infoMessages[0]).to.include('imported: 0');
+        expect(infoMessages[0]).to.include('1 unchanged');
+        expect(infoMessages[0]).to.include('0 imported');
     });
 
     // -----------------------------------------------------------------------
@@ -478,9 +478,8 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
 
         expect(infoMessages).to.have.length(1);
         const msg = infoMessages[0];
-        expect(msg, 'message should start with GPG Bridge prefix').to.match(/^GPG Bridge:/i);
-        expect(msg, 'message should mention sync complete').to.include('sync complete');
-        expect(msg, 'message should include imported count').to.include('imported: 1');
+        expect(msg, 'message should start with GPG Bridge prefix').to.match(/^Public key sync complete:/i);
+        expect(msg, 'message should include imported count').to.include('1 imported');
         expect(errorMessages).to.have.length(0);
     });
 
@@ -504,8 +503,8 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
             await svc1.syncPublicKeys('all');
             expect(error1).to.have.length(0);
             expect(info1).to.have.length(1);
-            expect(info1[0]).to.include('imported: 2');
-            expect(info1[0]).to.include('unchanged: 0');
+            expect(info1[0]).to.include('2 imported');
+            expect(info1[0]).to.include('0 unchanged');
 
             // add 1 more key to source
             await multiSourceHelper.generateKey('Phase6 Sync User 3', 'phase6sync3@example.com');
@@ -517,8 +516,8 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
             await svc2.syncPublicKeys('all');
             expect(error2).to.have.length(0);
             expect(info2).to.have.length(1);
-            expect(info2[0]).to.include('imported: 1');
-            expect(info2[0]).to.include('unchanged: 2');
+            expect(info2[0]).to.include('1 imported');
+            expect(info2[0]).to.include('2 unchanged');
         } finally {
             await multiSourceHelper?.cleanup();
         }
@@ -562,7 +561,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
 
             expect(errorMessages, `export/import failed: ${errorMessages.join('; ')}`).to.have.length(0);
             expect(infoMessages, 'expected exactly one success message').to.have.length(1);
-            expect(infoMessages[0]).to.include('imported: 1');
+            expect(infoMessages[0]).to.include('1 imported');
 
             // Verify the correct key landed in the container's default keyring.
             const listResult = spawnSync('gpg', ['--list-keys', '--with-colons'], {

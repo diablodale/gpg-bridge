@@ -145,7 +145,7 @@ export interface IGpgCliFactory {
  * |---------------|------------------------------------------------------------------------|
  * | `'all'`       | Headless — export all public keys in the keyring                       |
  * | `'pairs'`     | Headless — export public keys for all key pairs (uses --list-secret-keys) |
- * | other string  | Headless — passed directly to `gpg --export` as an identifier         |
+ * | string[]      | Headless — each element passed as a separate `gpg --export` argument   |
  * | *(omitted)*   | Interactive — shows QuickPick for the user to select keys              |
  */
-export type KeyFilter = 'all' | 'pairs' | string;
+export type KeyFilter = 'all' | 'pairs' | string[];

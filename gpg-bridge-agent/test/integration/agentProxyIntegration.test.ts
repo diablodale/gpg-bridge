@@ -445,7 +445,7 @@ describe('Phase 4 — exportPublicKeys command', function () {
 
     it('2. filter=<fingerprint>: returns ≥400 chars for that specific key pair', async function () {
         const result = await vscode.commands.executeCommand<string | undefined>(
-            '_gpg-bridge-agent.exportPublicKeys', fp1
+            '_gpg-bridge-agent.exportPublicKeys', [fp1]
         );
         expect(result, 'filter by fingerprint should return armored key data').to.be.a('string');
         expect(result).to.include('-----BEGIN PGP PUBLIC KEY BLOCK-----');
@@ -456,16 +456,16 @@ describe('Phase 4 — exportPublicKeys command', function () {
 
     it('3. filter=<email>: returns ≥400 chars for the matching key pair', async function () {
         const result = await vscode.commands.executeCommand<string | undefined>(
-            '_gpg-bridge-agent.exportPublicKeys', 'phase4-export@example.com'
+            '_gpg-bridge-agent.exportPublicKeys', ['phase4-export@example.com']
         );
         expect(result, 'filter by email should return armored key data').to.be.a('string');
         expect(result).to.include('-----BEGIN PGP PUBLIC KEY BLOCK-----');
         expect((result as string).length, 'exported armor should be at least 400 chars').to.be.greaterThanOrEqual(400);
     });
 
-    it("4. filter='unknown@nomatch.invalid': gpg --export returns zero bytes → returns undefined", async function () {
+    it("4. filter=['unknown@nomatch.invalid']: gpg --export returns zero bytes → returns undefined", async function () {
         const result = await vscode.commands.executeCommand<string | undefined>(
-            '_gpg-bridge-agent.exportPublicKeys', 'unknown@nomatch.invalid'
+            '_gpg-bridge-agent.exportPublicKeys', ['unknown@nomatch.invalid']
         );
         expect(result, 'unknown filter should return undefined').to.be.undefined;
     });

@@ -99,7 +99,7 @@ async function startPublicKeySync(): Promise<void> {
 
         // Create the service and start auto-syncing with the current filter config
         publicKeySyncService = new PublicKeySync({ logCallback });
-        const autoSyncFilter = config.get<string>('autoSyncPublicKeys') ?? '';
+        const autoSyncFilter = config.get<KeyFilter | ''>('autoSyncPublicKeys') ?? '';
         void publicKeySyncService.autoSync(autoSyncFilter);
     } catch (error) {
         const message = `Failed to start public key sync: ${extractErrorMessage(error)}`;

@@ -482,15 +482,14 @@ export class GpgCli {
      * Export public keys as ASCII-armored text.
      * Armor encoding makes the data safe to transport through JSON-based channels
      * (such as VS Code's cross-host command bridge) without serialization issues.
-     * @param filter Optional GPG identifier (fingerprint, email, key ID) or space-separated list.
-     *               If omitted, exports all public keys.
+     * @param filter Optional key identifier(s) — each element is passed as a separate argument,
+     *   preserving spaces in UIDs. Omit to export all public keys.
      * @returns ASCII-armored key data as a `string`. Empty string if no keys match the filter.
      */
-    async exportPublicKeys(filter?: string): Promise<string> {
+    async exportPublicKeys(filter?: string[]): Promise<string> {
         const args = ['--armor', '--export'];
-        if (filter) {
-            // Space-separated identifiers are passed as individual arguments
-            args.push(...filter.split(' ').filter(Boolean));
+        if (filter?.length) {
+            args.push(...filter);
         }
         const { stdout } = await this.run(this.gpgBin, args);
         return stdout;

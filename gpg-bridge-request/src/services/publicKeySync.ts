@@ -59,14 +59,25 @@ export class PublicKeySync {
 
     /**
      * Called on extension activation. Runs `syncPublicKeys(setting)` only when
-     * `setting` is a non-empty string. Silently does nothing for `""`.
+     * `setting` is a non-empty string or non-empty array. Silently does nothing
+     * for `""` or `[]`.
+     *
+     * Rejects invalid strings (not `'all'` or `'pairs'`) with an error message —
+     * arbitrary identifiers must be configured as a JSON array, e.g. `["John Doe"]`.
      *
      * Enables a one-liner in `extension.ts` that is trivially testable without
      * replicating the guard condition outside of this class.
      */
-    async autoSync(setting: string): Promise<void> {
-        if (!setting) { return; }
-        await this.syncPublicKeys(setting);
+    async autoSync(setting: KeyFilter | ''): Promise<void> {
+        const isEmpty = Array.isArray(setting) ? setting.length === 0 : !setting;
+        if (isEmpty) { return; }
+        if (typeof setting === 'string' && setting !== 'all' && setting !== 'pairs') {
+            const msg = `gpgBridgeRequest.autoSyncPublicKeys: invalid value "${setting}". Use "all", "pairs", or a JSON array of identifiers, e.g. ["${setting}"]`;
+            log(this.config, `[autoSync] ${msg}`);
+            this.showErrorMessageFn(msg);
+            return;
+        }
+        await this.syncPublicKeys(setting as KeyFilter);
     }
 
     /**
@@ -101,8 +112,8 @@ export class PublicKeySync {
         }
 
         const result = await this.gpgCli.importPublicKeys(keyData);
-        const summary = `imported: ${result.imported}, unchanged: ${result.unchanged}, errors: ${result.errors}`;
-        log(this.config, `[syncPublicKeys] Public key import complete - ${summary}`);
-        this.showInformationMessageFn(`GPG Bridge: public key sync complete - ${summary}`);
+        const summary = `${result.imported} imported, ${result.unchanged} unchanged, ${result.errors} errors`;
+        log(this.config, `[syncPublicKeys] Public key import complete: ${summary}`);
+        this.showInformationMessageFn(`Public key sync complete: ${summary}`);
     }
 }

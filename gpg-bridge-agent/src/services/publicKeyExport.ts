@@ -71,7 +71,7 @@ interface KeyPickItem extends vscode.QuickPickItem {
  * Headless paths (no UI):
  *   - `filter === 'all'`   → export every public key in the keyring
  *   - `filter === 'pairs'` → export the public key for each owned key pair
- *   - other string         → pass directly to `gpg --export` as an identifier
+ *   - `string[]`           → each element passed as a separate `gpg --export` argument (preserves spaces in UIDs)
  *
  * Interactive path (UI required):
  *   - `filter === undefined` → show a multi-select QuickPick populated from all public keys;
@@ -103,8 +103,9 @@ export async function exportPublicKeys(
         keyData = await gpgCli.exportPublicKeys();
     } else if (filter === 'pairs') {
         const keys = await gpgCli.listPairedKeys();
-        keyData = await gpgCli.exportPublicKeys(keys.map(k => k.fingerprint).join(' '));
+        keyData = await gpgCli.exportPublicKeys(keys.map(k => k.fingerprint));
     } else if (filter !== undefined) {
+        // string[] — each element passed as a distinct gpg --export argument
         keyData = await gpgCli.exportPublicKeys(filter);
     } else {
         // Interactive: populate QuickPick from all public keys.
@@ -142,7 +143,6 @@ export async function exportPublicKeys(
             Array.from(selected)
                 .map(i => (i as KeyPickItem)._fingerprint)
                 .filter((fp): fp is string => fp !== undefined)
-                .join(' ')
         );
     }
 
