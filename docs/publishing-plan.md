@@ -745,7 +745,7 @@ cd pack && npx vsce package
 **5d.** Authenticate vsce locally before publishing. The `VSCE_PAT` CI secret
 does not exist yet (that is Phase 6), so use a personal access token directly.
 Create a PAT now following the same Azure DevOps steps described in Phase 6 step
-6e — you can reuse this same token when setting up the GitHub secret in Phase 6.
+6f — you can reuse this same token when setting up the GitHub secret in Phase 6.
 Then authenticate:
 ```powershell
 $env:VSCE_PAT = "<your-azure-devops-pat>"
@@ -864,7 +864,12 @@ After Phase 5 publish it should be:
 }
 ```
 
-**6c.** Create `.github/workflows/release-please.yml`:
+**6c.** Add Zizmor and zizmor-pre-commit
+Add Zizmor and its pre-commit so to watch for security faults in
+GitHub actions and workflows. This step needs to have implementation
+more fully described.
+
+**6d.** Create `.github/workflows/release-please.yml`:
 ```yaml
 name: release-please
 on:
@@ -885,13 +890,13 @@ jobs:
 `permissions: contents: write` allows the bot to create tags and update files.
 `permissions: pull-requests: write` allows the bot to open and update the release PR.
 
-**6d.** Create `.github/workflows/ci.yml` — triggers on every push and PR to `main`:
+**6e.** Create `.github/workflows/ci.yml` — triggers on every push and PR to `main`:
 - Runner: `ubuntu-latest`
 - Steps: checkout → Node.js 22 setup → `npm install` → `npm run compile` →
   `npm test` → integration tests for both extensions
 - Annotates test failures inline in the PR diff
 
-**6e.** Create a Marketplace publish token and store it as a GitHub Actions secret
+**6f.** Create a Marketplace publish token and store it as a GitHub Actions secret
 (manual, one-time). The VS Code Marketplace runs on Azure DevOps infrastructure,
 so the token is created at Azure DevOps — not on GitHub or the marketplace page.
 
@@ -913,7 +918,7 @@ so the token is created at Azure DevOps — not on GitHub or the marketplace pag
 The secret name `VSCE_PAT` is a convention from the vsce docs. It must match
 what the `publish.yml` workflow references. The token never appears in code.
 
-**6f.** Create `.github/workflows/publish.yml` — triggers when release-please
+**6g.** Create `.github/workflows/publish.yml` — triggers when release-please
 pushes a `v*` tag (which happens when the release PR is merged):
 - Runner: `ubuntu-latest`
 - Steps:
@@ -922,7 +927,7 @@ pushes a `v*` tag (which happens when the release PR is merged):
   3. `npm install`
   4. `npm run compile` + `npm test` — abort if tests fail
   5. `npm run package:agent` + `npm run package:request` + `cd pack && npx vsce package`
-  6. Publish all three via `npx vsce publish` using the `VSCE_PAT` secret (created in 6e)
+  6. Publish all three via `npx vsce publish` using the `VSCE_PAT` secret (created in 6f)
   7. Create GitHub Release via `gh` CLI, attach all three `.vsix` files,
      and use the CHANGELOG section for the release body
 
@@ -940,7 +945,7 @@ pushes a `v*` tag (which happens when the release PR is merged):
 > commits` branch protection rule on `main`, bot commits made via `GITHUB_TOKEN`
 > will satisfy it; commits made via a custom PAT will not.
 
-**6g.** Add `npm-run-all2` to root `devDependencies`. This replaces any
+**6h.** Add `npm-run-all2` to root `devDependencies`. This replaces any
 platform-specific parallel script runners so `npm run watch` works identically
 on Windows (your dev machine) and Linux (CI runners):
 ```powershell
@@ -1038,5 +1043,3 @@ non-trivial effort that does not block first publish.
 Phase 6 uses `ubuntu-latest`. A separate Windows runner job would validate
 that the GPG4Win integration paths and socket file parsing work correctly in
 CI, not just in local developer environments.
-
-

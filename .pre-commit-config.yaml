@@ -1,0 +1,101 @@
+# Hooks are installed automatically by `npm install` via the postinstall script.
+# To reinstall manually:  prek install
+# To bypass in an emergency: git commit --no-verify
+#   Note: The GitHub repository ruleset still enforces commit signing.
+#   The PR flow enforces the full test suite via CI.
+
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+  - pre-push
+default_stages:
+  - pre-commit
+
+repos:
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      #- id: detect-private-key
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        args: ['--redact', '--verbose']
+
+  - repo: local
+    hooks:
+      # reject tabs in text files
+      - id: reject-tabs
+        name: Reject Tabs
+        language: system
+        types: [text]
+        exclude: '^(Makefile|.*\.mk|.*\.go|.*\.tsv)$'
+        entry: >
+          node -e '
+          const fs = require("fs");
+          let failed = false;
+          for (const file of process.argv.slice(1)) {
+            try {
+              const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+              for (let i = 0; i < lines.length; i++) {
+                if (lines[i].includes("\t")) {
+                  console.error("❌ Tab found in " + file + " on line " + (i + 1));
+                  failed = true;
+                  break;
+                }
+              }
+            } catch(e) {
+              console.error("⚠️ Error reading " + file + ": " + e.message);
+              failed = true;
+            }
+          }
+          if (failed) {
+            console.error("🛑 Commit rejected: Please fix tabs or file errors.");
+            process.exit(1);
+          }
+          '
+
+        # pre-commit: TypeScript compile — must pass before lint runs
+      - id: compile
+        name: TypeScript compile
+        language: system
+        entry: npm run compile
+        pass_filenames: false
+        always_run: true
+        priority: 100
+
+        # pre-commit: ESLint — runs after compile
+      - id: lint
+        name: ESLint
+        language: system
+        entry: npm run lint
+        pass_filenames: false
+        always_run: true
+        priority: 110
+
+        # commit-msg: Conventional Commits format via commitlint
+      - id: conventional-commits
+        name: Conventional Commits
+        language: system
+        entry: node node_modules/@commitlint/cli/cli.js --edit
+        pass_filenames: true
+        stages:
+          - commit-msg
+
+        # pre-push: unit tests only
+      - id: tests
+        name: Unit tests
+        language: system
+        entry: npm test
+        pass_filenames: false
+        always_run: true
+        stages:
+          - pre-push
