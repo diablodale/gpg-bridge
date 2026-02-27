@@ -1,4 +1,4 @@
-﻿import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import { AgentProxy } from './services/agentProxy';
 import { GpgCli, isTestEnvironment, isIntegrationTestEnvironment, extractErrorMessage } from '@gpg-bridge/shared';
 import type { KeyFilter } from '@gpg-bridge/shared';
@@ -184,7 +184,7 @@ async function startAgentProxy(): Promise<void> {
 
         const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
         const gpgBinDir = config.get<string>('gpgBinDir') ?? '';
-        const debugLogging = config.get<boolean>('debugLogging') || true;	// TODO remove forced debug logging
+        const debugLogging = config.get<boolean>('debugLogging') || true;   // TODO remove forced debug logging
         const logCallback = debugLogging ? (message: string) => outputChannel.appendLine(message) : undefined;
 
         agentProxyService = new AgentProxy(

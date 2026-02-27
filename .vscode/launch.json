@@ -3,37 +3,37 @@
 // Hover to view descriptions of existing attributes.
 // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
 {
-	"version": "0.2.0",
-	"configurations": [
-		{
-			"name": "Extension Tests: Agent Proxy",
-			"type": "extensionHost",
-			"request": "launch",
-			"runtimeExecutable": "${execPath}",
-			"args": [
-				"--disable-extensions",
-				"--extensionDevelopmentPath=${workspaceFolder}/agent-proxy",
-				"--extensionTestsPath=${workspaceFolder}/agent-proxy/out/test/suite/index"
-			],
-			"outFiles": [
-				"${workspaceFolder}/agent-proxy/out/**/*.js"
-			],
-			"preLaunchTask": "${defaultBuildTask}"
-		},
-		{
-			"name": "Extension Tests: Request Proxy",
-			"type": "extensionHost",
-			"request": "launch",
-			"runtimeExecutable": "${execPath}",
-			"args": [
-				"--disable-extensions",
-				"--extensionDevelopmentPath=${workspaceFolder}/request-proxy",
-				"--extensionTestsPath=${workspaceFolder}/request-proxy/out/test/suite/index"
-			],
-			"outFiles": [
-				"${workspaceFolder}/request-proxy/out/**/*.js"
-			],
-			"preLaunchTask": "${defaultBuildTask}"
-		}
-	]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Extension Tests: Agent Proxy",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--disable-extensions",
+        "--extensionDevelopmentPath=${workspaceFolder}/agent-proxy",
+        "--extensionTestsPath=${workspaceFolder}/agent-proxy/out/test/suite/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/agent-proxy/out/**/*.js"
+      ],
+      "preLaunchTask": "${defaultBuildTask}"
+    },
+    {
+      "name": "Extension Tests: Request Proxy",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--disable-extensions",
+        "--extensionDevelopmentPath=${workspaceFolder}/request-proxy",
+        "--extensionTestsPath=${workspaceFolder}/request-proxy/out/test/suite/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/request-proxy/out/**/*.js"
+      ],
+      "preLaunchTask": "${defaultBuildTask}"
+    }
+  ]
 }
