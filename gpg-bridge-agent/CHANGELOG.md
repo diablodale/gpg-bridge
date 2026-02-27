@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for guidelines.
+## [0.3.0](https://github.com/diablodale/gpg-bridge/compare/v0.2.0...v0.3.0) (2026-02-27)
+
+
+### Added
+
+* add array of ids for public key export auto-sync ([01673fc](https://github.com/diablodale/gpg-bridge/commit/01673fcd28138a45a5004d0a6b8af62859d305bf))
+* enhance public key export quick pick UI with groups, sort, and icons ([ce55ad7](https://github.com/diablodale/gpg-bridge/commit/ce55ad79e91235f8b0a5471dce0b3e1ccc3b20ca))
+
 ## [0.2.0](https://github.com/diablodale/gpg-bridge/compare/v0.1.0...v0.2.0) (2026-02-25)
 
 

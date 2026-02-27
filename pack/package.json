@@ -2,7 +2,7 @@
   "name": "gpg-bridge",
   "displayName": "GPG Bridge",
   "description": "Use Windows GPG keys via a bridge to Dev Containers, SSH, and WSL remotes. Sign git commits, verify signatures, and encrypt/decrypt files without any remote-side configuration.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "icon": "icon.png",
   "preview": true,
   "publisher": "hidale",
