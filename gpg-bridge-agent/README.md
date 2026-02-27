@@ -1,4 +1,4 @@
-﻿# GPG Bridge Agent
+# GPG Bridge Agent
 
 <img src="../assets/icon.png" alt="GPG Bridge Agent icon" width="96" align="right" />
 
@@ -52,4 +52,3 @@ build setup, test instructions, and commit conventions.
 For internal architecture details — state machine, public API, session management, and
 testing approach — see
 [docs/agent-internals.md](../docs/agent-internals.md).
-

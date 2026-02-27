@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Remote Extension Context
  *
  * This code runs on the remote (WSL/container/SSH).
@@ -166,5 +166,3 @@ async function stopRequestProxy(): Promise<void> {
 export function deactivate(): Promise<void> | undefined {
     return requestProxyService?.stop();
 }
-
-

@@ -1,4 +1,4 @@
-﻿# GPG Bridge Request
+# GPG Bridge Request
 
 <img src="../assets/icon.png" alt="GPG Bridge Request icon" width="96" align="right" />
 
@@ -55,4 +55,3 @@ build setup, test instructions, and commit conventions.
 For internal architecture details — state machine, INQUIRE D-block buffering, session
 management, and testing approach — see
 [docs/request-internals.md](../docs/request-internals.md).
-

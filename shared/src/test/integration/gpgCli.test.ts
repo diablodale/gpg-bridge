@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Integration tests for GpgCli (production base class) and GpgTestHelper (test subclass).
  *
  * Uses real gpg subprocesses — gpg must be on PATH or in a well-known location.

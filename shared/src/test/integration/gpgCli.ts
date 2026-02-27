@@ -1,4 +1,4 @@
-﻿/**
+/**
  * GpgTestHelper  Integration Test Helper
  *
  * Extends the production GpgCli base class with test-only lifecycle methods.

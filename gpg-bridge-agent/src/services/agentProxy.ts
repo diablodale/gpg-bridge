@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent Proxy Service
  *
  * Manages connections to gpg-agent Assuan socket.

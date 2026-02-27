@@ -1,4 +1,4 @@
-﻿# GPG Bridge
+# GPG Bridge
 
 <img src="assets/icon.png" alt="GPG Bridge icon" width="96" align="right" />
 

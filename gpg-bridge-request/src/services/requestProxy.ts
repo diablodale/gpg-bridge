@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Request Proxy Service - State Machine Implementation
  *
  * Creates a Unix socket server on the GPG agent socket path.
