@@ -56,7 +56,8 @@
     "icon:deploy": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('./assets/icon.png',d+'/icon.png');console.log(d+'/icon.png copied');});\"",
     "clean": "rimraf -g \"gpg-bridge-agent/out\" \"gpg-bridge-request/out\" \"gpg-bridge-agent/gpg-bridge-agent-*.vsix\" \"gpg-bridge-request/gpg-bridge-request-*.vsix\" \"pack/gpg-bridge-*.vsix\" \"shared/out\"",
     "release": "commit-and-tag-version",
-    "release:dry-run": "commit-and-tag-version --dry-run"
+    "release:dry-run": "commit-and-tag-version --dry-run",
+    "release:minor": "commit-and-tag-version --release-as minor"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
