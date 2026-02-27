@@ -797,4 +797,3 @@ describe('Protocol Utilities', () => {
         });
     });
 });
-

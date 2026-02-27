@@ -23,4 +23,3 @@ out/**
 **/*.tsbuildinfo
 
 node_modules/**
-
