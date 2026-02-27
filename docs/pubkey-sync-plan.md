@@ -30,6 +30,7 @@ remote, and binary key data passes through the existing cross-host command chann
 
 **New command** (visible in command palette): `gpg-bridge-request.syncPublicKeys` — sync
 public keys from the Windows keyring to the remote keyring.
+
 - Manual trigger: shows a multi-select QuickPick (agent-side) listing your key pairs as
   `<User-ID> [<short-key-ID>]` (e.g. `Alice <alice@example.com> [A1B2C3D4]`); user picks
   one or more keys to sync
@@ -44,11 +45,11 @@ public keys from the Windows keyring to the remote keyring.
 
 The internal command `_gpg-bridge-agent.exportPublicKeys(filter?: KeyFilter)` accepts:
 
-| Value | Behaviour |
-|---|---|
-| *(omitted)* | Shows interactive QuickPick; user selects from your key pairs |
-| `"all"` | Headless — exports all public keys in the Windows keyring |
-| `"pairs"` | Headless — exports public keys for all your key pairs (uses `gpg --list-secret-keys` internally) |
+| Value            | Behaviour                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| _(omitted)_      | Shows interactive QuickPick; user selects from your key pairs                                               |
+| `"all"`          | Headless — exports all public keys in the Windows keyring                                                   |
+| `"pairs"`        | Headless — exports public keys for all your key pairs (uses `gpg --list-secret-keys` internally)            |
 | any other string | Headless — treated as a GPG identifier (email, fingerprint, key ID, etc.) passed directly to `gpg --export` |
 
 The `gpgBridgeRequest.autoSyncPublicKeys` setting value is passed as-is to `exportPublicKeys`.
@@ -65,6 +66,7 @@ it lists paired keys, shows the QuickPick, exports the selected keys, and return
 data in one call. Request receives the `Uint8Array` and runs `gpg --import` locally.
 
 One new internal command is added to `gpg-bridge-agent`:
+
 - `_gpg-bridge-agent.exportPublicKeys(filter?: KeyFilter)` → conditionally shows QuickPick,
   runs `gpg --export`, returns `Uint8Array` (or `undefined` if user cancels)
 
@@ -112,6 +114,7 @@ sequenceDiagram
 ```
 
 **Pros**
+
 - Single round-trip across the host boundary regardless of filter
 - All Windows-side logic (list, QuickPick, export) is encapsulated inside one agent command
 - `--with-colons` parsing stays in the agent — no shared parsing logic needed in request
@@ -120,6 +123,7 @@ sequenceDiagram
 - `autoSyncPublicKeys` setting value maps directly to the `filter` param — no translation
 
 **Cons**
+
 - Agent command has a side effect (may show QuickPick UI) — less pure than a data-only command
 - Two behavioural modes in one command (interactive vs. headless) — distinguished by presence
   of `filter` argument
@@ -128,22 +132,22 @@ sequenceDiagram
 
 ## New files / changes
 
-| File | Change |
-|------|--------|
-| `shared/src/gpgCli.ts` | New: production `GpgCli` base class — `PairedKeyInfo` interface; private `detect()`, `getBinDir()`, `gpgconfListDirs`, `listPairedKeys`, `exportPublicKeys`, `importPublicKeys`, `async cleanup()` (no-op in base; `GpgTestHelper` overrides); optional `gnupgHome` opt; `protected run()`/`runRaw()` |
-| `shared/package.json` | Add `which` production dependency (synchronous PATH probing in `GpgCli` constructor) |
-| `shared/src/index.ts` | Re-export `GpgCli`, `GpgCliOpts`, `PairedKeyInfo`, and `IGpgCliFactory` |
-| `shared/src/types.ts` | Add `KeyFilter` type (`'all' \| 'pairs' \| string`); add `IGpgCliFactory` interface (`create(): GpgCli` — no params; caller closes over opts) |
-| `shared/src/test/integration/gpgCli.ts` | Rename `GpgCli` → `GpgTestHelper`; extend production `GpgCli`; constructor (no required args) creates isolated temp dir via `mkdtempSync`, calls `assertSafeToDelete`, passes it as `gnupgHome` to `super()`, exposes `readonly gnupgHome: string` property and `async cleanup()` method; does **not** mutate `process.env`; remove duplicated subprocess infrastructure |
-| `shared/src/test/integration/index.ts` | Update export: `GpgTestHelper` (and its opts/result types) |
-| `gpg-bridge-agent/src/services/agentProxy.ts` | Add `gpgCliFactory?: IGpgCliFactory` to `AgentProxyDeps`; `AgentProxy` owns `private gpgCli: GpgCli \| null`; add `async start(): Promise<void>` (constructs `GpgCli` via factory, calls `gpgconfListDirs('agent-extra-socket')`, validates path exists); `stop()` calls `gpgCli.cleanup()`; add `getGpgBinDir(): string \| null` instance method; remove `AgentProxyConfig.gpgAgentSocketPath` |
-| `gpg-bridge-agent/src/extension.ts` | Remove `detectGpgBinDir()`, `resolveAgentSocketPath()`, `detectedGpgBinDir`, `resolvedAgentSocketPath`; `startAgentProxy()` stays — reads `gpgBinDir` setting, constructs `AgentProxy` with `gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) }` closure, calls `await agentProxyService.start()`; `showStatus()` calls `agentProxyService.getGpgBinDir()`; register `_gpg-bridge-agent.exportPublicKeys` internal command |
-| `gpg-bridge-agent/src/services/publicKeyExport.ts` | New: `exportPublicKeys(filter?: KeyFilter)` — QuickPick when no filter, headless otherwise; uses `GpgCli` |
-| `gpg-bridge-request/src/extension.ts` | Register `gpg-bridge-request.syncPublicKeys` user command; hook auto-sync into activation |
-| `gpg-bridge-request/src/services/publicKeySync.ts` | New: read filter from setting, call `_gpg-bridge-agent.exportPublicKeys`, run `gpgcli.importPublicKeys` locally |
-| `gpg-bridge-request/src/services/requestProxy.ts` | Replace inline `spawnSync` in `getLocalGpgSocketPath()` with `gpgcli.gpgconfListDirs()`; socket file removal logic stays |
-| `gpg-bridge-request/package.json` | Add `gpg-bridge-request.syncPublicKeys` to `contributes.commands`; add `gpgBridgeRequest.autoSyncPublicKeys` string setting (default `""`) with `"all"` and `"pairs"` as enum suggestions |
-| All integration test files | Update `GpgCli` → `GpgTestHelper` at call sites |
+| File                                               | Change                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/src/gpgCli.ts`                             | New: production `GpgCli` base class — `PairedKeyInfo` interface; private `detect()`, `getBinDir()`, `gpgconfListDirs`, `listPairedKeys`, `exportPublicKeys`, `importPublicKeys`, `async cleanup()` (no-op in base; `GpgTestHelper` overrides); optional `gnupgHome` opt; `protected run()`/`runRaw()`                                                                                                                              |
+| `shared/package.json`                              | Add `which` production dependency (synchronous PATH probing in `GpgCli` constructor)                                                                                                                                                                                                                                                                                                                                               |
+| `shared/src/index.ts`                              | Re-export `GpgCli`, `GpgCliOpts`, `PairedKeyInfo`, and `IGpgCliFactory`                                                                                                                                                                                                                                                                                                                                                            |
+| `shared/src/types.ts`                              | Add `KeyFilter` type (`'all' \| 'pairs' \| string`); add `IGpgCliFactory` interface (`create(): GpgCli` — no params; caller closes over opts)                                                                                                                                                                                                                                                                                      |
+| `shared/src/test/integration/gpgCli.ts`            | Rename `GpgCli` → `GpgTestHelper`; extend production `GpgCli`; constructor (no required args) creates isolated temp dir via `mkdtempSync`, calls `assertSafeToDelete`, passes it as `gnupgHome` to `super()`, exposes `readonly gnupgHome: string` property and `async cleanup()` method; does **not** mutate `process.env`; remove duplicated subprocess infrastructure                                                           |
+| `shared/src/test/integration/index.ts`             | Update export: `GpgTestHelper` (and its opts/result types)                                                                                                                                                                                                                                                                                                                                                                         |
+| `gpg-bridge-agent/src/services/agentProxy.ts`      | Add `gpgCliFactory?: IGpgCliFactory` to `AgentProxyDeps`; `AgentProxy` owns `private gpgCli: GpgCli \| null`; add `async start(): Promise<void>` (constructs `GpgCli` via factory, calls `gpgconfListDirs('agent-extra-socket')`, validates path exists); `stop()` calls `gpgCli.cleanup()`; add `getGpgBinDir(): string \| null` instance method; remove `AgentProxyConfig.gpgAgentSocketPath`                                    |
+| `gpg-bridge-agent/src/extension.ts`                | Remove `detectGpgBinDir()`, `resolveAgentSocketPath()`, `detectedGpgBinDir`, `resolvedAgentSocketPath`; `startAgentProxy()` stays — reads `gpgBinDir` setting, constructs `AgentProxy` with `gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) }` closure, calls `await agentProxyService.start()`; `showStatus()` calls `agentProxyService.getGpgBinDir()`; register `_gpg-bridge-agent.exportPublicKeys` internal command |
+| `gpg-bridge-agent/src/services/publicKeyExport.ts` | New: `exportPublicKeys(filter?: KeyFilter)` — QuickPick when no filter, headless otherwise; uses `GpgCli`                                                                                                                                                                                                                                                                                                                          |
+| `gpg-bridge-request/src/extension.ts`              | Register `gpg-bridge-request.syncPublicKeys` user command; hook auto-sync into activation                                                                                                                                                                                                                                                                                                                                          |
+| `gpg-bridge-request/src/services/publicKeySync.ts` | New: read filter from setting, call `_gpg-bridge-agent.exportPublicKeys`, run `gpgcli.importPublicKeys` locally                                                                                                                                                                                                                                                                                                                    |
+| `gpg-bridge-request/src/services/requestProxy.ts`  | Replace inline `spawnSync` in `getLocalGpgSocketPath()` with `gpgcli.gpgconfListDirs()`; socket file removal logic stays                                                                                                                                                                                                                                                                                                           |
+| `gpg-bridge-request/package.json`                  | Add `gpg-bridge-request.syncPublicKeys` to `contributes.commands`; add `gpgBridgeRequest.autoSyncPublicKeys` string setting (default `""`) with `"all"` and `"pairs"` as enum suggestions                                                                                                                                                                                                                                          |
+| All integration test files                         | Update `GpgCli` → `GpgTestHelper` at call sites                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## Shared `gpg` subprocess code
 
@@ -151,10 +155,10 @@ Both extensions already call `gpgconf` with nearly identical `spawnSync` pattern
 new feature adds `gpg --export` on the agent side and `gpg --import` on the request side —
 a natural export/import pair. The overlap is real enough to extract:
 
-| Extension | Existing subprocess calls | New subprocess calls |
-|---|---|---|
-| Agent | `gpgconf --list-dirs agent-extra-socket` | `gpg --list-secret-keys --with-colons`; `gpg --export [filter]` |
-| Request | `gpgconf --list-dirs agent-socket`; `gpgconf --list-dirs agent-extra-socket` | `gpg --import` (stdin) |
+| Extension | Existing subprocess calls                                                    | New subprocess calls                                            |
+| --------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Agent     | `gpgconf --list-dirs agent-extra-socket`                                     | `gpg --list-secret-keys --with-colons`; `gpg --export [filter]` |
+| Request   | `gpgconf --list-dirs agent-socket`; `gpgconf --list-dirs agent-extra-socket` | `gpg --import` (stdin)                                          |
 
 The existing test `GpgCli` in `shared/src/test/integration/gpgCli.ts` already does many of
 these operations, but with GNUPGHOME injection for keyring isolation, agent lifecycle
@@ -169,46 +173,48 @@ not appropriate.
 ```typescript
 /** One entry per key pair you own (parsed from `gpg --list-secret-keys --with-colons`). */
 export interface PairedKeyInfo {
-    fingerprint: string;  // 40-char hex primary key fingerprint
-    userIds: string[];    // one or more UID strings (e.g. 'Alice <alice@example.com>')
+  fingerprint: string; // 40-char hex primary key fingerprint
+  userIds: string[]; // one or more UID strings (e.g. 'Alice <alice@example.com>')
 }
 
 export interface GpgCliOpts {
-    gpgBinDir?: string;     // absolute directory path containing gpg and gpgconf;
-                            // if omitted or '', detection runs at construction time
-    gnupgHome?: string;     // if set, injected as GNUPGHOME in all subprocess calls
+  gpgBinDir?: string; // absolute directory path containing gpg and gpgconf;
+  // if omitted or '', detection runs at construction time
+  gnupgHome?: string; // if set, injected as GNUPGHOME in all subprocess calls
 }
 
 export class GpgCli {
-    constructor(opts?: GpgCliOpts) {
-        // If gpgBinDir is provided, validate it.
-        // If empty/omitted, run private detection:
-        //   1. which('gpgconf') — respects PATH, cross-platform
-        //   2. probe well-known Windows Gpg4win locations (Windows only)
-        // Throws at construction if no gpgconf can be found.
-    }
+  constructor(opts?: GpgCliOpts) {
+    // If gpgBinDir is provided, validate it.
+    // If empty/omitted, run private detection:
+    //   1. which('gpgconf') — respects PATH, cross-platform
+    //   2. probe well-known Windows Gpg4win locations (Windows only)
+    // Throws at construction if no gpgconf can be found.
+  }
 
-    /** Return the resolved bin directory (useful for status display). */
-    getBinDir(): string
+  /** Return the resolved bin directory (useful for status display). */
+  getBinDir(): string;
 
-    /** gpgconf --list-dirs <dirName> → trimmed path string */
-    gpgconfListDirs(dirName: string): Promise<string>
+  /** gpgconf --list-dirs <dirName> → trimmed path string */
+  gpgconfListDirs(dirName: string): Promise<string>;
 
-    /** gpg --list-secret-keys --with-colons → one entry per key pair you own */
-    listPairedKeys(): Promise<PairedKeyInfo[]>
+  /** gpg --list-secret-keys --with-colons → one entry per key pair you own */
+  listPairedKeys(): Promise<PairedKeyInfo[]>;
 
-    /** gpg --export [filter] → binary Uint8Array */
-    exportPublicKeys(filter?: string): Promise<Uint8Array>
+  /** gpg --export [filter] → binary Uint8Array */
+  exportPublicKeys(filter?: string): Promise<Uint8Array>;
 
-    /** gpg --import (stdin via `execFile` `input:` option — no temp file) → parsed result { imported: number; unchanged: number; errors: number } */
-    importPublicKeys(keyData: Uint8Array): Promise<{ imported: number; unchanged: number; errors: number }>
+  /** gpg --import (stdin via `execFile` `input:` option — no temp file) → parsed result { imported: number; unchanged: number; errors: number } */
+  importPublicKeys(
+    keyData: Uint8Array,
+  ): Promise<{ imported: number; unchanged: number; errors: number }>;
 
-    /** No-op in base class. Overridden by GpgTestHelper to kill agent + delete temp dir. */
-    async cleanup(): Promise<void>
+  /** No-op in base class. Overridden by GpgTestHelper to kill agent + delete temp dir. */
+  async cleanup(): Promise<void>;
 
-    // protected run() / runRaw() helpers (available to subclasses)
+  // protected run() / runRaw() helpers (available to subclasses)
 
-    private detect(): string   // runs PATH probe then well-known path probe; throws if nothing found
+  private detect(): string; // runs PATH probe then well-known path probe; throws if nothing found
 }
 ```
 
@@ -238,59 +244,63 @@ Typical agent-side usage, following Decisions 12 and 17 (`AgentProxy` owns `GpgC
 ```typescript
 // agentProxy.ts — AgentProxy class owns the GpgCli instance
 export class AgentProxy {
-    private gpgCli: GpgCli | null = null;
-    private gpgAgentSocketPath: string | null = null;
-    private readonly gpgCliFactory?: IGpgCliFactory;
-    // ... socketFactory, fileSystem, sessions ...
+  private gpgCli: GpgCli | null = null;
+  private gpgAgentSocketPath: string | null = null;
+  private readonly gpgCliFactory?: IGpgCliFactory;
+  // ... socketFactory, fileSystem, sessions ...
 
-    constructor(config: AgentProxyConfig, deps?: Partial<AgentProxyDeps>) {
-        // cheap: wire deps only — no subprocess, no validation
-        this.gpgCliFactory = deps?.gpgCliFactory;
-        this.socketFactory = deps?.socketFactory ?? { createConnection: net.createConnection };
-        this.fileSystem = deps?.fileSystem ?? { existsSync: fs.existsSync, readFileSync: fs.readFileSync };
-    }
+  constructor(config: AgentProxyConfig, deps?: Partial<AgentProxyDeps>) {
+    // cheap: wire deps only — no subprocess, no validation
+    this.gpgCliFactory = deps?.gpgCliFactory;
+    this.socketFactory = deps?.socketFactory ?? { createConnection: net.createConnection };
+    this.fileSystem = deps?.fileSystem ?? {
+      existsSync: fs.existsSync,
+      readFileSync: fs.readFileSync,
+    };
+  }
 
-    async start(): Promise<void> {
-        // construct GpgCli via injected factory or default — throws if gpgconf not found
-        this.gpgCli = this.gpgCliFactory?.create() ?? new GpgCli();
-        this.gpgAgentSocketPath = await this.gpgCli.gpgconfListDirs('agent-extra-socket');
-        if (!this.fileSystem.existsSync(this.gpgAgentSocketPath)) {
-            throw new Error(`GPG agent socket not found: ${this.gpgAgentSocketPath}`);
-        }
+  async start(): Promise<void> {
+    // construct GpgCli via injected factory or default — throws if gpgconf not found
+    this.gpgCli = this.gpgCliFactory?.create() ?? new GpgCli();
+    this.gpgAgentSocketPath = await this.gpgCli.gpgconfListDirs('agent-extra-socket');
+    if (!this.fileSystem.existsSync(this.gpgAgentSocketPath)) {
+      throw new Error(`GPG agent socket not found: ${this.gpgAgentSocketPath}`);
     }
+  }
 
-    async stop(): Promise<void> {
-        // ... tear down active sessions ...
-        await this.gpgCli?.cleanup();
-        this.gpgCli = null;
-        this.gpgAgentSocketPath = null;
-    }
+  async stop(): Promise<void> {
+    // ... tear down active sessions ...
+    await this.gpgCli?.cleanup();
+    this.gpgCli = null;
+    this.gpgAgentSocketPath = null;
+  }
 
-    getGpgBinDir(): string | null {
-        return this.gpgCli?.getBinDir() ?? null;
-    }
+  getGpgBinDir(): string | null {
+    return this.gpgCli?.getBinDir() ?? null;
+  }
 }
 ```
 
 ```typescript
 // extension.ts — reads gpgBinDir from VS Code config; closes over it in the factory
 async function startAgentProxy(): Promise<void> {
-    const gpgBinDir = vscode.workspace.getConfiguration('gpgBridgeAgent').get<string>('gpgBinDir') ?? '';
-    agentProxyService = new AgentProxy(
-        { logCallback, statusBarCallback },
-        { gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) } }
-    );
-    await agentProxyService.start();
+  const gpgBinDir =
+    vscode.workspace.getConfiguration('gpgBridgeAgent').get<string>('gpgBinDir') ?? '';
+  agentProxyService = new AgentProxy(
+    { logCallback, statusBarCallback },
+    { gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) } },
+  );
+  await agentProxyService.start();
 }
 
 async function stopAgentProxy(): Promise<void> {
-    await agentProxyService?.stop();
-    agentProxyService = null;
+  await agentProxyService?.stop();
+  agentProxyService = null;
 }
 
 function showStatus(): void {
-    const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(not detected)';
-    // ...
+  const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(not detected)';
+  // ...
 }
 ```
 
@@ -310,33 +320,33 @@ import { GpgCli } from '@gpg-bridge/shared';
 import { assertSafeToDelete } from './helpers';
 
 export class GpgTestHelper extends GpgCli {
-    /** Absolute path to the isolated temp keyring created by this instance. */
-    public readonly gnupgHome: string;
+  /** Absolute path to the isolated temp keyring created by this instance. */
+  public readonly gnupgHome: string;
 
-    /** Optional — override only when gpg is not on PATH (e.g. specific Gpg4win install). */
-    constructor(opts?: { gpgBinDir?: string }) {
-        const gnupgHome = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-integration-'));
-        assertSafeToDelete(gnupgHome);
-        // gnupgHome is passed to super() so it is injected explicitly into every subprocess
-        // call — process.env.GNUPGHOME is never mutated, keeping tests side-effect-free.
-        super({ gpgBinDir: opts?.gpgBinDir, gnupgHome });
-        this.gnupgHome = gnupgHome;
-    }
+  /** Optional — override only when gpg is not on PATH (e.g. specific Gpg4win install). */
+  constructor(opts?: { gpgBinDir?: string }) {
+    const gnupgHome = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-test-integration-'));
+    assertSafeToDelete(gnupgHome);
+    // gnupgHome is passed to super() so it is injected explicitly into every subprocess
+    // call — process.env.GNUPGHOME is never mutated, keeping tests side-effect-free.
+    super({ gpgBinDir: opts?.gpgBinDir, gnupgHome });
+    this.gnupgHome = gnupgHome;
+  }
 
-    /**
-     * Kill the gpg-agent (tolerates already-dead agent), validate the temp dir
-     * path, then delete it. Always call in a finally block.
-     */
-    async cleanup(): Promise<void> {
-        await this.killAgent();
-        assertSafeToDelete(this.gnupgHome);
-        fs.rmSync(this.gnupgHome, { recursive: true, force: true });
-    }
+  /**
+   * Kill the gpg-agent (tolerates already-dead agent), validate the temp dir
+   * path, then delete it. Always call in a finally block.
+   */
+  async cleanup(): Promise<void> {
+    await this.killAgent();
+    assertSafeToDelete(this.gnupgHome);
+    fs.rmSync(this.gnupgHome, { recursive: true, force: true });
+  }
 
-    // Inherits: getBinDir, gpgconfListDirs, listPairedKeys, exportPublicKeys, importPublicKeys
-    // Adds: writeAgentConf, launchAgent, killAgent, cleanup, generateKey, deleteKey,
-    //        getFingerprint, getKeygrip, exportPublicKey (armor), version,
-    //        listKeys, signFile, verifyFile, encryptFile, decryptFile
+  // Inherits: getBinDir, gpgconfListDirs, listPairedKeys, exportPublicKeys, importPublicKeys
+  // Adds: writeAgentConf, launchAgent, killAgent, cleanup, generateKey, deleteKey,
+  //        getFingerprint, getKeygrip, exportPublicKey (armor), version,
+  //        listKeys, signFile, verifyFile, encryptFile, decryptFile
 }
 ```
 
@@ -385,20 +395,20 @@ refactored to use `GpgCli.gpgconfListDirs()` instead.
     field is added to each service's `*Deps` interface, consistent with `ISocketFactory` and
     `IServerFactory`; unit tests inject an object implementing `IGpgCliFactory`; production code
     falls through to `new GpgCli(...)`.
-17. **`AgentProxy` owns `GpgCli`**: `GpgCli` is a private field of `AgentProxy`, constructed
+13. **`AgentProxy` owns `GpgCli`**: `GpgCli` is a private field of `AgentProxy`, constructed
     in `start()` and cleaned up in `stop()`. `gpgBinDir` is not in `AgentProxyConfig` — it is
     read from VS Code config in `extension.ts` and captured in the `IGpgCliFactory.create()`
     closure there. `IGpgCliFactory.create()` takes no parameters. This mirrors how `RequestProxy`
     captures `getSocketPath` in its constructor deps, keeping all config-reading in the extension
     layer and all lifecycle in the service layer.
-13. **`importPublicKeys` stdin mechanism**: key data is passed via `execFile`'s `input:` option
+14. **`importPublicKeys` stdin mechanism**: key data is passed via `execFile`'s `input:` option
     — no temp file written to disk.
-14. **QuickPick multi-UID keys**: display `userIds[0]` (the first UID) only. A key with no
+15. **QuickPick multi-UID keys**: display `userIds[0]` (the first UID) only. A key with no
     UIDs is skipped in the QuickPick list; it can still be exported headlessly by fingerprint.
-15. **`exportPublicKeys` name collision**: `GpgCli` has a method `exportPublicKeys()` and
+16. **`exportPublicKeys` name collision**: `GpgCli` has a method `exportPublicKeys()` and
     `publicKeyExport.ts` exports a function also named `exportPublicKeys`. This is intentional
     — file scope makes the distinction clear; no rename needed.
-16. **Phase 4 integration tests share the existing agent suite runner**: `publicKeyExport.test.ts`
+17. **Phase 4 integration tests share the existing agent suite runner**: `publicKeyExport.test.ts`
     is added to `gpg-bridge-agent/test/integration/suite/index.ts`; no new runner or VS Code launch.
 
 ---
@@ -416,12 +426,13 @@ and integration tests pass → update this plan (mark checkboxes) → git commit
 `shared/package.json`
 
 #### Work items
+
 - [x] Add `which` as a production dependency in `shared/package.json`
 - [x] Create `shared/src/gpgCli.ts` with `GpgCliOpts` interface and `GpgCli` class skeleton
 - [x] Implement private `detect()`: `whichSync('gpgconf')` → PATH probe; fall back to
-  well-known Windows Gpg4win directories; throw if not found
+      well-known Windows Gpg4win directories; throw if not found
 - [x] Implement constructor: accept `gpgBinDir` opt (validate) or run `detect()`; accept
-  `gnupgHome` opt; store resolved paths
+      `gnupgHome` opt; store resolved paths
 - [x] Implement `getBinDir(): string`
 - [x] Implement `protected run()` / `runRaw()` helpers (spawn with optional `GNUPGHOME`)
 - [x] Implement `gpgconfListDirs(dirName: string): Promise<string>`
@@ -429,7 +440,7 @@ and integration tests pass → update this plan (mark checkboxes) → git commit
 - [x] Re-export `PairedKeyInfo` from `shared/src/index.ts`
 - [x] Implement `exportPublicKeys(filter?: string): Promise<Uint8Array>`
 - [x] Implement `importPublicKeys(keyData: Uint8Array): Promise<{ imported; unchanged; errors }>`
-  (pipes `keyData` to `gpg --import` stdin via `spawn`; parses `gpg --import` stderr; no temp file)
+      (pipes `keyData` to `gpg --import` stdin via `spawn`; parses `gpg --import` stderr; no temp file)
 - [x] Add `KeyFilter = 'all' | 'pairs' | string` to `shared/src/types.ts`
 - [x] Re-export `GpgCli`, `GpgCliOpts`, `KeyFilter` from `shared/src/index.ts`
 
@@ -438,6 +449,7 @@ and integration tests pass → update this plan (mark checkboxes) → git commit
 Tests are split into two groups:
 
 **Unit tests** (`shared/src/test/gpgCli.test.ts`, new — mocked subprocesses, no real gpg required, no keyring access):
+
 - [x] `GpgCli` constructor throws when `gpgBinDir` points to a directory without `gpgconf[.exe]`
 - [x] `GpgCli` constructor succeeds when `gpgBinDir` is valid (filesystem check only, mock `fs.existsSync`)
 - [x] `getBinDir()` returns the resolved directory
@@ -456,6 +468,7 @@ Tests are split into two groups:
 tests set up the isolated keyring manually: `mkdtempSync` → `assertSafeToDelete` →
 `new GpgCli({ gnupgHome: tmpHome })` → delete in `afterEach`; this boilerplate is
 replaced by `new GpgTestHelper()` in Phase 2):
+
 - [x] `GpgCli` constructor succeeds with no opts (real PATH probe finds `gpgconf`)
 - [x] `gpgconfListDirs('agent-socket')` returns a valid path string against the isolated keyring
 - [x] `listPairedKeys` returns `PairedKeyInfo[]` with correct fingerprints and userIds for keys generated in the isolated keyring
@@ -474,6 +487,7 @@ replaced by `new GpgTestHelper()` in Phase 2):
 all three integration test runner files
 
 #### Work items
+
 - [x] Rename class `GpgCli` → `GpgTestHelper` in `shared/src/test/integration/gpgCli.ts`
 - [x] Change `GpgTestHelper` to `extends GpgCli` (import from `@gpg-bridge/shared`)
 - [x] Update constructor: `mkdtempSync` → `assertSafeToDelete` → `super({ gnupgHome })`; expose as `public readonly gnupgHome: string`; do **not** mutate `process.env.GNUPGHOME`
@@ -482,8 +496,8 @@ all three integration test runner files
 - [x] Update `shared/src/test/integration/index.ts`: export `GpgTestHelper`
 - [x] Update all integration test call sites in Mocha test files: `new GpgCli(...)` → `new GpgTestHelper()`
 - [x] Update all three integration test runner files (`gpg-bridge-agent/test/integration/runTest.ts`,
-  `gpg-bridge-request/test/integration/requestProxyRunTest.ts`,
-  `gpg-bridge-request/test/integration/gpgCliRunTest.ts`):
+      `gpg-bridge-request/test/integration/requestProxyRunTest.ts`,
+      `gpg-bridge-request/test/integration/gpgCliRunTest.ts`):
   - Remove top-level `const GNUPGHOME = fs.mkdtempSync(...)`, `assertSafeToDelete(GNUPGHOME)`,
     and `process.env.GNUPGHOME = GNUPGHOME` boilerplate — constructor now handles creation
   - Change `const gpg = new GpgCli()` → `const gpg = new GpgTestHelper()`
@@ -509,6 +523,7 @@ all three integration test runner files
 
 **Integration tests** (real gpg; each test constructs its own `GpgTestHelper()` which
 creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach`):
+
 - [x] `new GpgTestHelper()` sets `gnupgHome` to a non-empty string pointing to a real temp directory
 - [x] `new GpgTestHelper()` does **not** mutate `process.env.GNUPGHOME`
 - [x] `getBinDir()` returns a non-empty string (confirms detection resolved a real gpg install)
@@ -531,38 +546,40 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 `gpg-bridge-request/src/services/requestProxy.ts`
 
 #### Work items
+
 - [x] Add `IGpgCliFactory` interface to `shared/src/types.ts` (`create(): GpgCli` — no params);
-  re-export from `shared/src/index.ts`
+      re-export from `shared/src/index.ts`
 - [x] Add `async cleanup(): Promise<void>` no-op to `GpgCli` base class in `shared/src/gpgCli.ts`
 - [x] Add `gpgCliFactory?: IGpgCliFactory` to `AgentProxyDeps` in `agentProxy.ts`
 - [x] Add `private gpgCli: GpgCli | null` and `private gpgAgentSocketPath: string | null` fields
-  to `AgentProxy` class
+      to `AgentProxy` class
 - [x] Add `async start(): Promise<void>` to `AgentProxy`: throw if already started (`gpgCli !== null`);
-  construct `GpgCli` via `this.gpgCliFactory?.create() ?? new GpgCli()`; call
-  `gpgconfListDirs('agent-extra-socket')`; throw if socket path does not exist
+      construct `GpgCli` via `this.gpgCliFactory?.create() ?? new GpgCli()`; call
+      `gpgconfListDirs('agent-extra-socket')`; throw if socket path does not exist
 - [x] Update `AgentProxy.connectAgent()`: throw immediately with `'Agent proxy not started — call start() first'`
-  if `this.gpgAgentSocketPath` is null
+      if `this.gpgAgentSocketPath` is null
 - [x] Update `AgentProxy.stop()`: call `await this.gpgCli?.cleanup()` before nulling it out
 - [x] Add `getGpgBinDir(): string | null` instance method to `AgentProxy`
-  (returns `this.gpgCli?.getBinDir() ?? null`)
+      (returns `this.gpgCli?.getBinDir() ?? null`)
 - [x] Add `getAgentSocketPath(): string | null` instance method to `AgentProxy`
-  (returns `this.gpgAgentSocketPath`)
+      (returns `this.gpgAgentSocketPath`)
 - [x] Remove `AgentProxyConfig.gpgAgentSocketPath`; update constructor to not validate it
 - [x] Update `extension.ts startAgentProxy()`: read `gpgBinDir` from VS Code config; construct
-  `AgentProxy` with `gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) }` closure;
-  call `await agentProxyService.start()`; remove `detectGpgBinDir()`, `resolveAgentSocketPath()`,
-  `detectedGpgBinDir`, `resolvedAgentSocketPath`
+      `AgentProxy` with `gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) }` closure;
+      call `await agentProxyService.start()`; remove `detectGpgBinDir()`, `resolveAgentSocketPath()`,
+      `detectedGpgBinDir`, `resolvedAgentSocketPath`
 - [x] Update `extension.ts showStatus()`: call `agentProxyService.getGpgBinDir() ?? '(not detected)'`
-  and `agentProxyService.getAgentSocketPath() ?? '(not detected)'`
+      and `agentProxyService.getAgentSocketPath() ?? '(not detected)'`
 - [x] Fix `RequestProxy.start()`: add guard at top — throw if `this.server !== null`
-  (`'Request proxy already started'`); mirrors the new `AgentProxy.start()` guard
+      (`'Request proxy already started'`); mirrors the new `AgentProxy.start()` guard
 - [x] Migrate existing `agentProxy.test.ts` constructor tests that exercised the old
-  `gpgAgentSocketPath` validation: move validation assertions to `start()` tests; remove or
-  update any test that constructs `AgentProxy` with `{ gpgAgentSocketPath: ... }`
+      `gpgAgentSocketPath` validation: move validation assertions to `start()` tests; remove or
+      update any test that constructs `AgentProxy` with `{ gpgAgentSocketPath: ... }`
 
 #### Test cases (`gpg-bridge-agent/src/test/agentProxy.test.ts`)
 
 **Unit tests** (mocked `GpgCli` via `AgentProxyDeps.gpgCliFactory` — no real gpg required):
+
 - [x] `start()` calls `gpgCliFactory.create()` with no args and uses the returned mock
 - [x] `start()` calls `gpgconfListDirs('agent-extra-socket')` on the constructed `GpgCli`
 - [x] `start()` uses the `gpgconfListDirs` result as `gpgAgentSocketPath`
@@ -579,6 +596,7 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 
 **Integration tests** (added to the existing `agentProxyIntegration.test.ts`;
 `beforeEach`/`afterEach` stop the proxy so each test starts from a known stopped state):
+
 - [x] `connectAgent()` throws `'Agent proxy not started'` when called before `start()`
 - [x] `start` command when proxy already running returns gracefully without throwing
 
@@ -590,22 +608,24 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 `gpg-bridge-agent/src/extension.ts`, `gpg-bridge-agent/src/services/agentProxy.ts`
 
 #### Work items
+
 - [x] Create `gpg-bridge-agent/src/services/publicKeyExport.ts`
 - [x] Implement headless path: `filter === 'pairs'` → `listPairedKeys()` →
-  `exportPublicKeys(keys.map(k => k.fingerprint).join(' '))`
+      `exportPublicKeys(keys.map(k => k.fingerprint).join(' '))`
 - [x] Implement headless path: `filter === 'all'` → `exportPublicKeys()` (no args)
 - [x] Implement headless path: any other string → `exportPublicKeys(filter)` directly
 - [x] Implement interactive path: no filter → `listPairedKeys()` → build QuickPick items
-  as `<User-ID> [<short-key-ID>]` from `PairedKeyInfo.userIds[0]` + last 8 chars of `fingerprint`
-  → multi-select → `exportPublicKeys(selected.map(k => k.fingerprint).join(' '))`
+      as `<User-ID> [<short-key-ID>]` from `PairedKeyInfo.userIds[0]` + last 8 chars of `fingerprint`
+      → multi-select → `exportPublicKeys(selected.map(k => k.fingerprint).join(' '))`
 - [x] Handle user cancels QuickPick → return `undefined`
 - [x] Handle zero-byte export result → show VS Code warning message → return `undefined`
 - [x] Register `_gpg-bridge-agent.exportPublicKeys` internal command in `extension.ts`,
-  wired to the service function via `AgentProxy.exportPublicKeys(filter, deps?)`
+      wired to the service function via `AgentProxy.exportPublicKeys(filter, deps?)`
 
 #### Test cases (`gpg-bridge-agent/src/test/publicKeyExport.test.ts`)
 
 **Unit tests** (mocked `GpgCli` via `*Deps` — no real gpg required):
+
 - [x] `filter = 'pairs'`: calls `listPairedKeys()`, passes all fingerprints joined to `exportPublicKeys()`
 - [x] `filter = 'all'`: calls `exportPublicKeys()` with no args
 - [x] `filter = 'user@example.com'`: passes string directly to `exportPublicKeys()`
@@ -618,9 +638,10 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 **Integration tests** (real gpg via `GpgTestHelper`; tests share the existing agent integration
 suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyExport.test.ts` to
 `suite/index.ts` if the glob doesn't already support it; the GNUPGHOME and live gpg-agent are already in place):
+
 - [x] Keyring has 2 full key pairs + 1 public-only key (imported from isolated temp keyring)
 - [x] `filter = 'pairs'`: returns `Uint8Array` ≥ 600 bytes (2 pairs); `filter = 'all'` strictly
-  larger than `'pairs'` result (proves public-only key is included in `all` but excluded from `pairs`)
+      larger than `'pairs'` result (proves public-only key is included in `all` but excluded from `pairs`)
 - [x] `filter = <test key fingerprint>`: returns `Uint8Array` ≥ 300 bytes matching that key
 - [x] `filter = <email>`: returns `Uint8Array` ≥ 300 bytes matching that key
 - [x] `filter = 'unknown@nomatch.invalid'`: `gpg --export` returns zero bytes → warning shown; returns `undefined`
@@ -636,11 +657,12 @@ suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyEx
 `.devcontainer/phase2/devcontainer.json` (updated comment — gnupg2 pre-installed in base image)
 
 #### Work items
+
 - [x] Add `gpgCliFactory?: IGpgCliFactory` to `RequestProxyDeps`; construct `gpgCli` inside `RequestProxy.start()` via `this.gpgCliFactory?.create() ?? new GpgCli()`
 - [x] Replace inline `spawnSync` + `new Promise()` wrapper in `getLocalGpgSocketPath()` with
-  `gpgcli.gpgconfListDirs('agent-socket')`
+      `gpgcli.gpgconfListDirs('agent-socket')`
 - [x] Replace the `agent-extra-socket` `spawnSync` call in `requestProxy.ts` with
-  `gpgcli.gpgconfListDirs('agent-extra-socket')`
+      `gpgcli.gpgconfListDirs('agent-extra-socket')`
 - [x] Move socket file removal logic inline in `start()` using `this.fileSystem` (injectable)
 - [x] `stop()` calls `await this.gpgCli?.cleanup()` then nulls the field — mirrors `AgentProxy`
 - [x] Remove `getLocalGpgSocketPath()` module-level function and `spawnSync` import
@@ -650,12 +672,14 @@ suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyEx
 #### Test cases (`gpg-bridge-request/src/test/requestProxy.test.ts`)
 
 **Unit tests** (mocked `GpgCli` via `RequestProxyDeps.gpgCliFactory` — no real gpg required):
+
 - [x] `start()` throws if called a second time without an intervening `stop()`
 - [x] `getLocalGpgSocketPath` uses `gpgconfListDirs('agent-socket')` result as the returned path
 - [x] `getLocalGpgSocketPath` propagates errors thrown by `gpgconfListDirs`
 - [x] Socket file removal logic executes correctly (mock filesystem; `DualPathMockGpgCli` returns distinct paths for agent-socket vs agent-extra-socket; both are pre-seeded in `MockFileSystem`; verifies `unlinkSync` called for both)
 
 **Integration tests** (real gpg via `GpgTestHelper` on the remote host):
+
 - [x] `gpgconfListDirs('agent-socket')` returns a non-empty path string for the isolated keyring
 - [x] Socket file removal: create a temp file at the returned path; verify the cleanup logic removes it
 
@@ -670,21 +694,23 @@ suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyEx
 `gpg-bridge-request/test/integration/requestProxyIntegration.test.ts` (Phase 6 integration tests)
 
 #### Work items
+
 - [x] Create `gpg-bridge-request/src/services/publicKeySync.ts`
 - [x] Implement `syncPublicKeys(filter?: KeyFilter)`: call
-  `executeCommand('_gpg-bridge-agent.exportPublicKeys', filter)` → if `undefined`, no-op →
-  else call `gpgcli.importPublicKeys(data)` → show info message + log to output channel
+      `executeCommand('_gpg-bridge-agent.exportPublicKeys', filter)` → if `undefined`, no-op →
+      else call `gpgcli.importPublicKeys(data)` → show info message + log to output channel
 - [x] Handle `executeCommand` rejection (agent absent): show VS Code error message
 - [x] Register `gpg-bridge-request.syncPublicKeys` user command in `extension.ts`
 - [x] Add auto-sync `onActivate` hook in `extension.ts`: if `autoSyncPublicKeys` setting is
-  non-empty, call `syncPublicKeys(settingValue)` once on activation
+      non-empty, call `syncPublicKeys(settingValue)` once on activation
 - [x] Add `gpg-bridge-request.syncPublicKeys` to `contributes.commands` in `package.json`
 - [x] Add `gpgBridgeRequest.autoSyncPublicKeys` string setting in `package.json` (default
-  `""`, enum suggestions `"all"` and `"pairs"`, with descriptions)
+      `""`, enum suggestions `"all"` and `"pairs"`, with descriptions)
 
 #### Test cases (`gpg-bridge-request/src/test/publicKeySync.test.ts`)
 
 **Unit tests** (mocked `GpgCli` and mocked `executeCommand` — no real gpg or cross-host call):
+
 - [x] Manual trigger with no `autoSyncPublicKeys` setting: calls `executeCommand('_gpg-bridge-agent.exportPublicKeys')` with no filter
 - [x] Auto-sync with `autoSyncPublicKeys = "pairs"`: calls `executeCommand` with `"pairs"` as filter
 - [x] Auto-sync with `autoSyncPublicKeys = "all"`: calls `executeCommand` with `"all"` as filter
@@ -699,8 +725,9 @@ suite runner `gpg-bridge-agent/test/integration/runTest.ts` — add `publicKeyEx
 stubbed to supply key bytes — the cross-host VS Code bridge cannot be replicated in automated tests,
 but the gpg import subprocess is real. Registered as `_gpg-bridge-request.test.syncPublicKeysWithBytes`
 test helper command in extension.ts; only registered in integration test environment without GNUPGHOME):
+
 - [x] Import round-trip: stub `executeCommand` to return the key bytes exported in Phase 4
-  integration tests; `importPublicKeys` runs real `gpg --import` against the isolated remote
-  keyring; result has `imported: 1`; key appears in that keyring
+      integration tests; `importPublicKeys` runs real `gpg --import` against the isolated remote
+      keyring; result has `imported: 1`; key appears in that keyring
 - [x] Re-import of the same key against the same isolated keyring: result has `unchanged: 1, imported: 0`
 - [x] VS Code info message content includes the correct imported count from the parsed result

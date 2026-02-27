@@ -8,11 +8,13 @@
  * Used to skip or modify extension initialization that is unnecessary or disruptive for tests.
  */
 export function isTestEnvironment(): boolean {
-    const argv = process.argv.join(' ');
+  const argv = process.argv.join(' ');
 
-    return process.env.npm_lifecycle_event === 'test'
-        || argv.includes('extensionTestsPath')
-        || argv.includes('vscode-test');
+  return (
+    process.env.npm_lifecycle_event === 'test' ||
+    argv.includes('extensionTestsPath') ||
+    argv.includes('vscode-test')
+  );
 }
 
 /**
@@ -29,5 +31,5 @@ export function isTestEnvironment(): boolean {
  *   Production:       isTestEnvironment()=false, isIntegrationTestEnvironment()=false → full init
  */
 export function isIntegrationTestEnvironment(): boolean {
-    return process.env.VSCODE_INTEGRATION_TEST === '1';
+  return process.env.VSCODE_INTEGRATION_TEST === '1';
 }

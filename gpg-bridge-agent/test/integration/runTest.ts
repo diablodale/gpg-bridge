@@ -24,40 +24,40 @@ import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 const gpg = new GpgTestHelper();
 
 async function main(): Promise<void> {
-    // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
-    // SSH / Putty / OpenSSH-disable options are not valid conf file entries in
-    // this build and will cause gpg-agent --gpgconf-test to fail.
-    gpg.writeAgentConf(['disable-scdaemon']);
+  // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
+  // SSH / Putty / OpenSSH-disable options are not valid conf file entries in
+  // this build and will cause gpg-agent --gpgconf-test to fail.
+  gpg.writeAgentConf(['disable-scdaemon']);
 
-    // Launch the gpg-agent now, before the extension host starts, so that
-    // gpgconf --list-dirs agent-extra-socket (called during activate()) finds a live socket.
-    await gpg.launchAgent();
+  // Launch the gpg-agent now, before the extension host starts, so that
+  // gpgconf --list-dirs agent-extra-socket (called during activate()) finds a live socket.
+  await gpg.launchAgent();
 
-    try {
-        await runTests({
-            // Extension under test: agent-proxy (this package's root).
-            // __dirname = out/test/integration/ at runtime, so '../../../' = agent-proxy root.
-            extensionDevelopmentPath: path.resolve(__dirname, '../../../'),
+  try {
+    await runTests({
+      // Extension under test: agent-proxy (this package's root).
+      // __dirname = out/test/integration/ at runtime, so '../../../' = agent-proxy root.
+      extensionDevelopmentPath: path.resolve(__dirname, '../../../'),
 
-            // Mocha entry point: exports run(), located at suite/index.ts → out/../suite/index.js
-            extensionTestsPath: path.resolve(__dirname, './suite/index'),
+      // Mocha entry point: exports run(), located at suite/index.ts → out/../suite/index.js
+      extensionTestsPath: path.resolve(__dirname, './suite/index'),
 
-            // Inject GNUPGHOME and integration test flag into the extension host.
-            // VSCODE_INTEGRATION_TEST=1 causes isIntegrationTestEnvironment() to return true,
-            // which allows the extension to run full initialization despite isTestEnvironment()
-            // also being true (the normal test signal is still present under @vscode/test-electron).
-            extensionTestsEnv: {
-                VSCODE_INTEGRATION_TEST: '1',
-                GNUPGHOME: gpg.gnupgHome
-            }
-        });
-    } finally {
-        // Kill agent and remove the isolated keyring whether tests passed or failed.
-        await gpg.cleanup();
-    }
+      // Inject GNUPGHOME and integration test flag into the extension host.
+      // VSCODE_INTEGRATION_TEST=1 causes isIntegrationTestEnvironment() to return true,
+      // which allows the extension to run full initialization despite isTestEnvironment()
+      // also being true (the normal test signal is still present under @vscode/test-electron).
+      extensionTestsEnv: {
+        VSCODE_INTEGRATION_TEST: '1',
+        GNUPGHOME: gpg.gnupgHome,
+      },
+    });
+  } finally {
+    // Kill agent and remove the isolated keyring whether tests passed or failed.
+    await gpg.cleanup();
+  }
 }
 
-main().catch(err => {
-    console.error('Integration test runner failed:', err);
-    process.exit(1);
+main().catch((err) => {
+  console.error('Integration test runner failed:', err);
+  process.exit(1);
 });

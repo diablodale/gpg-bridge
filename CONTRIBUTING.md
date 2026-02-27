@@ -2,12 +2,12 @@
 
 ## Prerequisites
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| [Node.js](https://nodejs.org/) | v22.x | Match VS Code's bundled Node runtime |
+| Tool                                      | Version  | Notes                                                    |
+| ----------------------------------------- | -------- | -------------------------------------------------------- |
+| [Node.js](https://nodejs.org/)            | v22.x    | Match VS Code's bundled Node runtime                     |
 | [VS Code](https://code.visualstudio.com/) | v1.91.0+ | Required for extension development and integration tests |
-| [Gpg4win](https://www.gpg4win.org/) | v4.4.1+ | Required on Windows host for integration tests |
-| [Git](https://git-scm.com/) | any | Commits must be signed (GPG, SSH, or X.509) |
+| [Gpg4win](https://www.gpg4win.org/)       | v4.4.1+  | Required on Windows host for integration tests           |
+| [Git](https://git-scm.com/)               | any      | Commits must be signed (GPG, SSH, or X.509)              |
 
 ## Dev Setup
 
@@ -113,11 +113,11 @@ Produces `.vsix` files in each extension's directory.
 This project uses [prek](https://prek.j178.dev/) to enforce quality gates locally
 before changes reach GitHub.
 
-| Hook | Trigger | What runs |
-|------|---------|----------|
-| `pre-commit` | `git commit` | `npm run compile` then `npm run lint` |
+| Hook         | Trigger               | What runs                                          |
+| ------------ | --------------------- | -------------------------------------------------- |
+| `pre-commit` | `git commit`          | `npm run compile` then `npm run lint`              |
 | `commit-msg` | after message entered | `commitlint` validates Conventional Commits format |
-| `pre-push` | `git push` | `npm test` (unit suite) |
+| `pre-push`   | `git push`            | `npm test` (unit suite)                            |
 
 ### Installing hooks
 
@@ -148,19 +148,20 @@ This project follows [Conventional Commits v1](https://www.conventionalcommits.o
 
 **Format:** `<type>(<scope>): <description>`
 
-| Type | When to use |
-|------|-------------|
-| `feat` | New user-visible feature |
-| `fix` | Bug fix |
+| Type       | When to use                                  |
+| ---------- | -------------------------------------------- |
+| `feat`     | New user-visible feature                     |
+| `fix`      | Bug fix                                      |
 | `refactor` | Code change with no external behavior change |
-| `build` | Build system, tooling, dependencies |
-| `docs` | Documentation only |
-| `test` | Adding or fixing tests |
-| `chore` | Maintenance (version bumps, cleanup) |
+| `build`    | Build system, tooling, dependencies          |
+| `docs`     | Documentation only                           |
+| `test`     | Adding or fixing tests                       |
+| `chore`    | Maintenance (version bumps, cleanup)         |
 
 **Scope** (optional): `agent`, `request`, `shared`, `pack`, `ci`, or omit for repo-wide changes.
 
 **Examples:**
+
 ```
 feat(agent): add connection timeout configuration
 fix(request): handle partial D-block split across two socket reads

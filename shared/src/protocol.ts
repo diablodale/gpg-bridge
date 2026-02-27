@@ -17,7 +17,7 @@ import { LogConfig } from './types';
  * @returns Buffer with latin1 encoding
  */
 export function encodeProtocolData(data: string): Buffer {
-    return Buffer.from(data, 'latin1');
+  return Buffer.from(data, 'latin1');
 }
 
 /**
@@ -28,7 +28,7 @@ export function encodeProtocolData(data: string): Buffer {
  * @returns String with latin1 decoding
  */
 export function decodeProtocolData(buffer: Buffer): string {
-    return buffer.toString('latin1');
+  return buffer.toString('latin1');
 }
 
 /**
@@ -41,9 +41,9 @@ export function decodeProtocolData(buffer: Buffer): string {
  * @returns Sanitized display string
  */
 export function sanitizeForLog(str: string): string {
-    const firstWord = str.split(/[\s\n]/, 1)[0];
-    const remainingBytes = str.length - firstWord.length - 1; // -1 for the space/newline after first word
-    return `${firstWord} and ${remainingBytes} more bytes`;
+  const firstWord = str.split(/[\s\n]/, 1)[0];
+  const remainingBytes = str.length - firstWord.length - 1; // -1 for the space/newline after first word
+  return `${firstWord} and ${remainingBytes} more bytes`;
 }
 
 /**
@@ -54,9 +54,9 @@ export function sanitizeForLog(str: string): string {
  * @param message Message to log
  */
 export function log(config: LogConfig, message: string): void {
-    if (config.logCallback) {
-        config.logCallback(message);
-    }
+  if (config.logCallback) {
+    config.logCallback(message);
+  }
 }
 
 /**
@@ -68,17 +68,17 @@ export function log(config: LogConfig, message: string): void {
  * @returns Error message string
  */
 export function extractErrorMessage(error: unknown, fallback = 'Unknown error'): string {
-    if (error == null) {
-        return fallback;
-    }
-    if (error instanceof Error) {
-        return error.message || fallback;
-    }
-    if (typeof error === 'object' && 'message' in error) {
-        return String(error.message) || fallback;
-    }
-    const message = String(error);
-    return message || fallback;
+  if (error == null) {
+    return fallback;
+  }
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+  if (typeof error === 'object' && 'message' in error) {
+    return String(error.message) || fallback;
+  }
+  const message = String(error);
+  return message || fallback;
 }
 
 /**
@@ -90,44 +90,44 @@ export function extractErrorMessage(error: unknown, fallback = 'Unknown error'):
  * @throws Error if format is invalid
  */
 export interface ParsedSocketFile {
-    port: number;
-    nonce: Buffer;
+  port: number;
+  nonce: Buffer;
 }
 
 export function parseSocketFile(data: Buffer): ParsedSocketFile {
-    // Find the newline that separates port from nonce
-    const newlineIndex = data.indexOf('\n');
-    if (newlineIndex === -1) {
-        throw new Error('Invalid socket file format: no newline found');
-    }
+  // Find the newline that separates port from nonce
+  const newlineIndex = data.indexOf('\n');
+  if (newlineIndex === -1) {
+    throw new Error('Invalid socket file format: no newline found');
+  }
 
-    // Extract and parse port as ASCII
-    const portStr = data.toString('latin1', 0, newlineIndex);
-    const port = parseInt(portStr, 10);
+  // Extract and parse port as ASCII
+  const portStr = data.toString('latin1', 0, newlineIndex);
+  const port = parseInt(portStr, 10);
 
-    if (isNaN(port)) {
-        throw new Error(`Invalid port in socket file: ${portStr}`);
-    }
+  if (isNaN(port)) {
+    throw new Error(`Invalid port in socket file: ${portStr}`);
+  }
 
-    // Extract raw 16-byte nonce after the newline
-    const nonceStart = newlineIndex + 1;
-    const nonce = data.subarray(nonceStart, nonceStart + 16);
+  // Extract raw 16-byte nonce after the newline
+  const nonceStart = newlineIndex + 1;
+  const nonce = data.subarray(nonceStart, nonceStart + 16);
 
-    if (nonce.length !== 16) {
-        throw new Error(`Invalid nonce length: expected 16 bytes, got ${nonce.length}`);
-    }
+  if (nonce.length !== 16) {
+    throw new Error(`Invalid nonce length: expected 16 bytes, got ${nonce.length}`);
+  }
 
-    return { port, nonce };
+  return { port, nonce };
 }
 
 /**
  * Result of response completion detection.
  */
 export interface ResponseCompletion {
-    /** Whether the response is complete (ends with OK, ERR, or INQUIRE) */
-    complete: boolean;
-    /** The type of completion marker found, or null if incomplete */
-    type: 'OK' | 'ERR' | 'INQUIRE' | null;
+  /** Whether the response is complete (ends with OK, ERR, or INQUIRE) */
+  complete: boolean;
+  /** The type of completion marker found, or null if incomplete */
+  type: 'OK' | 'ERR' | 'INQUIRE' | null;
 }
 
 /**
@@ -149,31 +149,31 @@ export interface ResponseCompletion {
  * detectResponseCompletion("S PROGRESS...") // { complete: false, type: null }
  */
 export function detectResponseCompletion(response: string): ResponseCompletion {
-    if (!response.endsWith('\n')) {
-        return { complete: false, type: null };
-    }
-
-    const lines = response.split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim();
-        if (!line) continue;
-
-        if (line.startsWith('OK ') || line === 'OK') {
-            return { complete: true, type: 'OK' };
-        }
-        if (line.startsWith('ERR ')) {
-            return { complete: true, type: 'ERR' };
-        }
-        if (line.startsWith('INQUIRE ')) {
-            return { complete: true, type: 'INQUIRE' };
-        }
-
-        // Found a non-empty line that's not a completion marker
-        return { complete: false, type: null };
-    }
-
-    // No non-empty lines found (empty string or only whitespace/newlines)
+  if (!response.endsWith('\n')) {
     return { complete: false, type: null };
+  }
+
+  const lines = response.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (line.startsWith('OK ') || line === 'OK') {
+      return { complete: true, type: 'OK' };
+    }
+    if (line.startsWith('ERR ')) {
+      return { complete: true, type: 'ERR' };
+    }
+    if (line.startsWith('INQUIRE ')) {
+      return { complete: true, type: 'INQUIRE' };
+    }
+
+    // Found a non-empty line that's not a completion marker
+    return { complete: false, type: null };
+  }
+
+  // No non-empty lines found (empty string or only whitespace/newlines)
+  return { complete: false, type: null };
 }
 
 /**
@@ -198,48 +198,48 @@ export function detectResponseCompletion(response: string): ResponseCompletion {
  * lightweight mock objects without casting.
  */
 export interface CleanableSocket {
-    removeAllListeners(): void;
-    destroy(): void;
+  removeAllListeners(): void;
+  destroy(): void;
 }
 
 export function cleanupSocket(
-    socket: CleanableSocket,
-    config: LogConfig,
-    sessionId: string
+  socket: CleanableSocket,
+  config: LogConfig,
+  sessionId: string,
 ): Error | null {
-    let cleanupError: Error | null = null;
+  let cleanupError: Error | null = null;
 
-    // Step 1: Remove all listeners (prevents event handlers from firing during destroy)
-    try {
-        socket.removeAllListeners();
-        log(config, `[${sessionId}] Socket listeners removed`);
-    } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        cleanupError = cleanupError ?? error;
-        log(config, `[${sessionId}] Error removing socket listeners: ${error.message}`);
-    }
+  // Step 1: Remove all listeners (prevents event handlers from firing during destroy)
+  try {
+    socket.removeAllListeners();
+    log(config, `[${sessionId}] Socket listeners removed`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    cleanupError = cleanupError ?? error;
+    log(config, `[${sessionId}] Error removing socket listeners: ${error.message}`);
+  }
 
-    // Step 2: Destroy the socket (closes connection and releases resources)
-    try {
-        socket.destroy();
-        log(config, `[${sessionId}] Socket destroyed`);
-    } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        cleanupError = cleanupError ?? error;
-        log(config, `[${sessionId}] Error destroying socket: ${error.message}`);
-    }
+  // Step 2: Destroy the socket (closes connection and releases resources)
+  try {
+    socket.destroy();
+    log(config, `[${sessionId}] Socket destroyed`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    cleanupError = cleanupError ?? error;
+    log(config, `[${sessionId}] Error destroying socket: ${error.message}`);
+  }
 
-    return cleanupError;
+  return cleanupError;
 }
 
 /**
  * Result of command extraction from buffer.
  */
 export interface CommandExtraction {
-    /** The extracted command (including delimiter), or null if incomplete */
-    extracted: string | null;
-    /** Remaining buffer content after extraction */
-    remaining: string;
+  /** The extracted command (including delimiter), or null if incomplete */
+  extracted: string | null;
+  /** Remaining buffer content after extraction */
+  remaining: string;
 }
 
 /**
@@ -260,14 +260,14 @@ export interface CommandExtraction {
  * // { extracted: null, remaining: "KEYINFO" }
  */
 export function extractCommand(buffer: string): CommandExtraction {
-    const delimiterIndex = buffer.indexOf('\n');
-    if (delimiterIndex !== -1) {
-        return {
-            extracted: buffer.substring(0, delimiterIndex + 1),
-            remaining: buffer.substring(delimiterIndex + 1)
-        };
-    }
-    return { extracted: null, remaining: buffer };
+  const delimiterIndex = buffer.indexOf('\n');
+  if (delimiterIndex !== -1) {
+    return {
+      extracted: buffer.substring(0, delimiterIndex + 1),
+      remaining: buffer.substring(delimiterIndex + 1),
+    };
+  }
+  return { extracted: null, remaining: buffer };
 }
 
 /**
@@ -288,12 +288,12 @@ export function extractCommand(buffer: string): CommandExtraction {
  * // { extracted: null, remaining: "D some data\n" }
  */
 export function extractInquireBlock(buffer: string): CommandExtraction {
-    const delimiterIndex = buffer.indexOf('END\n');
-    if (delimiterIndex !== -1) {
-        return {
-            extracted: buffer.substring(0, delimiterIndex + 4), // 'END\n' is 4 chars
-            remaining: buffer.substring(delimiterIndex + 4)
-        };
-    }
-    return { extracted: null, remaining: buffer };
+  const delimiterIndex = buffer.indexOf('END\n');
+  if (delimiterIndex !== -1) {
+    return {
+      extracted: buffer.substring(0, delimiterIndex + 4), // 'END\n' is 4 chars
+      remaining: buffer.substring(delimiterIndex + 4),
+    };
+  }
+  return { extracted: null, remaining: buffer };
 }

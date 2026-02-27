@@ -1,14 +1,14 @@
 {
-    // Extends base tsconfig.json; widens rootDir to cover test/integration/ output correctly.
-    // src/ is compiled by the base tsconfig.json (rootDir: src).
-    // This config compiles only the integration test files.
-    "extends": "./tsconfig.json",
-    "compilerOptions": {
-        // Widen rootDir to compile test/integration/ files only.
-        // src/ is already compiled by the base tsconfig.json.
-        "rootDir": "test/integration",
-        "outDir": "out/test/integration"
-    },
-    // Override base include so only integration test files are compiled here.
-    "include": ["test/integration/**/*.ts"]
+  // Extends base tsconfig.json; widens rootDir to cover test/integration/ output correctly.
+  // src/ is compiled by the base tsconfig.json (rootDir: src).
+  // This config compiles only the integration test files.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Widen rootDir to compile test/integration/ files only.
+    // src/ is already compiled by the base tsconfig.json.
+    "rootDir": "test/integration",
+    "outDir": "out/test/integration"
+  },
+  // Override base include so only integration test files are compiled here.
+  "include": ["test/integration/**/*.ts"]
 }

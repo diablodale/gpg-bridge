@@ -39,234 +39,247 @@ import { GpgTestHelper, assertSafeToDelete } from '@gpg-bridge/shared/test/integ
 // Env vars injected into the container's remote extension host via:
 //   gpgCliRunTest.ts extensionTestsEnv  →  VS Code process env
 //   →  devcontainer.json remoteEnv ${localEnv:...}  →  this process.env
-const LINUX_GNUPGHOME  = process.env.GNUPGHOME            ?? '';  // '/tmp/gpg-test-phase3'
-const FINGERPRINT      = process.env.TEST_KEY_FINGERPRINT ?? '';  // 40-char hex fingerprint
-const PUBKEY_ARMORED_KEY = process.env.PUBKEY_ARMORED_KEY ?? '';  // ASCII-armored public key string
+const LINUX_GNUPGHOME = process.env.GNUPGHOME ?? ''; // '/tmp/gpg-test-phase3'
+const FINGERPRINT = process.env.TEST_KEY_FINGERPRINT ?? ''; // 40-char hex fingerprint
+const PUBKEY_ARMORED_KEY = process.env.PUBKEY_ARMORED_KEY ?? ''; // ASCII-armored public key string
 
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
 
 describe('Phase 3 — gpg CLI → request-proxy → agent-proxy → gpg-agent', function () {
-    // 120 s ceiling: full-chain sign/decrypt + 1 MB large-file stress test.
-    this.timeout(120000);
+  // 120 s ceiling: full-chain sign/decrypt + 1 MB large-file stress test.
+  this.timeout(120000);
 
-    let cli: GpgTestHelper;
-    let testDir: string;
+  let cli: GpgTestHelper;
+  let testDir: string;
 
-    before(async function () {
-        // ----------------------------------------------------------------
-        // 1. Validate required env vars — all must be present.
-        //    Missing any of them is a runner/devcontainer misconfiguration, not
-        //    a test failure, so we throw rather than this.skip().
-        // ----------------------------------------------------------------
-        if (!LINUX_GNUPGHOME) {
-            throw new Error(
-                'GNUPGHOME is not set. Check devcontainer.json remoteEnv.'
-            );
-        }
-        if (!FINGERPRINT) {
-            throw new Error(
-                'TEST_KEY_FINGERPRINT is not set. ' +
-                'Check gpgCliRunTest.ts extensionTestsEnv and devcontainer.json remoteEnv.'
-            );
-        }
-        if (!PUBKEY_ARMORED_KEY) {
-            throw new Error(
-                'PUBKEY_ARMORED_KEY is not set. ' +
-                'Check gpgCliRunTest.ts extensionTestsEnv and devcontainer.json remoteEnv.'
-            );
-        }
+  before(async function () {
+    // ----------------------------------------------------------------
+    // 1. Validate required env vars — all must be present.
+    //    Missing any of them is a runner/devcontainer misconfiguration, not
+    //    a test failure, so we throw rather than this.skip().
+    // ----------------------------------------------------------------
+    if (!LINUX_GNUPGHOME) {
+      throw new Error('GNUPGHOME is not set. Check devcontainer.json remoteEnv.');
+    }
+    if (!FINGERPRINT) {
+      throw new Error(
+        'TEST_KEY_FINGERPRINT is not set. ' +
+          'Check gpgCliRunTest.ts extensionTestsEnv and devcontainer.json remoteEnv.',
+      );
+    }
+    if (!PUBKEY_ARMORED_KEY) {
+      throw new Error(
+        'PUBKEY_ARMORED_KEY is not set. ' +
+          'Check gpgCliRunTest.ts extensionTestsEnv and devcontainer.json remoteEnv.',
+      );
+    }
 
-        // ----------------------------------------------------------------
-        // 2. Wait for request-proxy to be ready.
-        //    request-proxy places the Unix socket at $GNUPGHOME/S.gpg-agent on startup.
-        //    Poll for the socket file to exist before issuing any gpg commands.
-        //    (Phase 3 doesn't register _gpg-bridge-request.test.getSocketPath because
-        //    gpg locates the socket via GNUPGHOME automatically — no helper needed.)
-        // ----------------------------------------------------------------
-        const socketFile = path.join(LINUX_GNUPGHOME, 'S.gpg-agent');
-        const deadline = Date.now() + 30000;
-        let ready = false;
-        while (Date.now() < deadline) {
-            if (fs.existsSync(socketFile)) { ready = true; break; }
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        if (!ready) {
-            throw new Error(
-                `request-proxy socket not found at ${socketFile} after 30 s. ` +
-                'Verify VSCODE_INTEGRATION_TEST=1 in the container env and that ' +
-                'request-proxy extension is loading in the remote extension host.'
-            );
-        }
+    // ----------------------------------------------------------------
+    // 2. Wait for request-proxy to be ready.
+    //    request-proxy places the Unix socket at $GNUPGHOME/S.gpg-agent on startup.
+    //    Poll for the socket file to exist before issuing any gpg commands.
+    //    (Phase 3 doesn't register _gpg-bridge-request.test.getSocketPath because
+    //    gpg locates the socket via GNUPGHOME automatically — no helper needed.)
+    // ----------------------------------------------------------------
+    const socketFile = path.join(LINUX_GNUPGHOME, 'S.gpg-agent');
+    const deadline = Date.now() + 30000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      if (fs.existsSync(socketFile)) {
+        ready = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    if (!ready) {
+      throw new Error(
+        `request-proxy socket not found at ${socketFile} after 30 s. ` +
+          'Verify VSCODE_INTEGRATION_TEST=1 in the container env and that ' +
+          'request-proxy extension is loading in the remote extension host.',
+      );
+    }
 
-        // ----------------------------------------------------------------
-        // 3. Prepare isolated GNUPGHOME for this test run.
-        //    request-proxy may have already created the directory (its
-        //    startRequestProxy calls mkdirSync for the socket dir), so
-        //    { recursive: true } is safe whether it exists or not.
-        // ----------------------------------------------------------------
-        fs.mkdirSync(LINUX_GNUPGHOME, { recursive: true, mode: 0o700 });
+    // ----------------------------------------------------------------
+    // 3. Prepare isolated GNUPGHOME for this test run.
+    //    request-proxy may have already created the directory (its
+    //    startRequestProxy calls mkdirSync for the socket dir), so
+    //    { recursive: true } is safe whether it exists or not.
+    // ----------------------------------------------------------------
+    fs.mkdirSync(LINUX_GNUPGHOME, { recursive: true, mode: 0o700 });
 
-        // trust-model always: accept imported public keys without explicit ownertrust import.
-        // Written before GpgCli construction so the option is in effect for all gpg calls.
-        fs.writeFileSync(path.join(LINUX_GNUPGHOME, 'gpg.conf'), 'trust-model always\n', 'latin1');
+    // trust-model always: accept imported public keys without explicit ownertrust import.
+    // Written before GpgCli construction so the option is in effect for all gpg calls.
+    fs.writeFileSync(path.join(LINUX_GNUPGHOME, 'gpg.conf'), 'trust-model always\n', 'latin1');
 
-        // ----------------------------------------------------------------
-        // 4. Construct GpgTestHelper wrapping the injected GNUPGHOME.
-        //    gnupgHome is provided so cleanup() is a no-op — the runner manages agent/dir lifecycle.
-        //    gpg and gpgconf are on PATH in the container so no gpgBinDir needed.
-        // ----------------------------------------------------------------
-        cli = new GpgTestHelper({ gnupgHome: LINUX_GNUPGHOME });
+    // ----------------------------------------------------------------
+    // 4. Construct GpgTestHelper wrapping the injected GNUPGHOME.
+    //    gnupgHome is provided so cleanup() is a no-op — the runner manages agent/dir lifecycle.
+    //    gpg and gpgconf are on PATH in the container so no gpgBinDir needed.
+    // ----------------------------------------------------------------
+    cli = new GpgTestHelper({ gnupgHome: LINUX_GNUPGHOME });
 
-        // ----------------------------------------------------------------
-        // 5. Import the Windows test key's public component.
-        //    This is needed for encryption and for verifying signatures.
-        //    The ASCII-armored key is passed directly via PUBKEY_ARMORED_KEY env var;
-        //    no file read or workspace bind mount path required.
-        // ----------------------------------------------------------------
-        await cli.importPublicKey(PUBKEY_ARMORED_KEY);
+    // ----------------------------------------------------------------
+    // 5. Import the Windows test key's public component.
+    //    This is needed for encryption and for verifying signatures.
+    //    The ASCII-armored key is passed directly via PUBKEY_ARMORED_KEY env var;
+    //    no file read or workspace bind mount path required.
+    // ----------------------------------------------------------------
+    await cli.importPublicKey(PUBKEY_ARMORED_KEY);
 
-        // ----------------------------------------------------------------
-        // 6. Create an isolated temp dir for test file I/O.
-        //    Sign/encrypt inputs and outputs live here; wiped in after().
-        // ----------------------------------------------------------------
-        testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-phase3-test-'));
-    });
+    // ----------------------------------------------------------------
+    // 6. Create an isolated temp dir for test file I/O.
+    //    Sign/encrypt inputs and outputs live here; wiped in after().
+    // ----------------------------------------------------------------
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gpg-phase3-test-'));
+  });
 
-    after(async function () {
-        // Clean up test artefacts — best-effort; container is ephemeral but hygiene matters.
-        try { fs.rmSync(testDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  after(async function () {
+    // Clean up test artefacts — best-effort; container is ephemeral but hygiene matters.
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
 
-        // assertSafeToDelete guards against accidentally wiping a non-temp path.
-        try {
-            assertSafeToDelete(LINUX_GNUPGHOME);
-            fs.rmSync(LINUX_GNUPGHOME, { recursive: true, force: true });
-        } catch { /* ignore */ }
+    // assertSafeToDelete guards against accidentally wiping a non-temp path.
+    try {
+      assertSafeToDelete(LINUX_GNUPGHOME);
+      fs.rmSync(LINUX_GNUPGHOME, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
 
-        // Reset extension state so subsequent test runs start clean.
-        try { await vscode.commands.executeCommand('gpg-bridge-request.stop'); } catch { /* ignore */ }
-    });
+    // Reset extension state so subsequent test runs start clean.
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.stop');
+    } catch {
+      /* ignore */
+    }
+  });
 
-    // -----------------------------------------------------------------------
-    // 1. gpg --version smoke test
-    //    Confirms gpg binary is on PATH and exits cleanly.
-    // -----------------------------------------------------------------------
-    it('1. gpg --version exits 0 and reports gpg in output', async function () {
-        const result = await cli.version();
-        expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
-        expect(result.stdout, 'expected "gpg" in version output').to.include('gpg');
-    });
+  // -----------------------------------------------------------------------
+  // 1. gpg --version smoke test
+  //    Confirms gpg binary is on PATH and exits cleanly.
+  // -----------------------------------------------------------------------
+  it('1. gpg --version exits 0 and reports gpg in output', async function () {
+    const result = await cli.version();
+    expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
+    expect(result.stdout, 'expected "gpg" in version output').to.include('gpg');
+  });
 
-    // -----------------------------------------------------------------------
-    // 2. gpg --list-keys shows the imported Windows test key
-    //    Confirms the public key was successfully imported in before().
-    // -----------------------------------------------------------------------
-    it('2. gpg --list-keys shows imported test key', async function () {
-        const result = await cli.listKeys();
-        expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
-        // Fingerprint appears on its own line when listing keys with default output format.
-        expect(result.stdout, 'expected fingerprint in key listing').to.include(FINGERPRINT);
-    });
+  // -----------------------------------------------------------------------
+  // 2. gpg --list-keys shows the imported Windows test key
+  //    Confirms the public key was successfully imported in before().
+  // -----------------------------------------------------------------------
+  it('2. gpg --list-keys shows imported test key', async function () {
+    const result = await cli.listKeys();
+    expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
+    // Fingerprint appears on its own line when listing keys with default output format.
+    expect(result.stdout, 'expected fingerprint in key listing').to.include(FINGERPRINT);
+  });
 
-    // -----------------------------------------------------------------------
-    // 3. Sign a file via the full proxy chain (PKSIGN path)
-    //    gpg asks gpg-agent for a signature; the request travels through:
-    //      gpg → Unix socket → request-proxy → VS Code commands
-    //      → agent-proxy → gpg-agent (Windows)
-    //    A .gpg file (signed binary packet) is produced alongside the input.
-    // -----------------------------------------------------------------------
-    it('3. sign a file via proxy chain (PKSIGN)', async function () {
-        const inputFile = path.join(testDir, 'sign-input.txt');
-        const sigFile   = `${inputFile}.gpg`;
+  // -----------------------------------------------------------------------
+  // 3. Sign a file via the full proxy chain (PKSIGN path)
+  //    gpg asks gpg-agent for a signature; the request travels through:
+  //      gpg → Unix socket → request-proxy → VS Code commands
+  //      → agent-proxy → gpg-agent (Windows)
+  //    A .gpg file (signed binary packet) is produced alongside the input.
+  // -----------------------------------------------------------------------
+  it('3. sign a file via proxy chain (PKSIGN)', async function () {
+    const inputFile = path.join(testDir, 'sign-input.txt');
+    const sigFile = `${inputFile}.gpg`;
 
-        fs.writeFileSync(inputFile, 'Sign this content for Phase 3 integration test.\n', 'latin1');
+    fs.writeFileSync(inputFile, 'Sign this content for Phase 3 integration test.\n', 'latin1');
 
-        const result = await cli.signFile(inputFile, FINGERPRINT);
-        expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
-        expect(fs.existsSync(sigFile), `expected signature file at ${sigFile}`).to.be.true;
-    });
+    const result = await cli.signFile(inputFile, FINGERPRINT);
+    expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
+    expect(fs.existsSync(sigFile), `expected signature file at ${sigFile}`).to.be.true;
+  });
 
-    // -----------------------------------------------------------------------
-    // 4. Verify the signature produced in test 3
-    //    Uses the public key imported in before(). No private key needed.
-    //    Tests 3 and 4 are intentionally sequential (test 4 reads test 3's output).
-    // -----------------------------------------------------------------------
-    it('4. verify the signed file', async function () {
-        const sigFile = path.join(testDir, 'sign-input.txt.gpg');
-        const result  = await cli.verifyFile(sigFile);
-        expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
-    });
+  // -----------------------------------------------------------------------
+  // 4. Verify the signature produced in test 3
+  //    Uses the public key imported in before(). No private key needed.
+  //    Tests 3 and 4 are intentionally sequential (test 4 reads test 3's output).
+  // -----------------------------------------------------------------------
+  it('4. verify the signed file', async function () {
+    const sigFile = path.join(testDir, 'sign-input.txt.gpg');
+    const result = await cli.verifyFile(sigFile);
+    expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
+  });
 
-    // -----------------------------------------------------------------------
-    // 5. Encrypt + decrypt round-trip
-    //    Encrypt uses only the public key (local); decrypt requires the private
-    //    key and travels through the full proxy chain (PKDECRYPT path).
-    //    Asserts that decrypted content exactly matches the original plaintext.
-    // -----------------------------------------------------------------------
-    it('5. encrypt + decrypt round-trip via proxy chain (PKDECRYPT)', async function () {
-        const plainFile = path.join(testDir, 'plaintext.txt');
-        const encFile   = `${plainFile}.gpg`;
-        const CONTENT   = 'Round-trip plaintext for Phase 3 integration test.\n';
+  // -----------------------------------------------------------------------
+  // 5. Encrypt + decrypt round-trip
+  //    Encrypt uses only the public key (local); decrypt requires the private
+  //    key and travels through the full proxy chain (PKDECRYPT path).
+  //    Asserts that decrypted content exactly matches the original plaintext.
+  // -----------------------------------------------------------------------
+  it('5. encrypt + decrypt round-trip via proxy chain (PKDECRYPT)', async function () {
+    const plainFile = path.join(testDir, 'plaintext.txt');
+    const encFile = `${plainFile}.gpg`;
+    const CONTENT = 'Round-trip plaintext for Phase 3 integration test.\n';
 
-        fs.writeFileSync(plainFile, CONTENT, 'latin1');
+    fs.writeFileSync(plainFile, CONTENT, 'latin1');
 
-        const encResult = await cli.encryptFile(plainFile, FINGERPRINT);
-        expect(encResult.exitCode, `encrypt stderr: ${encResult.stderr}`).to.equal(0);
-        expect(fs.existsSync(encFile), `expected encrypted file at ${encFile}`).to.be.true;
+    const encResult = await cli.encryptFile(plainFile, FINGERPRINT);
+    expect(encResult.exitCode, `encrypt stderr: ${encResult.stderr}`).to.equal(0);
+    expect(fs.existsSync(encFile), `expected encrypted file at ${encFile}`).to.be.true;
 
-        const decResult = await cli.decryptFile(encFile);
-        expect(decResult.exitCode, `decrypt stderr: ${decResult.stderr}`).to.equal(0);
-        expect(decResult.stdout, 'decrypted content should match original plaintext').to.equal(CONTENT);
-    });
+    const decResult = await cli.decryptFile(encFile);
+    expect(decResult.exitCode, `decrypt stderr: ${decResult.stderr}`).to.equal(0);
+    expect(decResult.stdout, 'decrypted content should match original plaintext').to.equal(CONTENT);
+  });
 
-    // -----------------------------------------------------------------------
-    // 6. Sign a 256 KB binary file
-    //    gpg hashes the file locally (SHA-256 or similar) and only sends the
-    //    resulting ~32-byte hash digest to gpg-agent via PKSIGN.  The 256 KB file
-    //    itself never traverses the proxy.  This test verifies that the sign
-    //    command completes successfully end-to-end with a large input file and
-    //    that the produced .gpg packet is a valid detached/inline signature.
-    // -----------------------------------------------------------------------
-    it('6. sign a 256 KB file (full-size input, hash sent through proxy)', async function () {
-        const largeFile = path.join(testDir, 'large.bin');
-        const sigFile   = `${largeFile}.gpg`;
+  // -----------------------------------------------------------------------
+  // 6. Sign a 256 KB binary file
+  //    gpg hashes the file locally (SHA-256 or similar) and only sends the
+  //    resulting ~32-byte hash digest to gpg-agent via PKSIGN.  The 256 KB file
+  //    itself never traverses the proxy.  This test verifies that the sign
+  //    command completes successfully end-to-end with a large input file and
+  //    that the produced .gpg packet is a valid detached/inline signature.
+  // -----------------------------------------------------------------------
+  it('6. sign a 256 KB file (full-size input, hash sent through proxy)', async function () {
+    const largeFile = path.join(testDir, 'large.bin');
+    const sigFile = `${largeFile}.gpg`;
 
-        // randomBytes ensures content is incompressible and exercises all byte values.
-        fs.writeFileSync(largeFile, crypto.randomBytes(256 * 1024));
+    // randomBytes ensures content is incompressible and exercises all byte values.
+    fs.writeFileSync(largeFile, crypto.randomBytes(256 * 1024));
 
-        const result = await cli.signFile(largeFile, FINGERPRINT);
-        expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
-        expect(fs.existsSync(sigFile), `expected signature file at ${sigFile}`).to.be.true;
-    });
+    const result = await cli.signFile(largeFile, FINGERPRINT);
+    expect(result.exitCode, `stderr: ${result.stderr}`).to.equal(0);
+    expect(fs.existsSync(sigFile), `expected signature file at ${sigFile}`).to.be.true;
+  });
 
-    // -----------------------------------------------------------------------
-    // 7. Encrypt + decrypt a 256 KB binary file
-    //    GPG encrypts bulk data with a symmetric session key (AES-256) locally;
-    //    only the ~100-byte ECDH-wrapped session key traverses the proxy during
-    //    decrypt (PKDECRYPT inquiry).  This test exercises the full workflow with
-    //    a large real-world payload: verifies that the proxy correctly handles
-    //    the PKDECRYPT round-trip and that gpg reconstructs the original binary
-    //    content byte-for-byte after decrypt.
-    // -----------------------------------------------------------------------
-    it('7. encrypt + decrypt a 256 KB binary file (PKDECRYPT with large payload)', async function () {
-        const largeFile = path.join(testDir, 'large-enc.bin');
-        const encFile   = `${largeFile}.gpg`;
+  // -----------------------------------------------------------------------
+  // 7. Encrypt + decrypt a 256 KB binary file
+  //    GPG encrypts bulk data with a symmetric session key (AES-256) locally;
+  //    only the ~100-byte ECDH-wrapped session key traverses the proxy during
+  //    decrypt (PKDECRYPT inquiry).  This test exercises the full workflow with
+  //    a large real-world payload: verifies that the proxy correctly handles
+  //    the PKDECRYPT round-trip and that gpg reconstructs the original binary
+  //    content byte-for-byte after decrypt.
+  // -----------------------------------------------------------------------
+  it('7. encrypt + decrypt a 256 KB binary file (PKDECRYPT with large payload)', async function () {
+    const largeFile = path.join(testDir, 'large-enc.bin');
+    const encFile = `${largeFile}.gpg`;
 
-        // Use 256 KB — large enough to be a meaningful payload, small enough that
-        // spawnSync stdout buffering (latin1 string in memory) stays well within limits.
-        const content = crypto.randomBytes(256 * 1024);
-        fs.writeFileSync(largeFile, content);
+    // Use 256 KB — large enough to be a meaningful payload, small enough that
+    // spawnSync stdout buffering (latin1 string in memory) stays well within limits.
+    const content = crypto.randomBytes(256 * 1024);
+    fs.writeFileSync(largeFile, content);
 
-        const encResult = await cli.encryptFile(largeFile, FINGERPRINT);
-        expect(encResult.exitCode, `encrypt stderr: ${encResult.stderr}`).to.equal(0);
-        expect(fs.existsSync(encFile), `expected encrypted file at ${encFile}`).to.be.true;
+    const encResult = await cli.encryptFile(largeFile, FINGERPRINT);
+    expect(encResult.exitCode, `encrypt stderr: ${encResult.stderr}`).to.equal(0);
+    expect(fs.existsSync(encFile), `expected encrypted file at ${encFile}`).to.be.true;
 
-        const decResult = await cli.decryptFile(encFile);
-        expect(decResult.exitCode, `decrypt stderr: ${decResult.stderr}`).to.equal(0);
+    const decResult = await cli.decryptFile(encFile);
+    expect(decResult.exitCode, `decrypt stderr: ${decResult.stderr}`).to.equal(0);
 
-        // Verify byte-for-byte fidelity: latin1 round-trips all 256 byte values cleanly.
-        const originalLatin1 = content.toString('latin1');
-        expect(decResult.stdout, 'decrypted content should match original binary').to.equal(originalLatin1);
-    });
+    // Verify byte-for-byte fidelity: latin1 round-trips all 256 byte values cleanly.
+    const originalLatin1 = content.toString('latin1');
+    expect(decResult.stdout, 'decrypted content should match original binary').to.equal(
+      originalLatin1,
+    );
+  });
 });

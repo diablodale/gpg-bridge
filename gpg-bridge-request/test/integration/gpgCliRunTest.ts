@@ -31,7 +31,11 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as cp from 'child_process';
-import { runTests, downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } from '@vscode/test-electron';
+import {
+  runTests,
+  downloadAndUnzipVSCode,
+  resolveCliArgsFromVSCodeExecutablePath,
+} from '@vscode/test-electron';
 import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
 // GpgTestHelper creates and validates its own isolated keyring at construction time.
@@ -44,20 +48,19 @@ const gpg = new GpgTestHelper();
  * `../` levels, which silently breaks if tsconfig outDir depth ever changes.
  */
 function findWorkspaceRoot(startDir: string): string {
-    let dir = startDir;
-    while (true) {
-        if (fs.existsSync(path.join(dir, 'AGENTS.md'))) {
-            return dir;
-        }
-        const parent = path.dirname(dir);
-        if (parent === dir) {
-            throw new Error(
-                `Could not locate workspace root: AGENTS.md not found in any ` +
-                `ancestor of ${startDir}`
-            );
-        }
-        dir = parent;
+  let dir = startDir;
+  while (true) {
+    if (fs.existsSync(path.join(dir, 'AGENTS.md'))) {
+      return dir;
     }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(
+        `Could not locate workspace root: AGENTS.md not found in any ` + `ancestor of ${startDir}`,
+      );
+    }
+    dir = parent;
+  }
 }
 const workspaceRoot = findWorkspaceRoot(__dirname);
 
@@ -65,87 +68,90 @@ const workspaceRoot = findWorkspaceRoot(__dirname);
 // configFile must be a serialized VS Code URI object (not a string); see Phase 2
 // requestProxyRunTest.ts header comment for full explanation of the URI format.
 const REMOTE_CONTAINER_URI = Buffer.from(
-    JSON.stringify({
-        hostPath: workspaceRoot,
-        configFile: {
-            $mid: 1,
-            scheme: 'file',
-            authority: '',
-            path: path.join(workspaceRoot, '.devcontainer', 'phase3', 'devcontainer.json').replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1:'),
-            query: '',
-            fragment: ''
-        }
-    })
+  JSON.stringify({
+    hostPath: workspaceRoot,
+    configFile: {
+      $mid: 1,
+      scheme: 'file',
+      authority: '',
+      path: path
+        .join(workspaceRoot, '.devcontainer', 'phase3', 'devcontainer.json')
+        .replace(/\\/g, '/')
+        .replace(/^([A-Za-z]):/, '/$1:'),
+      query: '',
+      fragment: '',
+    },
+  }),
 ).toString('hex');
 const containerWorkspaceFolder = `/workspaces/${path.basename(workspaceRoot)}`;
 
 async function main(): Promise<void> {
-    // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
-    gpg.writeAgentConf(['disable-scdaemon']);
+  // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
+  gpg.writeAgentConf(['disable-scdaemon']);
 
-    // Generate the test key on Windows before either extension host starts.
-    await gpg.generateKey('Integration Test User', 'integration-test@example.com');
-    const fingerprint = await gpg.getFingerprint('integration-test@example.com');
+  // Generate the test key on Windows before either extension host starts.
+  await gpg.generateKey('Integration Test User', 'integration-test@example.com');
+  const fingerprint = await gpg.getFingerprint('integration-test@example.com');
 
-    // Export the public key as an ASCII-armored string and pass it directly via env var.
-    // Ed25519 armored public keys are ~350 chars — well within the 32,767-char Win32 limit.
-    // The Mocha before() reads PUBKEY_ARMORED_KEY and calls importPublicKey() directly,
-    // with no intermediate file or workspace bind mount path required.
-    const pubkeyArmored = await gpg.exportPublicKey(fingerprint);
+  // Export the public key as an ASCII-armored string and pass it directly via env var.
+  // Ed25519 armored public keys are ~350 chars — well within the 32,767-char Win32 limit.
+  // The Mocha before() reads PUBKEY_ARMORED_KEY and calls importPublicKey() directly,
+  // with no intermediate file or workspace bind mount path required.
+  const pubkeyArmored = await gpg.exportPublicKey(fingerprint);
 
-    // Launch the gpg-agent BEFORE the extension hosts start so that gpg-bridge-agent's
-    // activate() → detectAgentSocket() (calls gpgconf) already sees a live socket.
-    await gpg.launchAgent();
+  // Launch the gpg-agent BEFORE the extension hosts start so that gpg-bridge-agent's
+  // activate() → detectAgentSocket() (calls gpgconf) already sees a live socket.
+  await gpg.launchAgent();
 
-    // Download (or reuse cached) VS Code binary, then pre-install the Dev Containers
-    // extension into the test profile. resolveCliArgsFromVSCodeExecutablePath returns
-    // the VS Code CLI path plus --extensions-dir pointing at the test-scoped extensions
-    // folder so the install does not touch the user's own VS Code installation.
-    const vscodeExecutablePath = await downloadAndUnzipVSCode();
-    const [cliPath, ...cliArgs] = resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
-    cp.spawnSync(
-        cliPath,
-        [...cliArgs, '--install-extension', 'ms-vscode-remote.remote-containers'],
-        { encoding: 'utf-8', stdio: 'inherit', shell: true }
-    );
+  // Download (or reuse cached) VS Code binary, then pre-install the Dev Containers
+  // extension into the test profile. resolveCliArgsFromVSCodeExecutablePath returns
+  // the VS Code CLI path plus --extensions-dir pointing at the test-scoped extensions
+  // folder so the install does not touch the user's own VS Code installation.
+  const vscodeExecutablePath = await downloadAndUnzipVSCode();
+  const [cliPath, ...cliArgs] = resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
+  cp.spawnSync(cliPath, [...cliArgs, '--install-extension', 'ms-vscode-remote.remote-containers'], {
+    encoding: 'utf-8',
+    stdio: 'inherit',
+    shell: true,
+  });
 
-    try {
-        await runTests({
-            vscodeExecutablePath,
-            extensionDevelopmentPath: [
-                path.join(workspaceRoot, 'gpg-bridge-agent'), // gpg-bridge-agent root (ui, local)
-                `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}/gpg-bridge-request`, // gpg-bridge-request (workspace, remote)
-            ],
+  try {
+    await runTests({
+      vscodeExecutablePath,
+      extensionDevelopmentPath: [
+        path.join(workspaceRoot, 'gpg-bridge-agent'), // gpg-bridge-agent root (ui, local)
+        `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}/gpg-bridge-request`, // gpg-bridge-request (workspace, remote)
+      ],
 
-            // Mocha entry point: suite/gpgCliIndex, not suite/requestProxyIndex.
-            // gpgCliIndex loads gpgCliIntegration.test.js specifically.
-            extensionTestsPath: `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}/gpg-bridge-request/out/test/integration/suite/gpgCliIndex`,
+      // Mocha entry point: suite/gpgCliIndex, not suite/requestProxyIndex.
+      // gpgCliIndex loads gpgCliIntegration.test.js specifically.
+      extensionTestsPath: `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}/gpg-bridge-request/out/test/integration/suite/gpgCliIndex`,
 
-            launchArgs: [
-                '--folder-uri',
-                `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}`,
-            ],
+      launchArgs: [
+        '--folder-uri',
+        `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}`,
+      ],
 
-            // GNUPGHOME → Windows gpg-bridge-agent uses the isolated Windows keyring (same as Phase 2).
-            // The container's GNUPGHOME is the static Linux path set in devcontainer.json remoteEnv;
-            // it is NOT forwarded here to keep gpg-bridge-agent pointed at the Windows keyring.
-            // PUBKEY_ARMORED_KEY → ASCII-armored public key string passed directly; no file needed.
-            //   devcontainer.json remoteEnv uses ${localEnv:...} to forward it to the container.
-            // TEST_KEY_FINGERPRINT → forwarded to container via devcontainer.json remoteEnv.
-            extensionTestsEnv: {
-                VSCODE_INTEGRATION_TEST: '1',
-                GNUPGHOME: gpg.gnupgHome,
-                TEST_KEY_FINGERPRINT: fingerprint,
-                PUBKEY_ARMORED_KEY: pubkeyArmored
-            }
-        });
-    } finally {
-        // Kill agent and remove the isolated keyring whether tests passed or failed.
-        await gpg.cleanup();
-    }
+      // GNUPGHOME → Windows gpg-bridge-agent uses the isolated Windows keyring (same as Phase 2).
+      // The container's GNUPGHOME is the static Linux path set in devcontainer.json remoteEnv;
+      // it is NOT forwarded here to keep gpg-bridge-agent pointed at the Windows keyring.
+      // PUBKEY_ARMORED_KEY → ASCII-armored public key string passed directly; no file needed.
+      //   devcontainer.json remoteEnv uses ${localEnv:...} to forward it to the container.
+      // TEST_KEY_FINGERPRINT → forwarded to container via devcontainer.json remoteEnv.
+      extensionTestsEnv: {
+        VSCODE_INTEGRATION_TEST: '1',
+        GNUPGHOME: gpg.gnupgHome,
+        TEST_KEY_FINGERPRINT: fingerprint,
+        PUBKEY_ARMORED_KEY: pubkeyArmored,
+      },
+    });
+  } finally {
+    // Kill agent and remove the isolated keyring whether tests passed or failed.
+    await gpg.cleanup();
+  }
 }
 
-main().catch(err => {
-    console.error('Integration test runner failed:', err);
-    process.exit(1);
+main().catch((err) => {
+  console.error('Integration test runner failed:', err);
+  process.exit(1);
 });

@@ -4,6 +4,7 @@ Developer reference for `gpg-bridge-agent`. Covers the state machine, public VS 
 command API, session management, testing approach, and error handling.
 
 See also:
+
 - [AGENTS.md](../AGENTS.md) — project-wide coding conventions and state machine pattern
 - [docs/agent-state-machine-refactor.md](agent-state-machine-refactor.md) — original refactor plan
 - [docs/gpg-agent-protocol.md](gpg-agent-protocol.md) — Assuan/GPG protocol background
@@ -30,22 +31,26 @@ allowing concurrent sessions from multiple remotes.
 9. **FATAL** — Unrecoverable cleanup failure; session permanently dead
 
 Terminal states:
+
 - **DISCONNECTED** (session removed from Map; new session can be created)
 - **FATAL** (unrecoverable cleanup failure; session removed from Map permanently)
 
 ### Events (10 Total)
 
 **Client Events** (from gpg-bridge-request):
+
 - `CLIENT_CONNECT_REQUESTED` — `connectAgent()` called
 - `CLIENT_DATA_RECEIVED` — Data received (nonce Buffer or command string)
 
 **Agent Events** (from gpg-agent or socket operations):
+
 - `AGENT_SOCKET_CONNECTED` — TCP socket connected to agent
 - `AGENT_WRITE_OK` — Write succeeded (nonce or command)
 - `AGENT_DATA_CHUNK` — Response data chunk received from agent
 - `AGENT_DATA_RECEIVED` — Complete response received (greeting or command response)
 
 **Error & Cleanup Events**:
+
 - `ERROR_OCCURRED` — Any error (connection, write, timeout, socket, validation, protocol violation)
 - `CLEANUP_REQUESTED` — Cleanup beginning with `hadError: boolean` payload
 - `CLEANUP_COMPLETE` — Cleanup successful
@@ -93,16 +98,16 @@ exists, not just expected states. The handler must be defensive.
 
 ### Socket Close in All States
 
-| State | How it can occur |
-|-------|-----------------|
-| CONNECTING_TO_AGENT | Connection refused, network error during handshake |
-| SOCKET_CONNECTED | Error after connect, before nonce sent |
-| READY | Agent crash, network failure, agent-initiated close |
-| SENDING_TO_AGENT | Write failure, agent crashes during write |
-| WAITING_FOR_AGENT | Agent crashes, network failure, BYE race condition |
-| ERROR | Socket close during error handling (ignored, already in error path) |
-| CLOSING | Expected close during cleanup (ignored) |
-| DISCONNECTED | No socket (ignored, shouldn't happen) |
+| State               | How it can occur                                                    |
+| ------------------- | ------------------------------------------------------------------- |
+| CONNECTING_TO_AGENT | Connection refused, network error during handshake                  |
+| SOCKET_CONNECTED    | Error after connect, before nonce sent                              |
+| READY               | Agent crash, network failure, agent-initiated close                 |
+| SENDING_TO_AGENT    | Write failure, agent crashes during write                           |
+| WAITING_FOR_AGENT   | Agent crashes, network failure, BYE race condition                  |
+| ERROR               | Socket close during error handling (ignored, already in error path) |
+| CLOSING             | Expected close during cleanup (ignored)                             |
+| DISCONNECTED        | No socket (ignored, shouldn't happen)                               |
 
 ---
 
@@ -156,6 +161,7 @@ Creates a new session and connects to the GPG agent.
 **Throws:** Connection errors, timeout errors, validation errors
 
 **Flow:**
+
 1. Creates new session with UUID
 2. Parses GPG socket file (host, port, nonce)
 3. Connects to TCP socket
@@ -170,6 +176,7 @@ Creates a new session and connects to the GPG agent.
 Sends a command block to the GPG agent and returns the complete response.
 
 **Arguments:**
+
 - `sessionId: string` — Session ID from `connectAgent()`
 - `commandBlock: string` — GPG command(s) to send (e.g., `"BYE\n"`)
 
@@ -182,6 +189,7 @@ Sends a command block to the GPG agent and returns the complete response.
 Disconnects from the GPG agent and cleans up the session.
 
 **Arguments:**
+
 - `sessionId: string` — Session ID from `connectAgent()`
 
 **Returns:** `Promise<void>`
@@ -195,11 +203,13 @@ Disconnects from the GPG agent and cleans up the session.
 Sessions are stored in `Map<string, AgentProxySession>` keyed by UUID.
 
 **Lifecycle:**
+
 1. Created in DISCONNECTED state by `connectAgent()`
 2. Transitions through states via event handlers
 3. Cleaned up and removed from Map in `handleCleanupComplete()`
 
 **Cleanup guarantees:**
+
 - Socket listeners removed via `removeAllListeners()`
 - Socket destroyed via `socket.destroy()`
 - Pending promises rejected on error
@@ -214,19 +224,20 @@ Dependency injection interface:
 
 ```typescript
 interface AgentProxyDeps {
-    socketFactory?: ISocketFactory;
-    fileSystem?: IFileSystem;
+  socketFactory?: ISocketFactory;
+  fileSystem?: IFileSystem;
 }
 ```
 
 ```typescript
 const proxy = new AgentProxy(config, {
-    socketFactory: new MockSocketFactory(),
-    fileSystem: new MockFileSystem()
+  socketFactory: new MockSocketFactory(),
+  fileSystem: new MockFileSystem(),
 });
 ```
 
 Test coverage includes:
+
 - State transitions for all (state, event) pairs
 - Socket close handling in all states (hadError true/false)
 - Timeout behavior (connection, greeting)

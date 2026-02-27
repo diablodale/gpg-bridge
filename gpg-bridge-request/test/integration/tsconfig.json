@@ -1,18 +1,18 @@
 {
-    // Language-server tsconfig — used by VS Code's TS language service for
-    // editor features (IntelliSense, error highlighting) in the integration
-    // test files. The actual tsc compilation uses ../../tsconfig.test.json
-    // (invoked by `npm run compile:integration`), which sets the correct
-    // rootDir / outDir relative to the extension root.
-    "extends": "../../tsconfig.json",
-    "compilerOptions": {
-        // Make Mocha globals (describe, it, before, after, etc.) and Node.js built-ins
-        // (fs, path, crypto, etc.) available. Explicit types list is required because adding
-        // any entry disables TypeScript's auto-include of all @types/* packages.
-        "types": ["mocha", "node"],
-        // rootDir must cover these files; outDir is irrelevant for the LS.
-        "rootDir": ".",
-        "noEmit": true
-    },
-    "include": ["./**/*.ts"]
+  // Language-server tsconfig — used by VS Code's TS language service for
+  // editor features (IntelliSense, error highlighting) in the integration
+  // test files. The actual tsc compilation uses ../../tsconfig.test.json
+  // (invoked by `npm run compile:integration`), which sets the correct
+  // rootDir / outDir relative to the extension root.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // Make Mocha globals (describe, it, before, after, etc.) and Node.js built-ins
+    // (fs, path, crypto, etc.) available. Explicit types list is required because adding
+    // any entry disables TypeScript's auto-include of all @types/* packages.
+    "types": ["mocha", "node"],
+    // rootDir must cover these files; outDir is irrelevant for the LS.
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["./**/*.ts"]
 }

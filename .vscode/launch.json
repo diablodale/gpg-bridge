@@ -15,9 +15,7 @@
         "--extensionDevelopmentPath=${workspaceFolder}/agent-proxy",
         "--extensionTestsPath=${workspaceFolder}/agent-proxy/out/test/suite/index"
       ],
-      "outFiles": [
-        "${workspaceFolder}/agent-proxy/out/**/*.js"
-      ],
+      "outFiles": ["${workspaceFolder}/agent-proxy/out/**/*.js"],
       "preLaunchTask": "${defaultBuildTask}"
     },
     {
@@ -30,9 +28,7 @@
         "--extensionDevelopmentPath=${workspaceFolder}/request-proxy",
         "--extensionTestsPath=${workspaceFolder}/request-proxy/out/test/suite/index"
       ],
-      "outFiles": [
-        "${workspaceFolder}/request-proxy/out/**/*.js"
-      ],
+      "outFiles": ["${workspaceFolder}/request-proxy/out/**/*.js"],
       "preLaunchTask": "${defaultBuildTask}"
     }
   ]

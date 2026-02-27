@@ -28,9 +28,7 @@ if (!Array.isArray(typeEntries) || typeEntries.length === 0) {
   console.error('ERROR: commit-and-tag-version.types is missing or empty in root package.json');
   process.exit(1);
 }
-const VISIBLE_TYPES = new Set(
-  typeEntries.filter((e) => !e.hidden).map((e) => e.type),
-);
+const VISIBLE_TYPES = new Set(typeEntries.filter((e) => !e.hidden).map((e) => e.type));
 
 const CONVENTIONAL_RE = /^(\w+)(?:\([^)]*\))?(!)?:/;
 
@@ -78,7 +76,10 @@ const hasVisible = subjects.some((subject) => {
 });
 
 if (!hasVisible) {
-  const hiddenTypes = typeEntries.filter((e) => e.hidden).map((e) => e.type).join('/');
+  const hiddenTypes = typeEntries
+    .filter((e) => e.hidden)
+    .map((e) => e.type)
+    .join('/');
   console.error(
     `ERROR: no releasable commits since ${lastTag}.\n` +
       `All ${subjects.length} commit(s) use hidden types (${hiddenTypes}).\n` +

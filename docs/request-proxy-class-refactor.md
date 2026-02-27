@@ -262,37 +262,37 @@ Prerequisite for Phase 2. Minimal, backward-compatible changes. Nothing in reque
 changes yet.
 
 - [x] **1.1** `shared/src/types.ts`: add optional `sessionId?: string` to
-  `ICommandExecutor.connectAgent()`
+      `ICommandExecutor.connectAgent()`
 - [x] **1.2** `agent-proxy/src/services/agentProxy.ts`: update `AgentProxy.connectAgent(sessionId?: string)`
-  to use caller-supplied value when present, otherwise `uuidv4()`
+      to use caller-supplied value when present, otherwise `uuidv4()`
 - [x] **1.3** `agent-proxy/src/services/agentProxy.ts`: rename `dispose()` → `stop()` for
-  symmetry with `RequestProxy.stop()` (synchronous rename only; async implementation
-  deferred to Phase 6)
+      symmetry with `RequestProxy.stop()` (synchronous rename only; async implementation
+      deferred to Phase 6)
 - [x] **1.4** `agent-proxy/src/extension.ts`: update `connectAgent` command handler
-  signature to forward optional `sessionId` arg from VS Code command payload
+      signature to forward optional `sessionId` arg from VS Code command payload
 - [x] **1.5** `agent-proxy/src/extension.ts`: update `agentProxyService.dispose()` →
-  `await agentProxyService.stop()` call site in `stopAgentProxy()` — add `await` now so
-  Phase 6's async upgrade requires no further call-site change (`await` on a sync `void`
-  return is a harmless no-op)
+      `await agentProxyService.stop()` call site in `stopAgentProxy()` — add `await` now so
+      Phase 6's async upgrade requires no further call-site change (`await` on a sync `void`
+      return is a harmless no-op)
 - [x] **1.6** `agent-proxy/src/extension.ts`: implement `deactivate()` — currently a TODO
-  stub; use bare `return agentProxyService?.stop()` so VS Code can await the Promise during
-  shutdown (see Key Design Decision above); do not use `.catch()` — `outputChannel` may
-  already be disposed and VS Code handles deactivate rejections internally
+      stub; use bare `return agentProxyService?.stop()` so VS Code can await the Promise during
+      shutdown (see Key Design Decision above); do not use `.catch()` — `outputChannel` may
+      already be disposed and VS Code handles deactivate rejections internally
 - [x] **1.7** `agent-proxy/src/extension.ts`: replace all inline
-  `error instanceof Error ? error.message : String(error)` patterns with
-  `extractErrorMessage(error)` from `@gpg-relay/shared` (used correctly in request-proxy
-  but never imported in agent-proxy)
+      `error instanceof Error ? error.message : String(error)` patterns with
+      `extractErrorMessage(error)` from `@gpg-relay/shared` (used correctly in request-proxy
+      but never imported in agent-proxy)
 - [x] **1.8** `request-proxy/src/services/commandExecutor.ts`: update
-  `VSCodeCommandExecutor.connectAgent(sessionId?: string)` to accept and forward the
-  hint as the first arg to `_gpg-agent-proxy.connectAgent`
+      `VSCodeCommandExecutor.connectAgent(sessionId?: string)` to accept and forward the
+      hint as the first arg to `_gpg-agent-proxy.connectAgent`
 - [x] **1.9** `shared/src/test/helpers.ts`: update `MockCommandExecutor.connectAgent(sessionId?: string)`
-  to accept optional hint and record it in `calls` for test assertions
+      to accept optional hint and record it in `calls` for test assertions
 - [x] **1.10** `agent-proxy/src/extension.ts`: remove `gpg-agent-proxy.restart` command
-  registration and the `restartAgentProxy()` function — `request-proxy` has no restart
-  command and symmetry is the goal; a restart is just `stop()` + `start()` that callers
-  can do explicitly if needed
+      registration and the `restartAgentProxy()` function — `request-proxy` has no restart
+      command and symmetry is the goal; a restart is just `stop()` + `start()` that callers
+      can do explicitly if needed
 - [x] **1.11** Compile full repo (`npm run compile`), run all tests (`npm test` +
-  `npm run test:integration`), verify clean
+      `npm run test:integration`), verify clean
 - [x] **1.12** Commit items 1.1, 1.2, 1.4, 1.8, 1.9: `feat(agent-proxy): accept optional sessionId hint in connectAgent`
 - [x] **1.13** Commit items 1.3, 1.5: `refactor(agent-proxy): rename dispose() to stop()`
 - [x] **1.14** Commit items 1.6, 1.7, 1.10: `refactor(agent-proxy): implement deactivate, use extractErrorMessage, remove restart`
@@ -305,14 +305,14 @@ changes yet.
 Safe rename with no behaviour change. Isolated from Phase 3 to keep diffs readable.
 
 - [x] **2.1** `request-proxy/src/services/requestProxy.ts`: rename class
-  `ClientSessionManager` → `RequestSessionManager` throughout (declaration + all
-  internal references + JSDoc)
+      `ClientSessionManager` → `RequestSessionManager` throughout (declaration + all
+      internal references + JSDoc)
 - [x] **2.2** Remove now-dead `ClientSession` interface (was a plain data bag never used
-  at runtime; replaced by `RequestSessionManager`)
+      at runtime; replaced by `RequestSessionManager`)
 - [x] **2.3** Update `request-proxy/src/test/requestProxy.test.ts`: rename all
-  `ClientSessionManager` references (no references found — no-op)
+      `ClientSessionManager` references (no references found — no-op)
 - [x] **2.4** Compile full repo (`npm run compile`), run all tests (`npm test` +
-  `npm run test:integration`), verify clean
+      `npm run test:integration`), verify clean
 - [x] **2.5** Commit: `refactor(request-proxy): rename ClientSessionManager to RequestSessionManager`
 - [x] **2.6** ✅ Phase gate: all tests green, committed — proceed to Phase 3
 
@@ -331,10 +331,10 @@ with a `RequestProxy` class.
   - `async start(): Promise<void>` — contains logic currently in `startRequestProxy()`;
     the `'connection'` handler mints UUID per connection:
     ```ts
-    server.on('connection', socket => {
-        const sessionId = uuidv4();
-        const session = new RequestSessionManager(config, socket, sessionId);
-        sessions.set(sessionId, session);
+    server.on('connection', (socket) => {
+      const sessionId = uuidv4();
+      const session = new RequestSessionManager(config, socket, sessionId);
+      sessions.set(sessionId, session);
     });
     ```
   - `async stop(): Promise<void>` — contains logic currently in `instance.stop()`
@@ -342,16 +342,16 @@ with a `RequestProxy` class.
   - `isRunning(): boolean`
   - `getSessionCount(): number`
 - [x] **3.2** `RequestSessionManager`: update constructor to accept `sessionId: string`
-  as a third parameter and assign `this.sessionId = sessionId` at construction (replacing
-  the current `sessionId: string | null = null` field initializer); then update
-  `handleClientSocketConnected` to call `commandExecutor.connectAgent(this.sessionId)`
-  passing the already-minted UUID as hint (UUID is set at construction, not assigned from
-  `connectAgent()` result)
+      as a third parameter and assign `this.sessionId = sessionId` at construction (replacing
+      the current `sessionId: string | null = null` field initializer); then update
+      `handleClientSocketConnected` to call `commandExecutor.connectAgent(this.sessionId)`
+      passing the already-minted UUID as hint (UUID is set at construction, not assigned from
+      `connectAgent()` result)
 - [x] **3.3** Remove `RequestProxyInstance` interface (now dead)
 - [x] **3.4** `startRequestProxy()` kept as `@deprecated` backward-compat shim returning
-  `RequestProxy`; full removal deferred to Phase 4 (after extension.ts is migrated)
+      `RequestProxy`; full removal deferred to Phase 4 (after extension.ts is migrated)
 - [x] **3.5** Compile full repo (`npm run compile`), run all tests (`npm test` +
-  `npm run test:integration`), verify clean
+      `npm run test:integration`), verify clean
 - [x] **3.6** Commit: `feat(request-proxy): introduce RequestProxy class`
 - [x] **3.7** ✅ Phase gate: all tests green, committed — proceed to Phase 4
 
@@ -360,18 +360,18 @@ with a `RequestProxy` class.
 ### Phase 4 — `request-proxy/src/extension.ts`: use `RequestProxy`
 
 - [x] **4.1** Rename variable `requestProxyInstance` → `requestProxyService` throughout the file
-  and change its type from `Awaited<ReturnType<typeof startRequestProxy>> | null` →
-  `RequestProxy | null`
+      and change its type from `Awaited<ReturnType<typeof startRequestProxy>> | null` →
+      `RequestProxy | null`
 - [x] **4.2** Replace `startRequestProxy({...}, {...})` call with
-  `new RequestProxy({...}, {...})` then `await requestProxyService.start()`
+      `new RequestProxy({...}, {...})` then `await requestProxyService.start()`
 - [x] **4.3** Replace `requestProxyInstance.stop()` calls with `requestProxyService.stop()`
 - [x] **4.4** Replace `requestProxyInstance?.socketPath` with
-  `requestProxyService?.getSocketPath()`
+      `requestProxyService?.getSocketPath()`
 - [x] **4.5** Update import: replace `startRequestProxy` with `RequestProxy`
 - [x] **4.6** Rename `startRequestProxyHandler` → `startRequestProxy` (collision gone now
-  that the service-layer export is `RequestProxy`, not `startRequestProxy`)
+      that the service-layer export is `RequestProxy`, not `startRequestProxy`)
 - [x] **4.7** Rename `stopRequestProxyHandler` → `stopRequestProxy` (matches
-  `stopAgentProxy` in agent-proxy)
+      `stopAgentProxy` in agent-proxy)
 - [x] **4.8** Promote `outputChannel` to module scope (mirrors `agent-proxy`):
   - Declare `let outputChannel: vscode.OutputChannel` at module level (alongside
     `requestProxyService`)
@@ -380,11 +380,11 @@ with a `RequestProxy` class.
     `stopRequestProxy()` — they reference the module-level variable directly
   - Update the two call sites inside `activate()` to not pass `outputChannel`
 - [x] **4.9** `request-proxy/src/extension.ts`: fix `deactivate()` — currently calls
-  `requestProxyInstance.stop().catch(...)` without `return`, so VS Code cannot await it;
-  replace with bare `return requestProxyService?.stop()` to match the pattern established
-  in Phase 1.6 and allow VS Code to wait for full shutdown
+      `requestProxyInstance.stop().catch(...)` without `return`, so VS Code cannot await it;
+      replace with bare `return requestProxyService?.stop()` to match the pattern established
+      in Phase 1.6 and allow VS Code to wait for full shutdown
 - [x] **4.10** Compile full repo (`npm run compile`), run all tests (`npm test` +
-  `npm run test:integration`), verify clean
+      `npm run test:integration`), verify clean
 - [x] **4.11** Commit: `refactor(request-proxy): update extension to use RequestProxy class`
 - [x] **4.12** ✅ Phase gate: all tests green, committed — proceed to Phase 5
 
@@ -396,10 +396,10 @@ Now that `RequestSessionManager.sessionId` is set at construction, both managers
 `readonly sessionId: string`. Tighten the shared interface.
 
 - [x] **5.1** `shared/src/types.ts`: change `ISessionManager.sessionId` from
-  `string | null` to `string`
+      `string | null` to `string`
 - [x] **5.2** Update JSDoc on `ISessionManager` to remove nullable caveat
 - [x] **5.3** Compile full repo (`npm run compile`), run all tests (`npm test` +
-  `npm run test:integration`), verify clean
+      `npm run test:integration`), verify clean
 - [x] **5.4** Commit: `refactor(shared): tighten ISessionManager.sessionId to non-nullable`
 - [x] **5.5** ✅ Phase gate: all tests green, committed — proceed to Phase 6
 
@@ -432,17 +432,17 @@ three-way split by current state:
 session has fully cleaned up and been removed from the Map.
 
 - [x] **6.1** `agent-proxy/src/services/agentProxy.ts`: change `stop()` signature to
-  `public async stop(): Promise<void>`
+      `public async stop(): Promise<void>`
 - [x] **6.2** In the sessions loop: apply the three-way split from the sketch above —
-  skip DISCONNECTED/FATAL; for ERROR/CLOSING register `session.once('CLEANUP_COMPLETE',
-  resolve)` only; for all other active states register the listener **and** emit
-  `ERROR_OCCURRED`; push each promise to `cleanupPromises[]`
+      skip DISCONNECTED/FATAL; for ERROR/CLOSING register `session.once('CLEANUP_COMPLETE',
+resolve)` only; for all other active states register the listener **and** emit
+      `ERROR_OCCURRED`; push each promise to `cleanupPromises[]`
 - [x] **6.3** After the emit loop: `await Promise.all(cleanupPromises)` so `stop()`
-  resolves only when every triggered session has reached CLEANUP_COMPLETE
+      resolves only when every triggered session has reached CLEANUP_COMPLETE
 - [x] **6.4** `agent-proxy/src/extension.ts`: `stopAgentProxy()` already uses
-  `await agentProxyService.stop()` from Phase 1.5 — no further change required
+      `await agentProxyService.stop()` from Phase 1.5 — no further change required
 - [x] **6.5** Compile full repo (`npm run compile`), run all tests (`npm test` +
-  `npm run test:integration`), verify clean
+      `npm run test:integration`), verify clean
 - [x] **6.6** Commit: `refactor(agent-proxy): make stop() async with deterministic cleanup`
 - [x] **6.7** ✅ Phase gate: all tests green, committed — refactor complete
 
@@ -450,26 +450,26 @@ session has fully cleaned up and been removed from the Map.
 
 ## Files Changed Summary
 
-| File | Change |
-|---|---|
-| `shared/src/types.ts` | `ICommandExecutor.connectAgent(sessionId?)`, tighten `ISessionManager.sessionId` |
-| `shared/src/test/helpers.ts` | `MockCommandExecutor.connectAgent(sessionId?)` records hint in calls |
-| `agent-proxy/src/services/agentProxy.ts` | `connectAgent(sessionId?)` uses hint; `dispose()` → `stop()`; `stop()` made `async Promise<void>` with `await Promise.all(cleanupPromises)` |
-| `agent-proxy/src/extension.ts` | forward `sessionId` arg from command payload; `dispose()` → `stop()` call site; implement `deactivate()`; use `extractErrorMessage` throughout; remove `restart` command and `restartAgentProxy()` |
-| `request-proxy/src/services/commandExecutor.ts` | `VSCodeCommandExecutor.connectAgent(sessionId?)` forwards hint to VS Code command |
-| `request-proxy/src/services/requestProxy.ts` | rename `ClientSessionManager`, add `RequestProxy`, remove `startRequestProxy`/`RequestProxyInstance` |
-| `request-proxy/src/extension.ts` | `requestProxyService: RequestProxy`, `new RequestProxy().start()`, promote `outputChannel` to module scope, rename handlers, fix `deactivate()` to bare `return requestProxyService?.stop()` |
-| `request-proxy/src/test/requestProxy.test.ts` | update rename + API references |
+| File                                            | Change                                                                                                                                                                                             |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/src/types.ts`                           | `ICommandExecutor.connectAgent(sessionId?)`, tighten `ISessionManager.sessionId`                                                                                                                   |
+| `shared/src/test/helpers.ts`                    | `MockCommandExecutor.connectAgent(sessionId?)` records hint in calls                                                                                                                               |
+| `agent-proxy/src/services/agentProxy.ts`        | `connectAgent(sessionId?)` uses hint; `dispose()` → `stop()`; `stop()` made `async Promise<void>` with `await Promise.all(cleanupPromises)`                                                        |
+| `agent-proxy/src/extension.ts`                  | forward `sessionId` arg from command payload; `dispose()` → `stop()` call site; implement `deactivate()`; use `extractErrorMessage` throughout; remove `restart` command and `restartAgentProxy()` |
+| `request-proxy/src/services/commandExecutor.ts` | `VSCodeCommandExecutor.connectAgent(sessionId?)` forwards hint to VS Code command                                                                                                                  |
+| `request-proxy/src/services/requestProxy.ts`    | rename `ClientSessionManager`, add `RequestProxy`, remove `startRequestProxy`/`RequestProxyInstance`                                                                                               |
+| `request-proxy/src/extension.ts`                | `requestProxyService: RequestProxy`, `new RequestProxy().start()`, promote `outputChannel` to module scope, rename handlers, fix `deactivate()` to bare `return requestProxyService?.stop()`       |
+| `request-proxy/src/test/requestProxy.test.ts`   | update rename + API references                                                                                                                                                                     |
 
 ---
 
 ## Status
 
-| Phase | Description | Status |
-|---|---|---|
-| 1 | `shared` + `agent-proxy`: optional `sessionId` hint | ✅ Complete |
-| 2 | Rename `ClientSessionManager` → `RequestSessionManager` | ✅ Complete |
-| 3 | `RequestProxy` class replaces factory function | ✅ Complete |
-| 4 | `extension.ts` uses `RequestProxy` | ✅ Complete |
-| 5 | Tighten `ISessionManager.sessionId` | ✅ Complete |
-| 6 | `AgentProxy.stop()` async with deterministic cleanup | ✅ Complete |
+| Phase | Description                                             | Status      |
+| ----- | ------------------------------------------------------- | ----------- |
+| 1     | `shared` + `agent-proxy`: optional `sessionId` hint     | ✅ Complete |
+| 2     | Rename `ClientSessionManager` → `RequestSessionManager` | ✅ Complete |
+| 3     | `RequestProxy` class replaces factory function          | ✅ Complete |
+| 4     | `extension.ts` uses `RequestProxy`                      | ✅ Complete |
+| 5     | Tighten `ISessionManager.sessionId`                     | ✅ Complete |
+| 6     | `AgentProxy.stop()` async with deterministic cleanup    | ✅ Complete |

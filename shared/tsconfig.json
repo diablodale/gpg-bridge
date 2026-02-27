@@ -4,17 +4,13 @@
     "target": "ES2022",
     "outDir": "out",
     "rootDir": "src",
-    "lib": [
-      "ES2022"
-    ],
+    "lib": ["ES2022"],
     "sourceMap": true,
     "skipLibCheck": true,
     "strict": true,
     "declaration": true,
-        "declarationMap": true
+    "declarationMap": true
   },
-  "include": [
-    "src/**/*.ts"
-  ],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "out"]
 }

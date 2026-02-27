@@ -11,6 +11,7 @@ Build powerful Visual Studio Code extensions using the official VS Code Extensio
 ## When to Use This Skill
 
 Use this skill when building:
+
 - **Command extensions**: Custom commands and keybindings
 - **UI extensions**: Custom views, webviews, tree views, status bar items
 - **Language support**: Syntax highlighting, IntelliSense, diagnostics, formatters
@@ -33,6 +34,7 @@ npx --package yo --package generator-code -- yo code
 ```
 
 Choose from:
+
 - **New Extension (TypeScript)** - Recommended for most extensions
 - **New Extension (JavaScript)** - If you prefer JavaScript
 - **New Color Theme** - Color theme extension
@@ -40,6 +42,7 @@ Choose from:
 - **New Code Snippets** - Snippet collection
 
 Fill out the prompts:
+
 ```bash
 ? What type of extension do you want to create? New Extension (TypeScript)
 ? What's the name of your extension? my-extension
@@ -113,6 +116,7 @@ The `package.json` file is the extension manifest that declares:
 ```
 
 **Key Fields:**
+
 - `name` + `publisher`: Creates unique ID `<publisher>.<name>`
 - `engines.vscode`: Minimum VS Code version required
 - `activationEvents`: When your extension activates (often auto-detected)
@@ -130,12 +134,9 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('Extension "my-extension" is now active!');
 
   // Register a command
-  let disposable = vscode.commands.registerCommand(
-    'my-extension.helloWorld',
-    () => {
-      vscode.window.showInformationMessage('Hello World!');
-    }
-  );
+  let disposable = vscode.commands.registerCommand('my-extension.helloWorld', () => {
+    vscode.window.showInformationMessage('Hello World!');
+  });
 
   // Add to subscriptions for cleanup
   context.subscriptions.push(disposable);
@@ -148,6 +149,7 @@ export function deactivate() {
 ```
 
 **Key Concepts:**
+
 - `activate()`: Called when activation event fires
 - `deactivate()`: Called on shutdown (optional, for cleanup)
 - `context.subscriptions`: Auto-cleanup on deactivation
@@ -198,6 +200,7 @@ Activation events determine when your extension loads. Starting with VS Code 1.7
 ```
 
 **Auto-Detected Activation Events (VS Code 1.74+):**
+
 - Commands declared in `contributes.commands`
 - Views declared in `contributes.views`
 - Custom editors declared in `contributes.customEditors`
@@ -244,6 +247,7 @@ vscode.commands.registerCommand('my-extension.myCommand', () => {
 Understanding command registration and contribution is crucial:
 
 **Registration vs. Contribution:**
+
 - **`registerCommand()`**: Makes command available to:
   - Be invoked programmatically via `executeCommand()`
   - Be bound to keybindings
@@ -261,6 +265,7 @@ Understanding command registration and contribution is crucial:
 ```
 
 Examples:
+
 - `myPublisher.myExtension.doSomething`
 - `vscode.open` (built-in)
 - `git.commit` (extension command)
@@ -292,12 +297,14 @@ When contributing commands, follow these title conventions:
 - **Don't capitalize short prepositions**: (on, to, in, of, with, for) unless first/last word
 
 Good examples:
+
 - ✅ `"Open Settings"`
 - ✅ `"Format Document"`
 - ✅ `"Show References"`
 - ✅ `"Toggle Line Comment"`
 
 Avoid:
+
 - ❌ `"Open settings"` (not title-case)
 - ❌ `"settings"` (no verb)
 - ❌ `"Open Settings Command"` (redundant "Command")
@@ -326,13 +333,12 @@ For VS Code 1.74.0+, commands contributed in `package.json` automatically activa
 
 ```json
 {
-  "activationEvents": [
-    "onCommand:myExtension.command"
-  ]
+  "activationEvents": ["onCommand:myExtension.command"]
 }
 ```
 
 You **must** define activation events for internal commands (not in `contributes.commands`) that can be:
+
 - Invoked via Command Palette
 - Bound to keybindings
 - Called from UI elements
@@ -386,6 +392,7 @@ Add commands to various menus:
 ```
 
 **Available Menu Locations:**
+
 - `commandPalette`: Command Palette (Ctrl+Shift+P)
 - `editor/context`: Editor context menu
 - `editor/title`: Editor title bar
@@ -420,11 +427,7 @@ Add commands to various menus:
         "myExtension.mode": {
           "type": "string",
           "enum": ["auto", "manual", "disabled"],
-          "enumDescriptions": [
-            "Automatic mode",
-            "Manual mode",
-            "Disabled"
-          ],
+          "enumDescriptions": ["Automatic mode", "Manual mode", "Disabled"],
           "default": "auto",
           "description": "Operation mode"
         }
@@ -442,7 +445,7 @@ const enabled = config.get<boolean>('enable', true);
 const maxItems = config.get<number>('maxItems', 10);
 
 // Listen for configuration changes
-vscode.workspace.onDidChangeConfiguration(e => {
+vscode.workspace.onDidChangeConfiguration((e) => {
   if (e.affectsConfiguration('myExtension.enable')) {
     // Handle configuration change
   }
@@ -579,11 +582,7 @@ vscode.window.showWarningMessage('Warning message');
 vscode.window.showErrorMessage('Error message');
 
 // Show message with actions
-const answer = await vscode.window.showInformationMessage(
-  'Do you want to continue?',
-  'Yes',
-  'No'
-);
+const answer = await vscode.window.showInformationMessage('Do you want to continue?', 'Yes', 'No');
 if (answer === 'Yes') {
   // User clicked Yes
 }
@@ -594,24 +593,21 @@ const result = await vscode.window.showInputBox({
   placeHolder: 'Type here',
   validateInput: (value) => {
     return value.length < 3 ? 'Must be at least 3 characters' : null;
-  }
+  },
 });
 
 // Show quick pick
-const selected = await vscode.window.showQuickPick(
-  ['Option 1', 'Option 2', 'Option 3'],
-  {
-    placeHolder: 'Select an option',
-    canPickMany: false
-  }
-);
+const selected = await vscode.window.showQuickPick(['Option 1', 'Option 2', 'Option 3'], {
+  placeHolder: 'Select an option',
+  canPickMany: false,
+});
 
 // Progress notification
 vscode.window.withProgress(
   {
     location: vscode.ProgressLocation.Notification,
     title: 'Processing',
-    cancellable: true
+    cancellable: true,
   },
   async (progress, token) => {
     token.onCancellationRequested(() => {
@@ -623,7 +619,7 @@ vscode.window.withProgress(
     progress.report({ increment: 50, message: 'Half done...' });
     await doMoreWork();
     progress.report({ increment: 50, message: 'Complete!' });
-  }
+  },
 );
 
 // Open external URL
@@ -649,8 +645,8 @@ if (folders && folders.length > 0) {
 
 // Find files in workspace
 const files = await vscode.workspace.findFiles(
-  '**/*.ts',          // include pattern
-  '**/node_modules/**' // exclude pattern
+  '**/*.ts', // include pattern
+  '**/node_modules/**', // exclude pattern
 );
 
 // Read file
@@ -664,20 +660,20 @@ await vscode.workspace.fs.writeFile(uri, data);
 
 // Watch file system
 const watcher = vscode.workspace.createFileSystemWatcher('**/*.ts');
-watcher.onDidCreate(uri => console.log('Created:', uri));
-watcher.onDidChange(uri => console.log('Changed:', uri));
-watcher.onDidDelete(uri => console.log('Deleted:', uri));
+watcher.onDidCreate((uri) => console.log('Created:', uri));
+watcher.onDidChange((uri) => console.log('Changed:', uri));
+watcher.onDidDelete((uri) => console.log('Deleted:', uri));
 
 // Listen for document events
-vscode.workspace.onDidOpenTextDocument(doc => {
+vscode.workspace.onDidOpenTextDocument((doc) => {
   console.log('Opened:', doc.fileName);
 });
 
-vscode.workspace.onDidChangeTextDocument(e => {
+vscode.workspace.onDidChangeTextDocument((e) => {
   console.log('Changed:', e.document.fileName);
 });
 
-vscode.workspace.onDidSaveTextDocument(doc => {
+vscode.workspace.onDidSaveTextDocument((doc) => {
   console.log('Saved:', doc.fileName);
 });
 ```
@@ -694,7 +690,7 @@ const selection = editor.selection;
 const text = document.getText(selection);
 
 // Edit document
-await editor.edit(editBuilder => {
+await editor.edit((editBuilder) => {
   // Insert text
   editBuilder.insert(new vscode.Position(0, 0), 'Header\n');
 
@@ -708,29 +704,19 @@ await editor.edit(editBuilder => {
 
 // Apply workspace edit (multiple files)
 const edit = new vscode.WorkspaceEdit();
-edit.insert(
-  document.uri,
-  new vscode.Position(0, 0),
-  'New line\n'
-);
+edit.insert(document.uri, new vscode.Position(0, 0), 'New line\n');
 await vscode.workspace.applyEdit(edit);
 
 // Change selection
-editor.selection = new vscode.Selection(
-  new vscode.Position(0, 0),
-  new vscode.Position(0, 10)
-);
+editor.selection = new vscode.Selection(new vscode.Position(0, 0), new vscode.Position(0, 10));
 
 // Change visible range
-editor.revealRange(
-  new vscode.Range(10, 0, 20, 0),
-  vscode.TextEditorRevealType.InCenter
-);
+editor.revealRange(new vscode.Range(10, 0, 20, 0), vscode.TextEditorRevealType.InCenter);
 
 // Add decorations
 const decorationType = vscode.window.createTextEditorDecorationType({
   backgroundColor: 'rgba(255, 0, 0, 0.3)',
-  border: '1px solid red'
+  border: '1px solid red',
 });
 
 const ranges = [new vscode.Range(0, 0, 0, 10)];
@@ -750,9 +736,9 @@ vscode.languages.registerCompletionItemProvider(
       item.detail = 'My custom function';
       item.documentation = 'This is my function';
       return [item];
-    }
+    },
   },
-  '.' // Trigger character
+  '.', // Trigger character
 );
 
 // Register hover provider
@@ -762,7 +748,7 @@ vscode.languages.registerHoverProvider('javascript', {
     const word = document.getText(range);
 
     return new vscode.Hover(`Information about **${word}**`);
-  }
+  },
 });
 
 // Register definition provider
@@ -771,23 +757,20 @@ vscode.languages.registerDefinitionProvider('javascript', {
     // Return location of definition
     return new vscode.Location(
       vscode.Uri.file('/path/to/definition.js'),
-      new vscode.Position(10, 5)
+      new vscode.Position(10, 5),
     );
-  }
+  },
 });
 
 // Register code action provider
 vscode.languages.registerCodeActionsProvider('javascript', {
   provideCodeActions(document, range) {
-    const fix = new vscode.CodeAction(
-      'Fix issue',
-      vscode.CodeActionKind.QuickFix
-    );
+    const fix = new vscode.CodeAction('Fix issue', vscode.CodeActionKind.QuickFix);
     fix.edit = new vscode.WorkspaceEdit();
     fix.edit.replace(document.uri, range, 'fixed text');
 
     return [fix];
-  }
+  },
 });
 
 // Register diagnostics
@@ -797,7 +780,7 @@ function updateDiagnostics(document: vscode.TextDocument) {
   const diag = new vscode.Diagnostic(
     new vscode.Range(0, 0, 0, 10),
     'This is an error',
-    vscode.DiagnosticSeverity.Error
+    vscode.DiagnosticSeverity.Error,
   );
   diagnostics.set(document.uri, [diag]);
 }
@@ -807,15 +790,10 @@ function updateDiagnostics(document: vscode.TextDocument) {
 
 ```typescript
 // Create webview panel
-const panel = vscode.window.createWebviewPanel(
-  'myWebview',
-  'My Webview',
-  vscode.ViewColumn.One,
-  {
-    enableScripts: true,
-    retainContextWhenHidden: true
-  }
-);
+const panel = vscode.window.createWebviewPanel('myWebview', 'My Webview', vscode.ViewColumn.One, {
+  enableScripts: true,
+  retainContextWhenHidden: true,
+});
 
 // Set HTML content
 panel.webview.html = `
@@ -844,7 +822,7 @@ panel.webview.html = `
 `;
 
 // Handle messages from webview
-panel.webview.onDidReceiveMessage(message => {
+panel.webview.onDidReceiveMessage((message) => {
   if (message.command === 'clicked') {
     vscode.window.showInformationMessage('Button clicked!');
   }
@@ -883,8 +861,8 @@ module.exports = defineConfig({
   workspaceFolder: './test-workspace',
   mocha: {
     ui: 'tdd',
-    timeout: 20000
-  }
+    timeout: 20000,
+  },
 });
 ```
 
@@ -1043,7 +1021,7 @@ try {
   await riskyOperation();
 } catch (error) {
   vscode.window.showErrorMessage(
-    `Operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    `Operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
   );
   console.error('Detailed error:', error);
 }
@@ -1057,17 +1035,17 @@ Always dispose of resources:
 function activate(context: vscode.ExtensionContext) {
   // Register disposables
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(editor => {
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
       // Handle editor change
     }),
 
-    vscode.workspace.onDidSaveTextDocument(document => {
+    vscode.workspace.onDidSaveTextDocument((document) => {
       // Handle save
     }),
 
     vscode.commands.registerCommand('cmd', () => {
       // Handle command
-    })
+    }),
   );
 
   // Or manually dispose
@@ -1080,10 +1058,7 @@ function activate(context: vscode.ExtensionContext) {
 
 ```typescript
 // Get configuration for specific resource
-const docConfig = vscode.workspace.getConfiguration(
-  'myExtension',
-  document.uri
-);
+const docConfig = vscode.workspace.getConfiguration('myExtension', document.uri);
 
 // Respect workspace vs user settings
 const target = vscode.ConfigurationTarget.Workspace;
@@ -1129,7 +1104,7 @@ vscode.commands.executeCommand(
 const folder = vscode.workspace.getWorkspaceFolder(document.uri);
 
 // Handle all workspace folders
-vscode.workspace.workspaceFolders?.forEach(folder => {
+vscode.workspace.workspaceFolders?.forEach((folder) => {
   console.log('Folder:', folder.uri.fsPath);
 });
 ```
@@ -1170,7 +1145,7 @@ const extensionPath = context.extensionPath;
 ```typescript
 const statusBarItem = vscode.window.createStatusBarItem(
   vscode.StatusBarAlignment.Right,
-  100 // priority
+  100, // priority
 );
 
 statusBarItem.text = '$(sync~spin) Loading...';
@@ -1190,11 +1165,11 @@ terminal.show();
 terminal.sendText('echo Hello World');
 
 // Listen for terminal events
-vscode.window.onDidOpenTerminal(terminal => {
+vscode.window.onDidOpenTerminal((terminal) => {
   console.log('Terminal opened:', terminal.name);
 });
 
-vscode.window.onDidCloseTerminal(terminal => {
+vscode.window.onDidCloseTerminal((terminal) => {
   console.log('Terminal closed:', terminal.name);
 });
 ```
@@ -1208,24 +1183,24 @@ import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-  TransportKind
+  TransportKind,
 } from 'vscode-languageclient/node';
 
 const serverModule = context.asAbsolutePath('out/server.js');
 const serverOptions: ServerOptions = {
   run: { module: serverModule, transport: TransportKind.ipc },
-  debug: { module: serverModule, transport: TransportKind.ipc }
+  debug: { module: serverModule, transport: TransportKind.ipc },
 };
 
 const clientOptions: LanguageClientOptions = {
-  documentSelector: [{ scheme: 'file', language: 'mylang' }]
+  documentSelector: [{ scheme: 'file', language: 'mylang' }],
 };
 
 const client = new LanguageClient(
   'myLangServer',
   'My Language Server',
   serverOptions,
-  clientOptions
+  clientOptions,
 );
 
 client.start();
@@ -1234,6 +1209,7 @@ client.start();
 ## Resources
 
 ### Official Documentation
+
 - **VS Code API**: https://code.visualstudio.com/api
 - **Extension Samples and Codebases**: https://github.com/microsoft/vscode-extension-samples
 - **Localization Basics and Sample**: https://github.com/microsoft/vscode-extension-samples/tree/main/l10n-sample
@@ -1243,12 +1219,14 @@ client.start();
 - **Extension Guidelines**: https://code.visualstudio.com/api/references/extension-guidelines
 
 ### Tools
+
 - **Extension Generator**: `yo code`
 - **Publishing Tool**: `@vscode/vsce`
 - **Testing Framework**: `@vscode/test-cli`
 - **Language Server**: `vscode-languageclient`
 
 ### Community
+
 - **Stack Overflow**: [vscode-extensions tag](https://stackoverflow.com/questions/tagged/vscode-extensions)
 - **GitHub Discussions**: https://github.com/microsoft/vscode-discussions
 - **VS Code Dev Slack**: https://vscode-dev-community.slack.com/

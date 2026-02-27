@@ -4,6 +4,7 @@ Developer reference for `gpg-bridge-request`. Covers the state machine, public A
 session management, INQUIRE D-block buffering, testing approach, and error handling.
 
 See also:
+
 - [AGENTS.md](../AGENTS.md) — project-wide coding conventions and state machine pattern
 - [docs/request-state-machine-refactor.md](request-state-machine-refactor.md) — original refactor plan
 - [docs/gpg-agent-protocol.md](gpg-agent-protocol.md) — Assuan/GPG protocol background
@@ -32,26 +33,31 @@ state machine, allowing concurrent GPG operations from multiple processes.
 11. **FATAL** — Unrecoverable error (cleanup failed), session destroyed permanently
 
 Terminal states:
+
 - **DISCONNECTED** (can accept new connections)
 - **FATAL** (unrecoverable, session removed from Map)
 
 ### Events (12 Total)
 
 **Client Events** (from client GPG process):
+
 - `CLIENT_SOCKET_CONNECTED` — New client socket accepted
 - `CLIENT_DATA_START` — First chunk of client data in READY state
 - `CLIENT_DATA_PARTIAL` — Data arrives while buffering (command or D-block)
 - `CLIENT_DATA_COMPLETE` — Complete command (`\n`) or D-block (`END\n`) received
 
 **Agent Events** (from gpg-bridge-agent via VS Code commands):
+
 - `AGENT_RESPONSE_COMPLETE` — Complete response from agent received (including initial greeting)
 - `RESPONSE_OK_OR_ERR` — Agent response is OK or ERR (return to READY)
 - `RESPONSE_INQUIRE` — Agent response contains INQUIRE (buffer D-block)
 
 **Write Events**:
+
 - `AGENT_WRITE_COMPLETE` — Write to agent succeeded (SENDING_TO_AGENT → WAITING_FOR_AGENT)
 
 **Error & Cleanup Events**:
+
 - `ERROR_OCCURRED` — Any error (buffer, write, socket, protocol violation)
 - `CLEANUP_REQUESTED` — Cleanup beginning with `hadError: boolean` payload
 - `CLEANUP_COMPLETE` — Cleanup successful
@@ -101,19 +107,19 @@ socket exists. The handler must be defensive.
 
 ### Socket Close in All States
 
-| State | How it can occur |
-|-------|-----------------|
+| State               | How it can occur                                     |
+| ------------------- | ---------------------------------------------------- |
 | CONNECTING_TO_AGENT | Client disconnects before agent connection completes |
-| READY | Client process crashes, network failure |
-| BUFFERING_COMMAND | Client disconnects mid-command |
-| BUFFERING_INQUIRE | Client disconnects mid-D-block |
-| SENDING_TO_AGENT | Client disconnects during agent communication |
-| WAITING_FOR_AGENT | Client disconnects while waiting for response |
-| SENDING_TO_CLIENT | Client disconnects during response transmission |
-| ERROR | Ignored (already in error path) |
-| CLOSING | Ignored (expected during cleanup) |
-| DISCONNECTED | Ignored (no socket) |
-| FATAL | Ignored (terminal state) |
+| READY               | Client process crashes, network failure              |
+| BUFFERING_COMMAND   | Client disconnects mid-command                       |
+| BUFFERING_INQUIRE   | Client disconnects mid-D-block                       |
+| SENDING_TO_AGENT    | Client disconnects during agent communication        |
+| WAITING_FOR_AGENT   | Client disconnects while waiting for response        |
+| SENDING_TO_CLIENT   | Client disconnects during response transmission      |
+| ERROR               | Ignored (already in error path)                      |
+| CLOSING             | Ignored (expected during cleanup)                    |
+| DISCONNECTED        | Ignored (no socket)                                  |
+| FATAL               | Ignored (terminal state)                             |
 
 ---
 
@@ -131,6 +137,7 @@ Handles GPG's INQUIRE pattern where the agent requests additional data from the 
 8. Response forwarded to client; return to **READY** (or repeat INQUIRE if nested)
 
 Supports:
+
 - Nested INQUIRE sequences
 - D-blocks of any size (tested up to multiple MB)
 - Binary data (`latin1` encoding)
@@ -140,25 +147,27 @@ Supports:
 
 ## State-Aware Client Data Handling
 
-| Event | State | Behaviour |
-|-------|-------|-----------|
-| `CLIENT_DATA_START` | READY | Extract command with `extractCommand()`; if newline found → SENDING_TO_AGENT; else → BUFFERING_COMMAND |
-| `CLIENT_DATA_PARTIAL` | BUFFERING_COMMAND | Accumulate until `\n` complete |
-| `CLIENT_DATA_PARTIAL` | BUFFERING_INQUIRE | Accumulate until `END\n` complete |
-| `CLIENT_DATA_COMPLETE` | either buffering | → SENDING_TO_AGENT |
-| Client data | ERROR/CLOSING/FATAL | → `ERROR_OCCURRED` (protocol violation) |
+| Event                  | State               | Behaviour                                                                                              |
+| ---------------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `CLIENT_DATA_START`    | READY               | Extract command with `extractCommand()`; if newline found → SENDING_TO_AGENT; else → BUFFERING_COMMAND |
+| `CLIENT_DATA_PARTIAL`  | BUFFERING_COMMAND   | Accumulate until `\n` complete                                                                         |
+| `CLIENT_DATA_PARTIAL`  | BUFFERING_INQUIRE   | Accumulate until `END\n` complete                                                                      |
+| `CLIENT_DATA_COMPLETE` | either buffering    | → SENDING_TO_AGENT                                                                                     |
+| Client data            | ERROR/CLOSING/FATAL | → `ERROR_OCCURRED` (protocol violation)                                                                |
 
 ---
 
 ## Client Connection Lifecycle
 
 **Server startup:**
+
 1. Detect GPG socket path via `gpgconf --list-dirs agent-socket`
 2. Create Unix socket server at detected path
 3. Set permissions to `0o666` (world-writable for GPG access)
 4. Listen for client connections
 
 **Per-client session:**
+
 1. Client connects → `CLIENT_SOCKET_CONNECTED` → CONNECTING_TO_AGENT
 2. Pause socket (prevent data loss during agent connection)
 3. Connect to gpg-bridge-agent, receive greeting → `AGENT_RESPONSE_COMPLETE` → SENDING_TO_CLIENT
@@ -177,36 +186,40 @@ Supports:
 
 ```typescript
 async function startRequestProxy(
-    config: RequestProxyConfig,
-    deps?: RequestProxyDeps
-): Promise<RequestProxyInstance>
+  config: RequestProxyConfig,
+  deps?: RequestProxyDeps,
+): Promise<RequestProxyInstance>;
 ```
 
 **Config:**
+
 ```typescript
 interface RequestProxyConfig {
-    logCallback?: (message: string) => void;
+  logCallback?: (message: string) => void;
 }
 ```
 
 **Deps (optional, for testing):**
+
 ```typescript
 interface RequestProxyDeps {
-    commandExecutor?: ICommandExecutor;
-    serverFactory?: IServerFactory;
-    fileSystem?: IFileSystem;
-    getSocketPath?: () => Promise<string | null>;
+  commandExecutor?: ICommandExecutor;
+  serverFactory?: IServerFactory;
+  fileSystem?: IFileSystem;
+  getSocketPath?: () => Promise<string | null>;
 }
 ```
 
 **Returns:**
+
 ```typescript
 interface RequestProxyInstance {
-    stop(): Promise<void>;
+  stop(): Promise<void>;
 }
 ```
 
 **Flow:**
+
 1. Detects GPG socket path via `gpgconf --list-dirs agent-socket`
 2. Creates Unix socket server at detected path
 3. Sets socket permissions to `0o666`
@@ -224,11 +237,11 @@ closes the Unix socket server, and removes the socket file. First-error-wins cle
 
 ## VS Code Command Integration
 
-| Command | Called when | Returns |
-|---------|------------|---------|
-| `_gpg-bridge-agent.connectAgent` | Client connects (CONNECTING_TO_AGENT) | `{ sessionId, greeting }` |
-| `_gpg-bridge-agent.sendCommands` | Complete command or D-block ready (SENDING_TO_AGENT) | `{ response }` |
-| `_gpg-bridge-agent.disconnectAgent` | Cleanup (CLOSING state) | `void` |
+| Command                             | Called when                                          | Returns                   |
+| ----------------------------------- | ---------------------------------------------------- | ------------------------- |
+| `_gpg-bridge-agent.connectAgent`    | Client connects (CONNECTING_TO_AGENT)                | `{ sessionId, greeting }` |
+| `_gpg-bridge-agent.sendCommands`    | Complete command or D-block ready (SENDING_TO_AGENT) | `{ response }`            |
+| `_gpg-bridge-agent.disconnectAgent` | Cleanup (CLOSING state)                              | `void`                    |
 
 ---
 
@@ -238,10 +251,10 @@ Sessions stored in `Map<net.Socket, ClientSessionManager>` keyed by client socke
 
 ```typescript
 interface ClientSession {
-    socket: net.Socket;
-    sessionId: string | null;  // agent sessionId from connectAgent
-    state: SessionState;
-    buffer: string;            // accumulated data (command or D-block)
+  socket: net.Socket;
+  sessionId: string | null; // agent sessionId from connectAgent
+  state: SessionState;
+  buffer: string; // accumulated data (command or D-block)
 }
 ```
 
@@ -256,23 +269,27 @@ Dependency injection interface:
 
 ```typescript
 interface RequestProxyDeps {
-    commandExecutor?: ICommandExecutor;
-    serverFactory?: IServerFactory;
-    fileSystem?: IFileSystem;
-    getSocketPath?: () => Promise<string | null>;
+  commandExecutor?: ICommandExecutor;
+  serverFactory?: IServerFactory;
+  fileSystem?: IFileSystem;
+  getSocketPath?: () => Promise<string | null>;
 }
 ```
 
 ```typescript
-const instance = await startRequestProxy({ logCallback: (msg) => console.log(msg) }, {
+const instance = await startRequestProxy(
+  { logCallback: (msg) => console.log(msg) },
+  {
     commandExecutor: new MockCommandExecutor(),
     serverFactory: new MockServerFactory(),
     fileSystem: new MockFileSystem(),
-    getSocketPath: async () => '/tmp/test-gpg-agent'
-});
+    getSocketPath: async () => '/tmp/test-gpg-agent',
+  },
+);
 ```
 
 Test coverage includes:
+
 - State transitions for all (state, event) pairs
 - Socket close handling in all states (hadError true/false)
 - INQUIRE D-block buffering (single, multiple D-lines, nested, binary data)
@@ -314,12 +331,12 @@ handle encoding: `encodeProtocolData()`, `decodeProtocolData()`.
 
 ### Shared Utilities
 
-| Utility | Purpose |
-|---------|---------|
-| `extractCommand()` | Finds first `\n`; returns `{ extracted, remaining }` |
-| `extractInquireBlock()` | Finds `END\n`; returns `{ extracted, remaining }` |
-| `detectResponseCompletion()` | Detects OK/ERR/INQUIRE; returns `{ complete, type }` |
-| `cleanupSocket()` | `removeAllListeners()` → `destroy()`; first-error-wins |
+| Utility                      | Purpose                                                |
+| ---------------------------- | ------------------------------------------------------ |
+| `extractCommand()`           | Finds first `\n`; returns `{ extracted, remaining }`   |
+| `extractInquireBlock()`      | Finds `END\n`; returns `{ extracted, remaining }`      |
+| `detectResponseCompletion()` | Detects OK/ERR/INQUIRE; returns `{ complete, type }`   |
+| `cleanupSocket()`            | `removeAllListeners()` → `destroy()`; first-error-wins |
 
 ---
 

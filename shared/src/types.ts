@@ -11,11 +11,11 @@ import type { GpgCli } from './gpgCli';
  * Implemented by both AgentProxyConfig and RequestProxyConfig.
  */
 export interface LogConfig {
-    /**
-     * Optional callback for logging messages.
-     * Called instead of console.log to allow integration with VS Code output channels.
-     */
-    logCallback?: (message: string) => void;
+  /**
+   * Optional callback for logging messages.
+   * Called instead of console.log to allow integration with VS Code output channels.
+   */
+  logCallback?: (message: string) => void;
 }
 
 /**
@@ -23,30 +23,30 @@ export interface LogConfig {
  * Allows injection of mock implementations for testing.
  */
 export interface IFileSystem {
-    /**
-     * Check if a file exists at the given path.
-     */
-    existsSync(path: string): boolean;
+  /**
+   * Check if a file exists at the given path.
+   */
+  existsSync(path: string): boolean;
 
-    /**
-     * Read file contents as a Buffer.
-     */
-    readFileSync(path: string): Buffer;
+  /**
+   * Read file contents as a Buffer.
+   */
+  readFileSync(path: string): Buffer;
 
-    /**
-     * Create a directory, optionally recursively.
-     */
-    mkdirSync(path: string, options?: { recursive: boolean; mode?: number }): void;
+  /**
+   * Create a directory, optionally recursively.
+   */
+  mkdirSync(path: string, options?: { recursive: boolean; mode?: number }): void;
 
-    /**
-     * Change file/directory permissions.
-     */
-    chmodSync(path: string, mode: number): void;
+  /**
+   * Change file/directory permissions.
+   */
+  chmodSync(path: string, mode: number): void;
 
-    /**
-     * Delete a file.
-     */
-    unlinkSync(path: string): void;
+  /**
+   * Delete a file.
+   */
+  unlinkSync(path: string): void;
 }
 
 /**
@@ -54,13 +54,13 @@ export interface IFileSystem {
  * Allows injection of mock implementations for testing.
  */
 export interface ISocketFactory {
-    /**
-     * Create a TCP connection to a remote host.
-     */
-    createConnection(
-        options: { host: string; port: number },
-        connectionListener?: () => void
-    ): net.Socket;
+  /**
+   * Create a TCP connection to a remote host.
+   */
+  createConnection(
+    options: { host: string; port: number },
+    connectionListener?: () => void,
+  ): net.Socket;
 }
 
 /**
@@ -69,25 +69,25 @@ export interface ISocketFactory {
  * Allows injection of mock implementations for testing.
  */
 export interface ICommandExecutor {
-    /**
-     * Connect to the GPG agent via agent-proxy extension.
-     * Returns a unique session ID and the agent's greeting message.
-     *
-     * @param sessionId Optional caller-supplied UUID hint; agent-proxy uses it if provided,
-     *                  otherwise generates its own. Allows both sides to log the same ID.
-     */
-    connectAgent(sessionId?: string): Promise<{ sessionId: string; greeting: string }>;
+  /**
+   * Connect to the GPG agent via agent-proxy extension.
+   * Returns a unique session ID and the agent's greeting message.
+   *
+   * @param sessionId Optional caller-supplied UUID hint; agent-proxy uses it if provided,
+   *                  otherwise generates its own. Allows both sides to log the same ID.
+   */
+  connectAgent(sessionId?: string): Promise<{ sessionId: string; greeting: string }>;
 
-    /**
-     * Send Assuan protocol commands to the GPG agent.
-     * Returns the agent's response.
-     */
-    sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }>;
+  /**
+   * Send Assuan protocol commands to the GPG agent.
+   * Returns the agent's response.
+   */
+  sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }>;
 
-    /**
-     * Disconnect and clean up a session with the agent-proxy extension.
-     */
-    disconnectAgent(sessionId: string): Promise<void>;
+  /**
+   * Disconnect and clean up a session with the agent-proxy extension.
+   */
+  disconnectAgent(sessionId: string): Promise<void>;
 }
 
 /**
@@ -95,13 +95,13 @@ export interface ICommandExecutor {
  * Allows injection of mock implementations for testing.
  */
 export interface IServerFactory {
-    /**
-     * Create a Unix domain socket server.
-     */
-    createServer(
-        options: net.ServerOpts,
-        connectionListener: (socket: net.Socket) => void
-    ): net.Server;
+  /**
+   * Create a Unix domain socket server.
+   */
+  createServer(
+    options: net.ServerOpts,
+    connectionListener: (socket: net.Socket) => void,
+  ): net.Server;
 }
 
 /**
@@ -111,17 +111,17 @@ export interface IServerFactory {
  * Both managers assign sessionId at construction time, so it is always non-nullable.
  */
 export interface ISessionManager {
-    /**
-     * Unique identifier for this session.
-     * Assigned at construction; never null.
-     */
-    readonly sessionId: string;
+  /**
+   * Unique identifier for this session.
+   * Assigned at construction; never null.
+   */
+  readonly sessionId: string;
 
-    /**
-     * Get the current state of the session state machine.
-     * Returns a string to accommodate differing SessionState union types across extensions.
-     */
-    getState(): string;
+  /**
+   * Get the current state of the session state machine.
+   * Returns a string to accommodate differing SessionState union types across extensions.
+   */
+  getState(): string;
 }
 
 /**
@@ -131,11 +131,11 @@ export interface ISessionManager {
  * Tests: `{ create: () => new MockGpgCli(socketPath) }` — returns controllable mock.
  */
 export interface IGpgCliFactory {
-    /**
-     * Create a new `GpgCli` instance.
-     * No parameters — all opts are captured in the factory closure.
-     */
-    create(): GpgCli;
+  /**
+   * Create a new `GpgCli` instance.
+   * No parameters — all opts are captured in the factory closure.
+   */
+  create(): GpgCli;
 }
 
 /**

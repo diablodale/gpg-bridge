@@ -17,27 +17,27 @@ import * as path from 'path';
 import Mocha = require('mocha');
 
 export function run(): Promise<void> {
-    const mocha = new Mocha({
-        ui: 'bdd',
-        color: true,
-        timeout: 120000   // 120 s — full chain crypto ops + 1 MB sign stress test
-    });
+  const mocha = new Mocha({
+    ui: 'bdd',
+    color: true,
+    timeout: 120000, // 120 s — full chain crypto ops + 1 MB sign stress test
+  });
 
-    // __dirname = out/test/integration/suite/ at runtime; go up one level to find test files.
-    const testsRoot = path.resolve(__dirname, '..');
-    mocha.addFile(path.join(testsRoot, 'gpgCliIntegration.test.js'));
+  // __dirname = out/test/integration/suite/ at runtime; go up one level to find test files.
+  const testsRoot = path.resolve(__dirname, '..');
+  mocha.addFile(path.join(testsRoot, 'gpgCliIntegration.test.js'));
 
-    return new Promise((resolve, reject) => {
-        try {
-            mocha.run((failures: number) => {
-                if (failures > 0) {
-                    reject(new Error(`${failures} integration test(s) failed.`));
-                } else {
-                    resolve();
-                }
-            });
-        } catch (err) {
-            reject(err);
+  return new Promise((resolve, reject) => {
+    try {
+      mocha.run((failures: number) => {
+        if (failures > 0) {
+          reject(new Error(`${failures} integration test(s) failed.`));
+        } else {
+          resolve();
         }
-    });
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
 }

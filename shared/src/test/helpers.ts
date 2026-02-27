@@ -14,543 +14,546 @@ import { GpgCli } from '../gpgCli';
  * Mock FileSystem - tracks calls and allows test control
  */
 export class MockFileSystem implements IFileSystem {
-    private files: Map<string, Buffer> = new Map();
-    private directories: Set<string> = new Set();
-    public callLog: Array<{ method: string; args: unknown[] }> = [];
+  private files: Map<string, Buffer> = new Map();
+  private directories: Set<string> = new Set();
+  public callLog: Array<{ method: string; args: unknown[] }> = [];
 
-    existsSync(path: string): boolean {
-        this.callLog.push({ method: 'existsSync', args: [path] });
-        return this.files.has(path) || this.directories.has(path);
-    }
+  existsSync(path: string): boolean {
+    this.callLog.push({ method: 'existsSync', args: [path] });
+    return this.files.has(path) || this.directories.has(path);
+  }
 
-    readFileSync(path: string): Buffer {
-        this.callLog.push({ method: 'readFileSync', args: [path] });
-        return this.files.get(path) || Buffer.alloc(0);
-    }
+  readFileSync(path: string): Buffer {
+    this.callLog.push({ method: 'readFileSync', args: [path] });
+    return this.files.get(path) || Buffer.alloc(0);
+  }
 
-    mkdirSync(path: string, options?: { recursive?: boolean; mode?: number }): void {
-        this.callLog.push({ method: 'mkdirSync', args: [path, options] });
-        this.directories.add(path);
-    }
+  mkdirSync(path: string, options?: { recursive?: boolean; mode?: number }): void {
+    this.callLog.push({ method: 'mkdirSync', args: [path, options] });
+    this.directories.add(path);
+  }
 
-    chmodSync(path: string, mode: number | string): void {
-        this.callLog.push({ method: 'chmodSync', args: [path, mode] });
-    }
+  chmodSync(path: string, mode: number | string): void {
+    this.callLog.push({ method: 'chmodSync', args: [path, mode] });
+  }
 
-    unlinkSync(path: string): void {
-        this.callLog.push({ method: 'unlinkSync', args: [path] });
-        this.files.delete(path);
-        this.directories.delete(path);
-    }
+  unlinkSync(path: string): void {
+    this.callLog.push({ method: 'unlinkSync', args: [path] });
+    this.files.delete(path);
+    this.directories.delete(path);
+  }
 
-    // Test helper methods
-    setFile(path: string, content: Buffer): void {
-        this.files.set(path, content);
-    }
+  // Test helper methods
+  setFile(path: string, content: Buffer): void {
+    this.files.set(path, content);
+  }
 
-    getCallCount(method: string): number {
-        return this.callLog.filter((call) => call.method === method).length;
-    }
+  getCallCount(method: string): number {
+    return this.callLog.filter((call) => call.method === method).length;
+  }
 
-    clearLog(): void {
-        this.callLog = [];
-    }
+  clearLog(): void {
+    this.callLog = [];
+  }
 }
 
 /**
  * Mock Socket - emulates net.Socket with EventEmitter
  */
 export class MockSocket extends EventEmitter {
-    public data: Buffer[] = [];
-    public destroyed = false;
-    public writeError: Error | null = null;
-    public removeAllListenersError: Error | null = null;
-    public destroyError: Error | null = null;
-    private readBuffer: Buffer[] = [];
-    private _paused = false;
-    private connectTimeout: NodeJS.Timeout | null = null;
-    public afterWriteCallback: (() => void) | null = null;
+  public data: Buffer[] = [];
+  public destroyed = false;
+  public writeError: Error | null = null;
+  public removeAllListenersError: Error | null = null;
+  public destroyError: Error | null = null;
+  private readBuffer: Buffer[] = [];
+  private _paused = false;
+  private connectTimeout: NodeJS.Timeout | null = null;
+  public afterWriteCallback: (() => void) | null = null;
 
-    write(data: Buffer | string, callback?: (err?: Error | null) => void): boolean {
-        if (this.destroyed) {
-            if (callback) {
-                setImmediate(() => callback(new Error('Socket is destroyed')));
-            }
-            return false;
+  write(data: Buffer | string, callback?: (err?: Error | null) => void): boolean {
+    if (this.destroyed) {
+      if (callback) {
+        setImmediate(() => callback(new Error('Socket is destroyed')));
+      }
+      return false;
+    }
+
+    const buffer = typeof data === 'string' ? Buffer.from(data, 'latin1') : data;
+    this.data.push(buffer);
+
+    if (this.writeError) {
+      const err = this.writeError;
+      this.writeError = null;
+      if (callback) {
+        setImmediate(() => callback(err));
+      }
+      return false;
+    }
+
+    if (callback) {
+      setImmediate(() => callback(null));
+    }
+
+    // Execute after-write callback if set (for simulating socket close after nonce write)
+    if (this.afterWriteCallback) {
+      const afterWrite = this.afterWriteCallback;
+      this.afterWriteCallback = null; // One-shot callback
+      setImmediate(() => afterWrite());
+    }
+
+    return true;
+  }
+
+  setWriteError(error: Error): void {
+    this.writeError = error;
+  }
+
+  removeAllListeners(event?: string | symbol): this {
+    if (this.removeAllListenersError) {
+      const err = this.removeAllListenersError;
+      this.removeAllListenersError = null;
+      throw err;
+    }
+    return super.removeAllListeners(event);
+  }
+
+  destroy(error?: Error): void {
+    if (this.destroyError) {
+      const err = this.destroyError;
+      this.destroyError = null;
+      throw err;
+    }
+
+    // Cancel pending connect timeout to prevent test pollution
+    if (this.connectTimeout) {
+      clearTimeout(this.connectTimeout);
+      this.connectTimeout = null;
+    }
+
+    this.destroyed = true;
+    const hadError = !!error;
+    if (error) {
+      this.emit('error', error);
+    }
+    // Emit 'close' with hadError boolean parameter
+    this.emit('close', hadError);
+  }
+
+  end(): void {
+    this.emit('end');
+    // Emit 'close' with hadError=false for graceful end
+    this.emit('close', false);
+  }
+
+  pause(): void {
+    this._paused = true;
+  }
+
+  resume(): void {
+    this._paused = false;
+  }
+
+  isPaused(): boolean {
+    return this._paused;
+  }
+
+  // Test helper methods
+  getWrittenData(): Buffer {
+    return Buffer.concat(this.data);
+  }
+
+  read(): Buffer | null {
+    if (this.readBuffer.length === 0) {
+      return null;
+    }
+    return this.readBuffer.shift()!;
+  }
+
+  simulateDataReceived(data: Buffer): void {
+    this.readBuffer.push(data);
+    this.emit('readable');
+  }
+
+  pushData(data: Buffer): void {
+    this.readBuffer.push(data);
+  }
+
+  simulateError(error: Error): void {
+    this.emit('error', error);
+  }
+
+  /**
+   * Emit data after a delay (simulates slow agent response, e.g., interactive password prompt)
+   * Returns a promise that resolves when data is emitted
+   */
+  emitDataDelayed(data: Buffer, delayMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        if (!this.destroyed) {
+          this.emit('data', data);
         }
+        resolve();
+      }, delayMs);
+    });
+  }
 
-        const buffer = typeof data === 'string' ? Buffer.from(data, 'latin1') : data;
-        this.data.push(buffer);
+  /**
+   * Simulate agent greeting message (convenience wrapper for emitDataDelayed with 0 delay).
+   * Commonly used in tests to simulate GPG agent responding with "OK GPG-Agent 2.2.19\n"
+   */
+  simulateGreeting(message: string = 'OK GPG-Agent 2.2.19\n'): void {
+    setImmediate(() => {
+      if (!this.destroyed) {
+        this.emit('data', Buffer.from(message, 'latin1'));
+      }
+    });
+  }
 
-        if (this.writeError) {
-            const err = this.writeError;
-            this.writeError = null;
-            if (callback) {
-                setImmediate(() => callback(err));
-            }
-            return false;
-        }
-
-        if (callback) {
-            setImmediate(() => callback(null));
-        }
-
-        // Execute after-write callback if set (for simulating socket close after nonce write)
-        if (this.afterWriteCallback) {
-            const afterWrite = this.afterWriteCallback;
-            this.afterWriteCallback = null; // One-shot callback
-            setImmediate(() => afterWrite());
-        }
-
-        return true;
+  /**
+   * Simulate response arriving in multiple chunks (with small delay between each).
+   * Useful for testing chunk accumulation and response detection logic.
+   *
+   * @param chunks Array of chunk strings to emit sequentially
+   * @param delayBetweenChunksMs Delay in milliseconds between each chunk (default: 10ms)
+   * @returns Promise that resolves when all chunks have been emitted
+   */
+  async simulateChunkResponse(chunks: string[], delayBetweenChunksMs: number = 10): Promise<void> {
+    for (const chunk of chunks) {
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          if (!this.destroyed) {
+            this.emit('data', Buffer.from(chunk, 'latin1'));
+          }
+          resolve();
+        }, delayBetweenChunksMs);
+      });
     }
+  }
 
-    setWriteError(error: Error): void {
-        this.writeError = error;
+  /**
+   * Simulate socket close event with hadError parameter.
+   * Convenience wrapper for destroy() with clearer test intent.
+   *
+   * @param hadError Whether the close was due to a transmission error
+   */
+  simulateClose(hadError: boolean): void {
+    if (hadError) {
+      this.destroy(new Error('Simulated transmission error'));
+    } else {
+      this.end();
     }
+  }
 
-    removeAllListeners(event?: string | symbol): this {
-        if (this.removeAllListenersError) {
-            const err = this.removeAllListenersError;
-            this.removeAllListenersError = null;
-            throw err;
-        }
-        return super.removeAllListeners(event);
-    }
+  /**
+   * Returns a promise that resolves when the next write() completes.
+   * Useful for deterministic testing of socket operations that need to wait for write completion.
+   */
+  waitForWrite(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.afterWriteCallback = () => resolve();
+    });
+  }
 
-    destroy(error?: Error): void {
-        if (this.destroyError) {
-            const err = this.destroyError;
-            this.destroyError = null;
-            throw err;
-        }
+  setRemoveAllListenersError(error: Error): void {
+    this.removeAllListenersError = error;
+  }
 
-        // Cancel pending connect timeout to prevent test pollution
-        if (this.connectTimeout) {
-            clearTimeout(this.connectTimeout);
-            this.connectTimeout = null;
-        }
+  setDestroyError(error: Error): void {
+    this.destroyError = error;
+  }
 
-        this.destroyed = true;
-        const hadError = !!error;
-        if (error) {
-            this.emit('error', error);
-        }
-        // Emit 'close' with hadError boolean parameter
-        this.emit('close', hadError);
-    }
+  setConnectTimeout(timeout: NodeJS.Timeout): void {
+    this.connectTimeout = timeout;
+  }
 
-    end(): void {
-        this.emit('end');
-        // Emit 'close' with hadError=false for graceful end
-        this.emit('close', false);
-    }
-
-    pause(): void {
-        this._paused = true;
-    }
-
-    resume(): void {
-        this._paused = false;
-    }
-
-    isPaused(): boolean {
-        return this._paused;
-    }
-
-    // Test helper methods
-    getWrittenData(): Buffer {
-        return Buffer.concat(this.data);
-    }
-
-    read(): Buffer | null {
-        if (this.readBuffer.length === 0) {
-            return null;
-        }
-        return this.readBuffer.shift()!;
-    }
-
-    simulateDataReceived(data: Buffer): void {
-        this.readBuffer.push(data);
-        this.emit('readable');
-    }
-
-    pushData(data: Buffer): void {
-        this.readBuffer.push(data);
-    }
-
-    simulateError(error: Error): void {
-        this.emit('error', error);
-    }
-
-    /**
-     * Emit data after a delay (simulates slow agent response, e.g., interactive password prompt)
-     * Returns a promise that resolves when data is emitted
-     */
-    emitDataDelayed(data: Buffer, delayMs: number): Promise<void> {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                if (!this.destroyed) {
-                    this.emit('data', data);
-                }
-                resolve();
-            }, delayMs);
-        });
-    }
-
-    /**
-     * Simulate agent greeting message (convenience wrapper for emitDataDelayed with 0 delay).
-     * Commonly used in tests to simulate GPG agent responding with "OK GPG-Agent 2.2.19\n"
-     */
-    simulateGreeting(message: string = 'OK GPG-Agent 2.2.19\n'): void {
-        setImmediate(() => {
-            if (!this.destroyed) {
-                this.emit('data', Buffer.from(message, 'latin1'));
-            }
-        });
-    }
-
-    /**
-     * Simulate response arriving in multiple chunks (with small delay between each).
-     * Useful for testing chunk accumulation and response detection logic.
-     *
-     * @param chunks Array of chunk strings to emit sequentially
-     * @param delayBetweenChunksMs Delay in milliseconds between each chunk (default: 10ms)
-     * @returns Promise that resolves when all chunks have been emitted
-     */
-    async simulateChunkResponse(chunks: string[], delayBetweenChunksMs: number = 10): Promise<void> {
-        for (const chunk of chunks) {
-            await new Promise<void>((resolve) => {
-                setTimeout(() => {
-                    if (!this.destroyed) {
-                        this.emit('data', Buffer.from(chunk, 'latin1'));
-                    }
-                    resolve();
-                }, delayBetweenChunksMs);
-            });
-        }
-    }
-
-    /**
-     * Simulate socket close event with hadError parameter.
-     * Convenience wrapper for destroy() with clearer test intent.
-     *
-     * @param hadError Whether the close was due to a transmission error
-     */
-    simulateClose(hadError: boolean): void {
-        if (hadError) {
-            this.destroy(new Error('Simulated transmission error'));
-        } else {
-            this.end();
-        }
-    }
-
-    /**
-     * Returns a promise that resolves when the next write() completes.
-     * Useful for deterministic testing of socket operations that need to wait for write completion.
-     */
-    waitForWrite(): Promise<void> {
-        return new Promise<void>((resolve) => {
-            this.afterWriteCallback = () => resolve();
-        });
-    }
-
-    setRemoveAllListenersError(error: Error): void {
-        this.removeAllListenersError = error;
-    }
-
-    setDestroyError(error: Error): void {
-        this.destroyError = error;
-    }
-
-    setConnectTimeout(timeout: NodeJS.Timeout): void {
-        this.connectTimeout = timeout;
-    }
-
-    clearData(): void {
-        this.data = [];
-        this.readBuffer = [];
-    }
+  clearData(): void {
+    this.data = [];
+    this.readBuffer = [];
+  }
 }
 
 /**
  * Mock Server - emulates net.Server
  */
 export class MockServer extends EventEmitter {
-    public listening = false;
-    public connections: MockSocket[] = [];
-    public listenPath: string | null = null;
-    private clientHandler: ((socket: net.Socket) => void) | null = null;
-    private pauseOnConnect: boolean;
+  public listening = false;
+  public connections: MockSocket[] = [];
+  public listenPath: string | null = null;
+  private clientHandler: ((socket: net.Socket) => void) | null = null;
+  private pauseOnConnect: boolean;
 
-    constructor(options?: { pauseOnConnect?: boolean }, clientHandler?: (socket: net.Socket) => void) {
-        super();
-        this.clientHandler = clientHandler || null;
-        this.pauseOnConnect = options?.pauseOnConnect ?? false;
-    }
+  constructor(
+    options?: { pauseOnConnect?: boolean },
+    clientHandler?: (socket: net.Socket) => void,
+  ) {
+    super();
+    this.clientHandler = clientHandler || null;
+    this.pauseOnConnect = options?.pauseOnConnect ?? false;
+  }
 
-    listen(path: string, callback?: () => void): void {
-        this.listenPath = path;
-        this.listening = true;
-        if (callback) {
-            callback();
-        }
+  listen(path: string, callback?: () => void): void {
+    this.listenPath = path;
+    this.listening = true;
+    if (callback) {
+      callback();
     }
+  }
 
-    close(callback?: () => void): void {
-        this.listening = false;
-        if (callback) {
-            callback();
-        }
+  close(callback?: () => void): void {
+    this.listening = false;
+    if (callback) {
+      callback();
     }
+  }
 
-    // Test helper methods
-    simulateClientConnection(): MockSocket {
-        const socket = new MockSocket();
-        if (this.pauseOnConnect) {
-            socket.pause();
-        }
-        this.connections.push(socket);
-        if (this.clientHandler) {
-            this.clientHandler(socket as unknown as net.Socket);
-        }
-        return socket;
+  // Test helper methods
+  simulateClientConnection(): MockSocket {
+    const socket = new MockSocket();
+    if (this.pauseOnConnect) {
+      socket.pause();
     }
+    this.connections.push(socket);
+    if (this.clientHandler) {
+      this.clientHandler(socket as unknown as net.Socket);
+    }
+    return socket;
+  }
 
-    getConnections(): MockSocket[] {
-        return this.connections;
-    }
+  getConnections(): MockSocket[] {
+    return this.connections;
+  }
 }
 
 /**
  * Mock ServerFactory - creates mock servers
  */
 export class MockServerFactory implements IServerFactory {
-    public servers: MockServer[] = [];
-    public clientHandler: ((socket: net.Socket) => void) | null = null;
+  public servers: MockServer[] = [];
+  public clientHandler: ((socket: net.Socket) => void) | null = null;
 
-    createServer(options?: net.ServerOpts, clientHandler?: (socket: net.Socket) => void): net.Server {
-        const server = new MockServer(options, clientHandler);
-        this.servers.push(server);
-        this.clientHandler = clientHandler || null;
-        return server as unknown as net.Server;
-    }
+  createServer(options?: net.ServerOpts, clientHandler?: (socket: net.Socket) => void): net.Server {
+    const server = new MockServer(options, clientHandler);
+    this.servers.push(server);
+    this.clientHandler = clientHandler || null;
+    return server as unknown as net.Server;
+  }
 
-    getServers(): MockServer[] {
-        return this.servers;
-    }
+  getServers(): MockServer[] {
+    return this.servers;
+  }
 }
 
 /**
  * Mock CommandExecutor - tracks command calls without VS Code runtime
  */
 export class MockCommandExecutor implements ICommandExecutor {
-    public calls: Array<{ method: string; args: unknown[] }> = [];
-    public connectAgentResponse: { sessionId: string; greeting: string } = {
-        sessionId: 'test-session-123',
-        greeting: 'OK GPG-Agent (GnuPG) 2.2.19 running in restricted mode\n'
-    };
-    public sendCommandsResponse: { response: string } = { response: 'OK\n' };
-    public connectAgentError: Error | null = null;
-    public sendCommandsError: Error | null = null;
-    public disconnectAgentError: Error | null = null;
+  public calls: Array<{ method: string; args: unknown[] }> = [];
+  public connectAgentResponse: { sessionId: string; greeting: string } = {
+    sessionId: 'test-session-123',
+    greeting: 'OK GPG-Agent (GnuPG) 2.2.19 running in restricted mode\n',
+  };
+  public sendCommandsResponse: { response: string } = { response: 'OK\n' };
+  public connectAgentError: Error | null = null;
+  public sendCommandsError: Error | null = null;
+  public disconnectAgentError: Error | null = null;
 
-    async connectAgent(sessionId?: string): Promise<{ sessionId: string; greeting: string }> {
-        this.calls.push({ method: 'connectAgent', args: [sessionId] });
-        if (this.connectAgentError) {
-            throw this.connectAgentError;
-        }
-        return this.connectAgentResponse;
+  async connectAgent(sessionId?: string): Promise<{ sessionId: string; greeting: string }> {
+    this.calls.push({ method: 'connectAgent', args: [sessionId] });
+    if (this.connectAgentError) {
+      throw this.connectAgentError;
     }
+    return this.connectAgentResponse;
+  }
 
-    async sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }> {
-        this.calls.push({ method: 'sendCommands', args: [sessionId, commandBlock] });
-        if (this.sendCommandsError) {
-            throw this.sendCommandsError;
-        }
-        return this.sendCommandsResponse;
+  async sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }> {
+    this.calls.push({ method: 'sendCommands', args: [sessionId, commandBlock] });
+    if (this.sendCommandsError) {
+      throw this.sendCommandsError;
     }
+    return this.sendCommandsResponse;
+  }
 
-    async disconnectAgent(sessionId: string): Promise<void> {
-        this.calls.push({ method: 'disconnectAgent', args: [sessionId] });
-        if (this.disconnectAgentError) {
-            throw this.disconnectAgentError;
-        }
+  async disconnectAgent(sessionId: string): Promise<void> {
+    this.calls.push({ method: 'disconnectAgent', args: [sessionId] });
+    if (this.disconnectAgentError) {
+      throw this.disconnectAgentError;
     }
+  }
 
-    // Test helper methods
-    getCallCount(method: string): number {
-        return this.calls.filter((call) => call.method === method).length;
-    }
+  // Test helper methods
+  getCallCount(method: string): number {
+    return this.calls.filter((call) => call.method === method).length;
+  }
 
-    getCallArgs(method: string, callIndex: number = 0): unknown[] {
-        const calls = this.calls.filter((call) => call.method === method);
-        return calls[callIndex]?.args || [];
-    }
+  getCallArgs(method: string, callIndex: number = 0): unknown[] {
+    const calls = this.calls.filter((call) => call.method === method);
+    return calls[callIndex]?.args || [];
+  }
 
-    clearCalls(): void {
-        this.calls = [];
-    }
+  clearCalls(): void {
+    this.calls = [];
+  }
 
-    setSendCommandsResponse(response: string): void {
-        this.sendCommandsResponse = { response };
-    }
+  setSendCommandsResponse(response: string): void {
+    this.sendCommandsResponse = { response };
+  }
 
-    setConnectAgentError(error: Error): void {
-        this.connectAgentError = error;
-    }
+  setConnectAgentError(error: Error): void {
+    this.connectAgentError = error;
+  }
 
-    setSendCommandsError(error: Error): void {
-        this.sendCommandsError = error;
-    }
+  setSendCommandsError(error: Error): void {
+    this.sendCommandsError = error;
+  }
 
-    setDisconnectAgentError(error: Error): void {
-        this.disconnectAgentError = error;
-    }
+  setDisconnectAgentError(error: Error): void {
+    this.disconnectAgentError = error;
+  }
 }
 
 /**
  * Mock Socket Factory - creates mock sockets
  */
 export class MockSocketFactory implements ISocketFactory {
-    public sockets: MockSocket[] = [];
-    public connectError: Error | null = null;
-    public lastConnectionOptions: { host: string; port: number } | { path: string } | null = null;
-    private connectDelay: number = 0;
-    private nextWriteError: Error | null = null;
-    private closeAfterFirstWrite: boolean = false;
+  public sockets: MockSocket[] = [];
+  public connectError: Error | null = null;
+  public lastConnectionOptions: { host: string; port: number } | { path: string } | null = null;
+  private connectDelay: number = 0;
+  private nextWriteError: Error | null = null;
+  private closeAfterFirstWrite: boolean = false;
 
-    createConnection(
-        options: { host: string; port: number } | { path: string },
-        connectListener?: () => void
-    ): net.Socket {
-        this.lastConnectionOptions = options;
-        const socket = new MockSocket();
-        this.sockets.push(socket);
+  createConnection(
+    options: { host: string; port: number } | { path: string },
+    connectListener?: () => void,
+  ): net.Socket {
+    this.lastConnectionOptions = options;
+    const socket = new MockSocket();
+    this.sockets.push(socket);
 
-        // Apply write error if set
-        if (this.nextWriteError) {
-            socket.setWriteError(this.nextWriteError);
-            this.nextWriteError = null;
-        }
+    // Apply write error if set
+    if (this.nextWriteError) {
+      socket.setWriteError(this.nextWriteError);
+      this.nextWriteError = null;
+    }
 
-        // Apply close-after-first-write if set (simulates bad nonce → socket close)
-        if (this.closeAfterFirstWrite) {
-            socket.afterWriteCallback = () => {
-                socket.emit('close', false); // Graceful close (hadError=false)
-            };
-            this.closeAfterFirstWrite = false;
-        }
+    // Apply close-after-first-write if set (simulates bad nonce → socket close)
+    if (this.closeAfterFirstWrite) {
+      socket.afterWriteCallback = () => {
+        socket.emit('close', false); // Graceful close (hadError=false)
+      };
+      this.closeAfterFirstWrite = false;
+    }
 
-        // Simulate connection events with optional delay
-        const delay = this.connectDelay || 0;
-        if (delay > 0) {
-            const timeout = setTimeout(() => {
-                if (this.connectError) {
-                    socket.emit('error', this.connectError);
-                } else {
-                    socket.emit('connect');
-                    if (connectListener) {
-                        connectListener();
-                    }
-                }
-            }, delay);
-            socket.setConnectTimeout(timeout);
+    // Simulate connection events with optional delay
+    const delay = this.connectDelay || 0;
+    if (delay > 0) {
+      const timeout = setTimeout(() => {
+        if (this.connectError) {
+          socket.emit('error', this.connectError);
         } else {
-            // Use setImmediate for immediate connection (preserves original behavior)
-            setImmediate(() => {
-                if (this.connectError) {
-                    socket.emit('error', this.connectError);
-                } else {
-                    socket.emit('connect');
-                    if (connectListener) {
-                        connectListener();
-                    }
-                }
-            });
+          socket.emit('connect');
+          if (connectListener) {
+            connectListener();
+          }
         }
-
-        return socket as unknown as net.Socket;
+      }, delay);
+      socket.setConnectTimeout(timeout);
+    } else {
+      // Use setImmediate for immediate connection (preserves original behavior)
+      setImmediate(() => {
+        if (this.connectError) {
+          socket.emit('error', this.connectError);
+        } else {
+          socket.emit('connect');
+          if (connectListener) {
+            connectListener();
+          }
+        }
+      });
     }
 
-    getSockets(): MockSocket[] {
-        return this.sockets;
-    }
+    return socket as unknown as net.Socket;
+  }
 
-    setConnectError(error: Error): void {
-        this.connectError = error;
-    }
+  getSockets(): MockSocket[] {
+    return this.sockets;
+  }
 
-    getLastSocket(): MockSocket | null {
-        return this.sockets[this.sockets.length - 1] || null;
-    }
+  setConnectError(error: Error): void {
+    this.connectError = error;
+  }
 
-    setDelayConnect(delayMs: number): void {
-        this.connectDelay = delayMs;
-    }
+  getLastSocket(): MockSocket | null {
+    return this.sockets[this.sockets.length - 1] || null;
+  }
 
-    setWriteError(error: Error): void {
-        this.nextWriteError = error;
-    }
+  setDelayConnect(delayMs: number): void {
+    this.connectDelay = delayMs;
+  }
 
-    setCloseAfterFirstWrite(): void {
-        this.closeAfterFirstWrite = true;
-    }
+  setWriteError(error: Error): void {
+    this.nextWriteError = error;
+  }
 
-    getWrites(): Buffer[] {
-        const lastSocket = this.getLastSocket();
-        return lastSocket ? lastSocket.data : [];
-    }
+  setCloseAfterFirstWrite(): void {
+    this.closeAfterFirstWrite = true;
+  }
+
+  getWrites(): Buffer[] {
+    const lastSocket = this.getLastSocket();
+    return lastSocket ? lastSocket.data : [];
+  }
 }
 
 /**
  * Test Configuration Helper
  */
 export interface MockTestConfig {
-    fileSystem?: MockFileSystem;
-    serverFactory?: MockServerFactory;
-    commandExecutor?: MockCommandExecutor;
-    socketFactory?: MockSocketFactory;
+  fileSystem?: MockFileSystem;
+  serverFactory?: MockServerFactory;
+  commandExecutor?: MockCommandExecutor;
+  socketFactory?: MockSocketFactory;
 }
 
 /**
  * Create a complete mock configuration for testing
  */
 export function createMockConfig(): MockTestConfig {
-    return {
-        fileSystem: new MockFileSystem(),
-        serverFactory: new MockServerFactory(),
-        commandExecutor: new MockCommandExecutor(),
-        socketFactory: new MockSocketFactory()
-    };
+  return {
+    fileSystem: new MockFileSystem(),
+    serverFactory: new MockServerFactory(),
+    commandExecutor: new MockCommandExecutor(),
+    socketFactory: new MockSocketFactory(),
+  };
 }
 
 /**
  * Log helper for tests
  */
 export class MockLogConfig {
-    public logs: string[] = [];
+  public logs: string[] = [];
 
-    logCallback = (message: string) => {
-        this.logs.push(message);
-    };
+  logCallback = (message: string) => {
+    this.logs.push(message);
+  };
 
-    getLogs(): string[] {
-        return this.logs;
-    }
+  getLogs(): string[] {
+    return this.logs;
+  }
 
-    getLogCount(): number {
-        return this.logs.length;
-    }
+  getLogCount(): number {
+    return this.logs.length;
+  }
 
-    clearLogs(): void {
-        this.logs = [];
-    }
+  clearLogs(): void {
+    this.logs = [];
+  }
 
-    hasLog(pattern: string | RegExp): boolean {
-        const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
-        return this.logs.some((log) => regex.test(log));
-    }
+  hasLog(pattern: string | RegExp): boolean {
+    const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
+    return this.logs.some((log) => regex.test(log));
+  }
 }
 
 /**
@@ -571,20 +574,20 @@ export class MockLogConfig {
  * ```
  */
 export class MockGpgCli extends GpgCli {
-    /** Socket path returned verbatim by `gpgconfListDirs()`. */
-    public readonly socketPath: string;
+  /** Socket path returned verbatim by `gpgconfListDirs()`. */
+  public readonly socketPath: string;
 
-    constructor(socketPath: string, mockBinDir: string = '/fake/gpg/bin') {
-        // Pass explicit gpgBinDir + existsSync stub so base-class detect() never throws.
-        super({ gpgBinDir: mockBinDir }, { existsSync: () => true });
-        this.socketPath = socketPath;
-    }
+  constructor(socketPath: string, mockBinDir: string = '/fake/gpg/bin') {
+    // Pass explicit gpgBinDir + existsSync stub so base-class detect() never throws.
+    super({ gpgBinDir: mockBinDir }, { existsSync: () => true });
+    this.socketPath = socketPath;
+  }
 
-    /**
-     * Return the configured socket path regardless of `dirName`.
-     * No subprocess is spawned.
-     */
-    override async gpgconfListDirs(_dirName: string): Promise<string> {
-        return this.socketPath;
-    }
+  /**
+   * Return the configured socket path regardless of `dirName`.
+   * No subprocess is spawned.
+   */
+  override async gpgconfListDirs(_dirName: string): Promise<string> {
+    return this.socketPath;
+  }
 }

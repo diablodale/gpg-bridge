@@ -20,16 +20,16 @@ install the pack rather than this extension directly.
 
 ## Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
+| Setting                         | Default | Description                                                         |
+| ------------------------------- | ------- | ------------------------------------------------------------------- |
 | `gpgBridgeRequest.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Request** output channel |
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
+| Command                     | Description             |
+| --------------------------- | ----------------------- |
 | `GPG Bridge Request: Start` | Start the request proxy |
-| `GPG Bridge Request: Stop` | Stop the request proxy |
+| `GPG Bridge Request: Stop`  | Stop the request proxy  |
 
 The proxy starts automatically when VS Code connects to a remote. Manual commands
 are available via the Command Palette (`Ctrl+Shift+P`) if you need to restart it.

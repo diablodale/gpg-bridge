@@ -24,15 +24,18 @@ Agent-proxy lifecycle has 8 states reflecting TCP connection with nonce authenti
 8. **CLOSING** — Cleanup in progress (socket teardown, session removal)
 
 **Terminal States:**
+
 - **DISCONNECTED** (can create new session)
 - **FATAL** (unrecoverable error, session destroyed permanently) - implicit via session deletion
 
 **Alignment with Request-Proxy:**
+
 - WAITING_FOR_AGENT matches request-proxy exactly
 - CLOSING handles cleanup (matches request-proxy CLOSING semantics)
 - No separate DISCONNECTING state needed - BYE is just another command, socket 'close' event triggers transition to CLOSING
 
 **Socket 'close' Event - Can Fire in ANY State:**
+
 - **CRITICAL**: Node.js socket 'close' event fires whenever the underlying TCP socket closes, regardless of our state machine's state
 - Can fire in ANY state where socket exists: CONNECTING_TO_AGENT, SOCKET_CONNECTED, READY, SENDING_TO_AGENT, WAITING_FOR_AGENT, ERROR, CLOSING
 - Handler must be defensive: check current state and ignore if in CLOSING/ERROR/DISCONNECTED (already handled)
@@ -60,12 +63,14 @@ Events drive state transitions with consolidated error handling pattern from req
 10. `CLEANUP_ERROR` — Cleanup failed
 
 **Event Naming Consistency with Request-Proxy:**
-- **CLIENT_*** pattern: CLIENT_CONNECT_REQUESTED, CLIENT_DATA_RECEIVED - events from request-proxy calling VS Code commands or data from client
-- **AGENT_*** pattern: AGENT_SOCKET_CONNECTED, AGENT_WRITE_OK, AGENT_DATA_CHUNK, AGENT_DATA_RECEIVED - events from gpg-agent or socket operations
-- **CLEANUP_*** pattern: CLEANUP_REQUESTED, CLEANUP_COMPLETE, CLEANUP_ERROR - cleanup lifecycle events
-- **_RECEIVED** suffix: CLIENT_CONNECT_REQUESTED, CLIENT_DATA_RECEIVED, AGENT_DATA_RECEIVED - data/requests received
+
+- **CLIENT\_\*** pattern: CLIENT_CONNECT_REQUESTED, CLIENT_DATA_RECEIVED - events from request-proxy calling VS Code commands or data from client
+- **AGENT\_\*** pattern: AGENT_SOCKET_CONNECTED, AGENT_WRITE_OK, AGENT_DATA_CHUNK, AGENT_DATA_RECEIVED - events from gpg-agent or socket operations
+- **CLEANUP\_\*** pattern: CLEANUP_REQUESTED, CLEANUP_COMPLETE, CLEANUP_ERROR - cleanup lifecycle events
+- **\_RECEIVED** suffix: CLIENT_CONNECT_REQUESTED, CLIENT_DATA_RECEIVED, AGENT_DATA_RECEIVED - data/requests received
 
 **CLEANUP_REQUESTED Event Design:**
+
 - **ONLY event that transitions to CLOSING state**
 - Single event for all cleanup paths (graceful disconnect, errors, socket close)
 - Payload: `{ hadError: boolean }` - distinguishes error vs graceful for logging and Promise rejection
@@ -82,6 +87,7 @@ Events drive state transitions with consolidated error handling pattern from req
 Events describe "what happened" not "what to do". CLIENT_DATA_RECEIVED means data received from client (nonce or command). AGENT_DATA_RECEIVED means complete response received from agent (greeting or command response). AGENT_WRITE_OK means socket write completed successfully. This naming makes event sources and meanings immediately clear.
 
 **Error Consolidation** (matches request-proxy pattern):
+
 - Connection timeout → ERROR_OCCURRED (5s for network operations)
 - Greeting timeout → ERROR_OCCURRED (5s for nonce authentication)
 - Write failure (nonce or command) → ERROR_OCCURRED
@@ -193,6 +199,7 @@ stateDiagram-v2
 **CRITICAL: Socket 'close' Event Can Fire in ANY State**
 
 Node.js socket 'close' event is emitted whenever the underlying TCP socket closes, **regardless of our state machine's state**. This event can fire at any time the socket is open:
+
 - CONNECTING_TO_AGENT (connection fails, socket created but not yet connected)
 - SOCKET_CONNECTED (connection timeout, agent closes before nonce sent)
 - READY (agent crashes, network failure, agent-initiated close)
@@ -206,6 +213,7 @@ The handler MUST be defensive and handle close events from any state safely.
 **Key Design Decision:** Node.js socket 'close' event provides `hadError` boolean parameter. We use this to emit CLEANUP_REQUESTED with the hadError value for logging and Promise rejection distinction.
 
 **Socket 'close' Handler Logic (Handles ALL States):**
+
 ```typescript
 socket.once('close', (hadError: boolean) => {
   // CRITICAL: This event fires exactly once (registered with .once())
@@ -225,6 +233,7 @@ socket.once('close', (hadError: boolean) => {
 ```
 
 **Implementation Notes:**
+
 - Socket 'close' event registered with `.once()` - fires exactly once then auto-removes
 - Can fire in ANY state where socket exists (CONNECTING_TO_AGENT, SOCKET_CONNECTED, READY, SENDING_TO_AGENT, WAITING_FOR_AGENT, ERROR, CLOSING)
 - No defensive state checks needed - `.once()` ensures single execution, state machine handles rest
@@ -237,6 +246,7 @@ socket.once('close', (hadError: boolean) => {
 - Testing must verify close handling in **ALL states** where socket exists
 
 **Graceful Disconnect Flow:**
+
 1. `disconnectAgent()` called by request-proxy
 2. Send BYE command through normal flow: `CLIENT_DATA_RECEIVED` event
 3. READY → SENDING_TO_AGENT (write BYE)
@@ -250,6 +260,7 @@ socket.once('close', (hadError: boolean) => {
 **Key Insight:** The Promise bridge for `disconnectAgent()` listens for CLEANUP_REQUESTED event with hadError=false. This ensures we wait for the socket to close (which signals BYE completion) regardless of whether close happens before or after state transitions.
 
 **Error Disconnect Flow:**
+
 1. Network error, timeout, or agent crash occurs
 2. Socket closes with transmission error
 3. Socket 'close' event fires with `hadError === true`
@@ -257,6 +268,7 @@ socket.once('close', (hadError: boolean) => {
 5. Current state → ERROR → emit `CLEANUP_REQUESTED` with {hadError: true} → CLOSING (cleanup)
 
 **Manual Cleanup Flow:**
+
 1. ERROR state handler emits `CLEANUP_REQUESTED` with {hadError: true}
 2. Socket still exists, CLOSING state handler calls `socket.destroy()`
 3. Socket 'close' event fires (typically `hadError === false` for manual destroy)
@@ -264,6 +276,7 @@ socket.once('close', (hadError: boolean) => {
 5. CLEANUP_REQUESTED registered with `.once()` so handler already ran, no duplicate execution
 
 **Testing Requirements (Socket Close in ALL States):**
+
 - [ ] Verify gpg-agent BYE response causes `hadError === false`
 - [ ] Verify network disconnect causes `hadError === true`
 - [ ] Verify ERROR → socket.destroy() → close event safely handled
@@ -296,11 +309,17 @@ The state machine diagram above shows **internal** event flow. Request-proxy see
 // Request-proxy calls VS Code commands, gets back Promises:
 
 // 1. Connect
-const { sessionId, greeting } = await vscode.commands.executeCommand('_gpg-agent-proxy.connectAgent');
+const { sessionId, greeting } = await vscode.commands.executeCommand(
+  '_gpg-agent-proxy.connectAgent',
+);
 // Internally: emits CLIENT_CONNECT_REQUESTED → state machine → AGENT_DATA_RECEIVED resolves Promise
 
-// 2. Send command  
-const { response } = await vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands', sessionId, 'GETINFO version\n');
+// 2. Send command
+const { response } = await vscode.commands.executeCommand(
+  '_gpg-agent-proxy.sendCommands',
+  sessionId,
+  'GETINFO version\n',
+);
 // Internally: emits CLIENT_DATA_RECEIVED → state machine → AGENT_DATA_RECEIVED resolves Promise
 
 // 3. Disconnect (sends BYE command)
@@ -332,7 +351,9 @@ The public API methods bridge between Promises (external) and EventEmitter (inte
 9. **Request-proxy** receives `{ response: string }`
 
 **For BYE command (disconnectAgent):**
+
 - Same flow through steps 1-9, then:
+
 10. Agent closes socket (GPG protocol spec)
 11. Socket 'close' event fires → CLEANUP_REQUESTED event
 12. Session transitions to CLOSING → cleanup → DISCONNECTED
@@ -344,10 +365,11 @@ The public API methods bridge between Promises (external) and EventEmitter (inte
 ## Implementation Plan
 
 ### Phase 1: Type Definitions & Infrastructure ✅ COMPLETE
+
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
 - [x] Define `SessionState` type with all 7 states
-- [x] Define `StateEvent` union with all 11 events (CLIENT_*/AGENT_*/CLEANUP_* patterns)
+- [x] Define `StateEvent` union with all 11 events (CLIENT*\*/AGENT*\_/CLEANUP\_\_ patterns)
 - [x] Define `StateHandler` function signature
 - [x] Create transition table (lookup: `(state, event) → nextState`)
 - [x] Add validation that transition table covers all valid (state, event) pairs
@@ -355,12 +377,14 @@ The public API methods bridge between Promises (external) and EventEmitter (inte
 - [x] Update `AgentProxy` class to manage Map<sessionId, AgentSessionManager>
 
 **Dependency Injection Design:**
+
 - [x] Keep existing `AgentProxyConfig` for public API
 - [x] Keep existing `AgentProxyDeps` for optional dependencies (socketFactory, fileSystem)
 - [x] Add `AgentSessionManagerConfig` for per-session configuration (includes timeout values)
 - [x] All handlers use injected dependencies (testable via mocks)
 
 **Promise ↔ EventEmitter Bridge Design:**
+
 - [x] Public API methods (`connectAgent`, `sendCommands`, `disconnectAgent`) remain async and return Promises
 - [x] Each public method bridges to EventEmitter:
   1. Validate preconditions (e.g., session state)
@@ -372,6 +396,7 @@ The public API methods bridge between Promises (external) and EventEmitter (inte
 - [x] Pattern allows VS Code commands to await results while state machine processes events internally
 
 **Implementation Notes:**
+
 - Added complete STATE_TRANSITIONS table with all valid (state, event) → nextState mappings
 - AgentSessionManager extends EventEmitter with socket event wiring using .once() for connect/error/close, .on() for data
 - Socket 'close' handler checks hadError parameter and emits ERROR_OCCURRED (hadError=true) or CLEANUP_REQUESTED (hadError=false)
@@ -387,13 +412,16 @@ The public API methods bridge between Promises (external) and EventEmitter (inte
 ---
 
 ### Phase 2: Safety Net - Test Current Implementation ✅ COMPLETE
+
 **Files:**
+
 - `agent-proxy/src/test/agentProxy.test.ts`
 - `shared/src/test/helpers.ts` (mock infrastructure enhancements)
 
 Add comprehensive tests for current implementation before refactoring (establish baseline):
 
 #### Response Completion Detection (10 tests)
+
 - [x] Test `isCompleteResponse()` with OK response (single line)
 - [x] Test `isCompleteResponse()` with OK response (multi-line with data lines)
 - [x] Test `isCompleteResponse()` with ERR response
@@ -406,6 +434,7 @@ Add comprehensive tests for current implementation before refactoring (establish
 - [x] Test binary data preservation in responses
 
 #### Response Accumulation (5 tests)
+
 - [x] Test response split across 2 chunks
 - [x] Test response split across 3+ chunks
 - [x] Test large response (>1MB) accumulation
@@ -413,33 +442,39 @@ Add comprehensive tests for current implementation before refactoring (establish
 - [x] Test response with all byte values (0-255)
 
 #### Socket File Parsing (5 tests)
+
 - [x] Test valid socket file format integration
 - [x] Edge case tests (missing newlines, short nonce, non-numeric port, extra data) - **In shared/src/test/protocol.test.ts** where parseSocketFile() is defined
 
 #### Timeout Handling (3 tests)
+
 - [x] Test connection timeout (5s) fires and cleans up
 - [x] Test greeting timeout (5s) fires and cleans up
 - [x] Test timeout cleanup removes session from Map
 
 #### Nonce Authentication (3 tests)
+
 - [x] Test nonce sent immediately after socket connect
 - [x] Test nonce write failure triggers cleanup
 - [x] Test greeting received after nonce completes connection
 
 #### Error Paths (4 tests)
+
 - [x] Test socket error during waitForResponse
 - [x] Test write error during sendCommands
-- [x] Test greeting acceptance (relaxed validation accepts any OK*)
+- [x] Test greeting acceptance (relaxed validation accepts any OK\*)
 - [x] Test invalid session ID on sendCommands
 
 **Mock Infrastructure Enhancements:**
 Added to `shared/src/test/helpers.ts`:
+
 - `MockSocket.setWriteError()` - enable write failure testing
 - `MockSocketFactory.setDelayConnect(ms)` - enable timeout testing
 - `MockSocketFactory.setWriteError()` - set write error on next created socket
 - `MockSocketFactory.getWrites()` - inspect writes for nonce verification
 
 **Implementation Notes:**
+
 - Added 27 new test cases (9 original + 27 new = 36 total passing tests)
 - Enhanced mock infrastructure to support all baseline test scenarios
 - Socket file parsing edge cases tested in shared package (proper layering)
@@ -451,6 +486,7 @@ Added to `shared/src/test/helpers.ts`:
 - All tests passing without skips
 
 **Bug Fixes During Phase 2:**
+
 1. **Socket File Format:** Fixed tests to use correct "port\nnonce" format (not "host\nport\nnonce")
    - parseSocketFile() expects exactly this format per protocol spec
    - Changed to binary nonce: Buffer.from([1,2,3...16])
@@ -467,6 +503,7 @@ Added to `shared/src/test/helpers.ts`:
    - Handles cases where timeout handler already cleaned up session
 
 **Code Improvements During Phase 2:**
+
 1. **Eliminated Code Duplication:** Added `cleanupSession(sessionId, socket?)` helper method
    - Consolidates socket.destroy() and sessions.delete() logic
    - Eliminates 6 instances of duplicate cleanup code
@@ -479,6 +516,7 @@ Added to `shared/src/test/helpers.ts`:
    - Ensures sessions are properly removed from Map
 
 **Socket File Parsing Edge Cases:**
+
 - All 5 edge cases tested in `shared/src/test/protocol.test.ts`:
   1. Valid format extraction
   2. Missing newline (throws error)
@@ -494,6 +532,7 @@ Added to `shared/src/test/helpers.ts`:
 ---
 
 ### Phase 3: EventEmitter Session Manager Architecture ✅ COMPLETE
+
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
 Implement EventEmitter-based session manager (per-session instances):
@@ -507,6 +546,7 @@ Implement EventEmitter-based session manager (per-session instances):
 - [x] Wire socket 'close' event handler with hadError routing logic
 
 **Socket Event Wiring:**
+
 - [x] Wire socket 'connect' event with **`.once()`** → emit `AGENT_SOCKET_CONNECTED`
   - Fires exactly once when connection established
   - `.once()` provides automatic cleanup
@@ -528,14 +568,18 @@ Implement EventEmitter-based session manager (per-session instances):
 - [x] Note: Socket 'close' handler must be robust to ANY-state close events
 
 **Socket Event Registration Pattern:**
+
 ```typescript
 socket.once('connect', () => session.emit('AGENT_SOCKET_CONNECTED'));
 socket.on('data', (chunk) => session.emit('AGENT_DATA_CHUNK', chunk));
 socket.once('error', (err) => session.emit('ERROR_OCCURRED', { error: err }));
-socket.once('close', (hadError) => { /* routing logic */ });
+socket.once('close', (hadError) => {
+  /* routing logic */
+});
 ```
 
 **Implementation Notes:**
+
 - AgentSessionManager class fully implemented with EventEmitter pattern
 - All 11 event handlers registered with stub implementations for Phase 4
 - Socket event wiring complete (connect, data, error, close)
@@ -551,7 +595,9 @@ socket.once('close', (hadError) => { /* routing logic */ });
 ---
 
 ### Phase 3.1: Type System Alignment (agent-proxy ↔ request-proxy)
+
 **Files:**
+
 - `agent-proxy/src/services/agentProxy.ts` (remove StateHandler dead code)
 - `request-proxy/src/services/requestProxy.ts` (remove dead code + strengthen typing)
 
@@ -561,17 +607,18 @@ socket.once('close', (hadError) => { /* routing logic */ });
 
 **Type System Comparison:**
 
-| Aspect | agent-proxy (Phase 3) | request-proxy (completed) | Status |
-|--------|----------------------|---------------------------|--------|
-| SessionState | String literal union | String literal union | ✅ Consistent |
-| StateEvent | String literal union | **Discriminated union (UNUSED)** | ❌ Dead code in request-proxy |
-| StateHandler | **Type defined (UNUSED)** | **Type defined (UNUSED)** | ❌ Dead code in BOTH |
-| Event Payloads | Separate `EventPayloads` interface | **Embedded (UNUSED)** | ❌ Dead code in request-proxy |
-| Event Emission | `emit('EVENT_NAME', payload)` | `emit('EVENT_NAME', payload)` | ✅ Consistent (EventEmitter pattern) |
-| Event Handlers | `handler(payload)` | `handler(payload)` | ✅ Consistent (EventEmitter pattern) |
-| Transition Table | Strong: `StateTransitionTable` mapped type | Weak: `Record<SessionState, Record<string, SessionState>>` | ❌ Inconsistent |
+| Aspect           | agent-proxy (Phase 3)                      | request-proxy (completed)                                  | Status                               |
+| ---------------- | ------------------------------------------ | ---------------------------------------------------------- | ------------------------------------ |
+| SessionState     | String literal union                       | String literal union                                       | ✅ Consistent                        |
+| StateEvent       | String literal union                       | **Discriminated union (UNUSED)**                           | ❌ Dead code in request-proxy        |
+| StateHandler     | **Type defined (UNUSED)**                  | **Type defined (UNUSED)**                                  | ❌ Dead code in BOTH                 |
+| Event Payloads   | Separate `EventPayloads` interface         | **Embedded (UNUSED)**                                      | ❌ Dead code in request-proxy        |
+| Event Emission   | `emit('EVENT_NAME', payload)`              | `emit('EVENT_NAME', payload)`                              | ✅ Consistent (EventEmitter pattern) |
+| Event Handlers   | `handler(payload)`                         | `handler(payload)`                                         | ✅ Consistent (EventEmitter pattern) |
+| Transition Table | Strong: `StateTransitionTable` mapped type | Weak: `Record<SessionState, Record<string, SessionState>>` | ❌ Inconsistent                      |
 
 **Root Cause:**
+
 - request-proxy has **unused discriminated union type** that was never actually implemented
 - **Both extensions have unused `StateHandler` type** that cannot be enforced by vanilla EventEmitter
 - Both extensions actually use **EventEmitter's string-based pattern** (correct for EventEmitter)
@@ -580,6 +627,7 @@ socket.once('close', (hadError) => { /* routing logic */ });
 **Critical Discoveries:**
 
 1. **request-proxy's `StateEvent` discriminated union is dead code**. The actual implementation uses EventEmitter's native pattern:
+
 ```typescript
 // Type says this (BUT IT'S NEVER USED):
 type StateEvent = { type: 'WRITE_OK' } | ...
@@ -591,6 +639,7 @@ private handleWriteOk(): void { }          // ✅ No event object parameter
 ```
 
 2. **Both extensions have unused `StateHandler` type**. Vanilla EventEmitter cannot enforce typed handlers:
+
 ```typescript
 // Both extensions define this (BUT IT'S NEVER USED):
 type StateHandler = (config, session, event) => Promise<SessionState>;
@@ -604,6 +653,7 @@ private async handleError(error: string): Promise<void> { }  // ✅ Plain method
 ```
 
 **Why StateHandler Cannot Work:**
+
 - EventEmitter's `.on()` accepts `(...args: any[]) => void` - no way to enforce typed handlers
 - Would need `typed-emitter` package or similar for handler type safety
 - Current `StateHandler` type exists but is never referenced or enforced
@@ -668,6 +718,7 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 ```
 
 **Why This Is Correct:**
+
 1. **Matches EventEmitter design** - `.emit(eventName, ...args)` uses strings, not objects
 2. **Type safety maintained** - `EventPayloads` interface documents expected payload types
 3. **Strong transition table** - Compile-time validation of state transitions
@@ -677,6 +728,7 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 #### Migration Path
 
 **Phase 3.1a: Request-Proxy Cleanup (remove dead code)**
+
 - Remove unused discriminated union `StateEvent` type
 - Remove unused `StateHandler` type
 - Replace StateEvent with string literal union (matches actual usage)
@@ -686,11 +738,13 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 - **Result:** Types match implementation, dead code removed, stronger typing
 
 **Phase 3.1b: Agent-Proxy Cleanup (remove dead code)**
+
 - Remove unused `StateHandler` type
 - Verify rest of pattern is correct (it is)
 - **Result:** Dead code removed, clean reference implementation
 
 **Future (Phase 9 - Shared Code Extraction):**
+
 - Extract common types to `@gpg-relay/shared/stateMachine.ts`:
   - Generic `SessionState` builder
   - Generic `StateEvent` string literal pattern
@@ -716,9 +770,9 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 - [x] Add `StateTransitionTable` mapped type
   ```typescript
   type StateTransitionTable = {
-      [K in SessionState]: {
-          [E in StateEvent]?: SessionState;
-      };
+    [K in SessionState]: {
+      [E in StateEvent]?: SessionState;
+    };
   };
   ```
 - [x] Update `transitionTable` type annotation
@@ -772,6 +826,7 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 **Target:** Type system alignment complete, ready for Phase 4
 
 **Status:** Complete - Dead code removed from both extensions, type systems aligned
+
 - request-proxy: Removed discriminated union StateEvent, removed StateHandler, added EventPayloads interface, added StateTransitionTable mapped type, renamed to STATE_TRANSITIONS, aligned formatting
 - agent-proxy: Removed StateHandler type
 - Compilation verified: ✅ Both extensions compile successfully
@@ -780,6 +835,7 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 ---
 
 ### Phase 3.2: State Transition Validation (request-proxy only)
+
 **File:** `request-proxy/src/services/requestProxy.ts`
 
 **Objective:** Add runtime state transition validation to request-proxy, matching agent-proxy's proven pattern. Ensure STATE_TRANSITIONS table is actively used for validation, not just type safety.
@@ -787,10 +843,12 @@ session.on('AGENT_GREETING_RECEIVED', (payload) => { });          // Handler wit
 #### Findings
 
 **Inconsistency Discovered:**
+
 - **agent-proxy:** STATE_TRANSITIONS table is actively used for runtime validation via `transition()` method
 - **request-proxy:** STATE_TRANSITIONS table defined but never referenced - potential dead code
 
 **agent-proxy Implementation (lines 270-286):**
+
 ```typescript
 private transition(event: StateEvent): void {
     const allowedTransitions = STATE_TRANSITIONS[this.state];
@@ -815,6 +873,7 @@ private setState(newState: SessionState, event: StateEvent): void {
 ```
 
 **request-proxy Current Implementation:**
+
 ```typescript
 // setState called directly without validation
 private setState(newState: SessionState): void {
@@ -826,6 +885,7 @@ private setState(newState: SessionState): void {
 ```
 
 **Impact:**
+
 - request-proxy has no runtime validation of state transitions
 - Invalid transitions could occur without detection
 - STATE_TRANSITIONS table provides no benefit beyond compile-time type checking
@@ -852,12 +912,14 @@ private setState(newState: SessionState): void {
    - Example: `handleResponseOkOrErr` just logs, doesn't change state
 
 **Benefits:**
+
 - Runtime validation catches invalid transitions immediately
 - Better debugging: logs show which event caused each transition
 - Consistent architecture between both extensions
 - STATE_TRANSITIONS table becomes the single source of truth
 
 **Backward Compatibility:**
+
 - No changes to public API
 - No changes to event emission patterns
 - Tests continue to work unchanged (unless they were relying on invalid transitions)
@@ -867,6 +929,7 @@ private setState(newState: SessionState): void {
 **Phase 3.2a: Add transition() method and update setState()**
 
 - [x] Add `transition()` method to ClientSessionManager
+
   ```typescript
   /**
    * Validate and execute state transition
@@ -998,11 +1061,13 @@ private setState(newState: SessionState): void {
 **Testing Strategy:**
 
 Existing tests should pass without modification because:
+
 1. request-proxy state machine was already correctly designed
 2. STATE_TRANSITIONS table already reflects the actual transitions
 3. Validation only adds error detection for invalid paths
 
 If tests fail:
+
 - Indicates a real bug (handler attempting invalid transition)
 - Fix by either updating handler logic or adding transition to STATE_TRANSITIONS
 - This is a feature, not a bug - we want to catch these issues!
@@ -1032,6 +1097,7 @@ If tests fail:
 **Target:** Both extensions use identical state machine validation approach, ready for Phase 4
 
 **Status:** Complete - Transition validation added to request-proxy
+
 - Added transition() method for runtime validation
 - Updated setState() to accept event parameter and log it
 - Updated all 13 event handlers to use transition()
@@ -1044,7 +1110,9 @@ If tests fail:
 ---
 
 ### Phase 3.2f: Inline setState() Simplification
+
 **Files:**
+
 - `agent-proxy/src/services/agentProxy.ts`
 - `request-proxy/src/services/requestProxy.ts`
 
@@ -1062,6 +1130,7 @@ After Phase 3.2, `setState()` became a single-caller private method only called 
 - [x] Update AGENTS.md to reflect simplified pattern
 
 **Before:**
+
 ```typescript
 private transition(event: StateEvent): void {
     // ... validation ...
@@ -1076,6 +1145,7 @@ private setState(newState: SessionState, event: StateEvent): void {
 ```
 
 **After:**
+
 ```typescript
 private transition(event: StateEvent): void {
     // ... validation ...
@@ -1087,6 +1157,7 @@ private transition(event: StateEvent): void {
 
 **Deliverable:** ✅ Simpler state machine implementation with no single-caller methods
 **Status:** Complete
+
 - Compilation verified: ✅ All extensions compile successfully
 - Tests verified: ✅ All 145 tests pass (36 agent-proxy + 109 request-proxy)
 - AGENTS.md updated with simplified pattern
@@ -1094,6 +1165,7 @@ private transition(event: StateEvent): void {
 ---
 
 ### Phase 3.3: Fix request-proxy Socket Close State Machine Bypass
+
 **File:** `request-proxy/src/services/requestProxy.ts`
 
 **Problem Discovery:**
@@ -1103,17 +1175,21 @@ During Phase 3.2 validation work, discovered that request-proxy's socket 'close'
 ```typescript
 // Lines 585-596: Current buggy implementation
 clientSocket.on('close', () => {
-    log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed`);
-    // Clean up session
-    if (sessionManager.sessionId) {
-        sessionManager.config.commandExecutor.disconnectAgent(sessionManager.sessionId).catch((err) => {
-            log(sessionManager.config, `[${sessionManager.sessionId}] Disconnect error: ${extractErrorMessage(err)}`);
-        });
-    }
+  log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed`);
+  // Clean up session
+  if (sessionManager.sessionId) {
+    sessionManager.config.commandExecutor.disconnectAgent(sessionManager.sessionId).catch((err) => {
+      log(
+        sessionManager.config,
+        `[${sessionManager.sessionId}] Disconnect error: ${extractErrorMessage(err)}`,
+      );
+    });
+  }
 });
 ```
 
 **Issues:**
+
 1. ❌ **No state transition validation**: Socket close directly calls `disconnectAgent()` without emitting events
 2. ❌ **Orphaned session state**: Session manager remains in BUFFERING_COMMAND/READY/etc. forever
 3. ❌ **Missing transitions**: STATE_TRANSITIONS table has no way to handle spontaneous client disconnection
@@ -1122,20 +1198,23 @@ clientSocket.on('close', () => {
 
 **Root Cause:**
 When client socket spontaneously closes (client crash, network issue, kill), the 'close' handler must:
+
 - Emit event to session manager's state machine
 - Allow transition validation to occur
 - Trigger proper state-driven cleanup
 
 **Current State Coverage:**
 Only ERROR state has cleanup transition:
+
 ```typescript
 ERROR: {
-    CLEANUP_START: 'CLOSING'  // Only this!
+  CLEANUP_START: 'CLOSING'; // Only this!
 }
 ```
 
 **Missing Transitions:**
 All socket-having states need spontaneous cleanup capability:
+
 - CLIENT_CONNECTED → (client drops before agent greeting)
 - AGENT_CONNECTING → (client drops during agent connection)
 - READY → (client drops while idle)
@@ -1147,21 +1226,23 @@ All socket-having states need spontaneous cleanup capability:
 
 **Agent-Proxy Reference Implementation:**
 agent-proxy handles this correctly (lines 339-351):
+
 ```typescript
 socket.once('close', (hadError: boolean) => {
-    log(this.config, `[${this.sessionId}] Socket closed (hadError=${hadError})`);
+  log(this.config, `[${this.sessionId}] Socket closed (hadError=${hadError})`);
 
-    if (hadError) {
-        // Transmission error during socket I/O
-        this.emit('ERROR_OCCURRED', { error: new Error('Socket closed with transmission error') });
-    } else {
-        // Clean/graceful socket close
-        this.emit('CLEANUP_REQUESTED', { hadError: false });
-    }
+  if (hadError) {
+    // Transmission error during socket I/O
+    this.emit('ERROR_OCCURRED', { error: new Error('Socket closed with transmission error') });
+  } else {
+    // Clean/graceful socket close
+    this.emit('CLEANUP_REQUESTED', { hadError: false });
+  }
 });
 ```
 
 All agent-proxy socket-having states have CLEANUP_REQUESTED → CLOSING (lines 69-93):
+
 ```typescript
 CONNECTING_TO_AGENT: { CLEANUP_REQUESTED: 'CLOSING' },
 READY: { CLEANUP_REQUESTED: 'CLOSING' },
@@ -1177,12 +1258,14 @@ ERROR: { CLEANUP_REQUESTED: 'CLOSING' }
 - [x] Rename StateEvent: `CLEANUP_START` → `CLEANUP_REQUESTED`
 - [x] Update EventPayloads interface:
   ```typescript
-  CLEANUP_REQUESTED: { hadError: boolean };  // Was undefined for CLEANUP_START
+  CLEANUP_REQUESTED: {
+    hadError: boolean;
+  } // Was undefined for CLEANUP_START
   ```
 - [x] Update ERROR state transition:
   ```typescript
   ERROR: {
-      CLEANUP_REQUESTED: 'CLOSING'  // Was CLEANUP_START
+    CLEANUP_REQUESTED: 'CLOSING'; // Was CLEANUP_START
   }
   ```
 
@@ -1191,6 +1274,7 @@ ERROR: { CLEANUP_REQUESTED: 'CLOSING' }
 Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
 
 - [x] CLIENT_CONNECTED
+
   ```typescript
   CLIENT_CONNECTED: {
       START_AGENT_CONNECT: 'AGENT_CONNECTING',
@@ -1200,6 +1284,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   ```
 
 - [x] AGENT_CONNECTING
+
   ```typescript
   AGENT_CONNECTING: {
       AGENT_GREETING_OK: 'READY',
@@ -1209,6 +1294,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   ```
 
 - [x] READY
+
   ```typescript
   READY: {
       CLIENT_DATA_START: 'BUFFERING_COMMAND',
@@ -1218,6 +1304,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   ```
 
 - [x] BUFFERING_COMMAND
+
   ```typescript
   BUFFERING_COMMAND: {
       CLIENT_DATA_PARTIAL: 'BUFFERING_COMMAND',
@@ -1228,6 +1315,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   ```
 
 - [x] BUFFERING_INQUIRE
+
   ```typescript
   BUFFERING_INQUIRE: {
       CLIENT_DATA_PARTIAL: 'BUFFERING_INQUIRE',
@@ -1238,6 +1326,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   ```
 
 - [x] SENDING_TO_AGENT
+
   ```typescript
   SENDING_TO_AGENT: {
       WRITE_OK: 'WAITING_FOR_AGENT',
@@ -1247,6 +1336,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
   ```
 
 - [x] WAITING_FOR_AGENT
+
   ```typescript
   WAITING_FOR_AGENT: {
       AGENT_RESPONSE_COMPLETE: 'SENDING_TO_CLIENT',
@@ -1287,6 +1377,7 @@ Add `CLEANUP_REQUESTED: 'CLOSING'` to all socket-having states:
 Replace direct cleanup with event emission:
 
 - [x] Update clientSocket.on('close') handler (lines 585-596):
+
   ```typescript
   // 'close' fires when the socket is fully closed and resources are released
   // hadError arg indicates if it closed because of an error
@@ -1296,22 +1387,26 @@ Replace direct cleanup with event emission:
   // - local shutdown: socket.end() -> 'close'
   // - local destroy without arg: socket.destroy() -> 'close'
   clientSocket.on('close', (hadError: boolean) => {
-      log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed (hadError=${hadError})`);
+    log(
+      sessionManager.config,
+      `[${sessionManager.sessionId ?? 'pending'}] Client socket closed (hadError=${hadError})`,
+    );
 
-      // Emit event to state machine for validated cleanup
-      if (hadError) {
-          // Transmission error during socket I/O
-          sessionManager.emit('ERROR_OCCURRED', 'Socket closed with transmission error');
-      } else {
-          // Clean/graceful socket close
-          sessionManager.emit('CLEANUP_REQUESTED', hadError);
-      }
+    // Emit event to state machine for validated cleanup
+    if (hadError) {
+      // Transmission error during socket I/O
+      sessionManager.emit('ERROR_OCCURRED', 'Socket closed with transmission error');
+    } else {
+      // Clean/graceful socket close
+      sessionManager.emit('CLEANUP_REQUESTED', hadError);
+    }
   });
   ```
 
 **Phase 3.3e: Update handleErrorOccurred**
 
 - [x] Update `handleErrorOccurred` to emit CLEANUP_REQUESTED:
+
   ```typescript
   private handleErrorOccurred(error: string): void {
       this.transition('ERROR_OCCURRED');
@@ -1342,6 +1437,7 @@ Replace direct cleanup with event emission:
 **Status:** Complete
 
 **Implementation Summary:**
+
 - Renamed CLEANUP_START → CLEANUP_REQUESTED with hadError boolean payload
 - Added CLEANUP_REQUESTED → CLOSING transitions to all 8 socket-having states
 - Updated handleCleanupRequested to accept and log hadError parameter
@@ -1351,6 +1447,7 @@ Replace direct cleanup with event emission:
 - AGENTS.md updated with socket close handling pattern
 
 **Benefits:**
+
 1. ✅ **State machine integrity**: All state changes validated by STATE_TRANSITIONS
 2. ✅ **Consistent naming**: Both extensions use CLEANUP_REQUESTED
 3. ✅ **Proper payload**: hadError boolean distinguishes graceful vs error cleanup
@@ -1360,6 +1457,7 @@ Replace direct cleanup with event emission:
 ---
 
 ### Phase 3.4: Agent-Proxy Architectural Refinements (Off-Plan)
+
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
 **Context:**
@@ -1387,6 +1485,7 @@ During Phase 4 implementation (event handlers and promise bridges), several arch
 **Phase 3.4a: Rename AGENT_CONNECTED State to SOCKET_CONNECTED**
 
 **Rationale:**
+
 - State names should match their trigger events for clarity
 - Event: `AGENT_SOCKET_CONNECTED` → State: `SOCKET_CONNECTED`
 - Follows pattern established in request-proxy: CLIENT_SOCKET_CONNECTED → CLIENT_CONNECTED
@@ -1395,19 +1494,21 @@ During Phase 4 implementation (event handlers and promise bridges), several arch
 **Changes:**
 
 - [x] Rename state in SessionState type
+
   ```typescript
   type SessionState =
-      | 'DISCONNECTED'
-      | 'CONNECTING_TO_AGENT'
-      | 'SOCKET_CONNECTED'  // Was: AGENT_CONNECTED
-      | 'READY'
-      | 'SENDING_TO_AGENT'
-      | 'WAITING_FOR_AGENT'
-      | 'ERROR'
-      | 'CLOSING';
+    | 'DISCONNECTED'
+    | 'CONNECTING_TO_AGENT'
+    | 'SOCKET_CONNECTED' // Was: AGENT_CONNECTED
+    | 'READY'
+    | 'SENDING_TO_AGENT'
+    | 'WAITING_FOR_AGENT'
+    | 'ERROR'
+    | 'CLOSING';
   ```
 
 - [x] Update STATE_TRANSITIONS table
+
   ```typescript
   CONNECTING_TO_AGENT: {
       AGENT_SOCKET_CONNECTED: 'SOCKET_CONNECTED',  // Was: AGENT_CONNECTED
@@ -1427,9 +1528,10 @@ During Phase 4 implementation (event handlers and promise bridges), several arch
 **Phase 3.4b: Fix Promise Bridge Double-Rejection**
 
 **Problem Analysis:**
+
 ```typescript
 // BUGGY PATTERN - Both handlers can fire!
-session.once('ERROR_OCCURRED', handleError);      // Fires and calls reject()
+session.once('ERROR_OCCURRED', handleError); // Fires and calls reject()
 session.once('CLEANUP_REQUESTED', handleCleanup); // Also fires and calls reject()
 
 // Execution flow:
@@ -1441,6 +1543,7 @@ session.once('CLEANUP_REQUESTED', handleCleanup); // Also fires and calls reject
 ```
 
 **Root Cause:**
+
 - `handleErrorOccurred` session handler always emits CLEANUP_REQUESTED
 - Promise bridge listens to both ERROR_OCCURRED and CLEANUP_REQUESTED
 - Both listeners fire synchronously (same tick)
@@ -1450,6 +1553,7 @@ session.once('CLEANUP_REQUESTED', handleCleanup); // Also fires and calls reject
 Promise bridges should **only listen to CLEANUP_REQUESTED**, not both events.
 
 **Rationale:**
+
 1. ERROR_OCCURRED always leads to CLEANUP_REQUESTED (via handleErrorOccurred)
 2. CLEANUP_REQUESTED is the **only event that transitions to CLOSING**
 3. Listening to both creates redundant notification
@@ -1460,30 +1564,31 @@ Promise bridges should **only listen to CLEANUP_REQUESTED**, not both events.
 
 - [x] Remove ERROR_OCCURRED listeners from all promise bridges
   - connectAgent() promise bridge
-  - sendCommands() promise bridge  
+  - sendCommands() promise bridge
   - disconnectAgent() promise bridge
 
 - [x] Update promise bridge pattern:
+
   ```typescript
   // CORRECTED PATTERN - Only one rejection path
   return await new Promise<T>((resolve, reject) => {
-      const handleResponse = (payload) => {
-          session.removeListener('CLEANUP_REQUESTED', handleCleanup);
-          resolve(payload);
-      };
+    const handleResponse = (payload) => {
+      session.removeListener('CLEANUP_REQUESTED', handleCleanup);
+      resolve(payload);
+    };
 
-      const handleCleanup = () => {
-          session.removeListener('AGENT_DATA_RECEIVED', handleResponse);
-          // Retrieve stored error from session (set by handleErrorOccurred)
-          const error = session.lastError ?? new Error('Session closed during operation');
-          reject(error);
-      };
+    const handleCleanup = () => {
+      session.removeListener('AGENT_DATA_RECEIVED', handleResponse);
+      // Retrieve stored error from session (set by handleErrorOccurred)
+      const error = session.lastError ?? new Error('Session closed during operation');
+      reject(error);
+    };
 
-      // Only listen to CLEANUP_REQUESTED - covers both error and graceful cleanup
-      session.once('CLEANUP_REQUESTED', handleCleanup);
-      session.once('AGENT_DATA_RECEIVED', handleResponse);
+    // Only listen to CLEANUP_REQUESTED - covers both error and graceful cleanup
+    session.once('CLEANUP_REQUESTED', handleCleanup);
+    session.once('AGENT_DATA_RECEIVED', handleResponse);
 
-      session.emit('CLIENT_CONNECT_REQUESTED', { port, nonce });
+    session.emit('CLIENT_CONNECT_REQUESTED', { port, nonce });
   });
   ```
 
@@ -1491,6 +1596,7 @@ Promise bridges should **only listen to CLEANUP_REQUESTED**, not both events.
 - [x] Verify no double-rejection (check for unhandled promise warnings)
 
 **Alternative Considered (Rejected):**
+
 - **Settled flag pattern**: Guard reject() calls with `if (settled) return` flag
   - ❌ Masks the architectural issue instead of fixing it
   - ❌ Adds runtime overhead for every promise operation
@@ -1500,16 +1606,18 @@ Promise bridges should **only listen to CLEANUP_REQUESTED**, not both events.
 **Phase 3.4c: Fix MockSocket Test Infrastructure Bug**
 
 **Problem:**
+
 ```typescript
 // BUGGY: Timeout handle not stored, can't be canceled
 if (delay > 0) {
-    setTimeout(() => {
-        socket.emit('connect');
-    }, delay);  // Fires even after socket.destroy()!
+  setTimeout(() => {
+    socket.emit('connect');
+  }, delay); // Fires even after socket.destroy()!
 }
 ```
 
 **Impact:**
+
 - Test 1: Set 6s delay, timeout at 5s → setTimeout still pending
 - Test 2: Starts, get unexpected 'connect' event from Test 1's setTimeout
 - Causes invalid state transition in Test 2
@@ -1518,27 +1626,29 @@ if (delay > 0) {
 **Solution:**
 
 - [x] Store timeout handle in MockSocket
+
   ```typescript
   export class MockSocket extends EventEmitter {
-      private connectTimeout: NodeJS.Timeout | null = null;
+    private connectTimeout: NodeJS.Timeout | null = null;
 
-      setConnectTimeout(timeout: NodeJS.Timeout): void {
-          this.connectTimeout = timeout;
-      }
+    setConnectTimeout(timeout: NodeJS.Timeout): void {
+      this.connectTimeout = timeout;
+    }
 
-      destroy(error?: Error): void {
-          // Cancel pending connect timeout to prevent test pollution
-          if (this.connectTimeout) {
-              clearTimeout(this.connectTimeout);
-              this.connectTimeout = null;
-          }
-          this.destroyed = true;
-          this.emit('close', !!error);
+    destroy(error?: Error): void {
+      // Cancel pending connect timeout to prevent test pollution
+      if (this.connectTimeout) {
+        clearTimeout(this.connectTimeout);
+        this.connectTimeout = null;
       }
+      this.destroyed = true;
+      this.emit('close', !!error);
+    }
   }
   ```
 
 - [x] Update MockSocketFactory to pass timeout handle
+
   ```typescript
   createConnection(...): any {
       const socket = new MockSocket();
@@ -1564,7 +1674,7 @@ if (delay > 0) {
 
 - [x] Run all tests: `npm test`
   - ✅ agent-proxy: 45 tests passing
-  - ✅ request-proxy: 124 tests passing  
+  - ✅ request-proxy: 124 tests passing
   - ✅ shared: tests passing
 
 - [x] Check for unhandled promise rejections
@@ -1588,6 +1698,7 @@ if (delay > 0) {
 **Status:** Complete
 
 **Implementation Summary:**
+
 - Renamed AGENT_CONNECTED → SOCKET_CONNECTED for consistency with event naming
 - Fixed promise bridge double-rejection by removing ERROR_OCCURRED listeners
 - Fixed MockSocket timeout leak preventing test pollution
@@ -1597,6 +1708,7 @@ if (delay > 0) {
 - AGENTS.md updated with architectural patterns
 
 **Benefits:**
+
 1. ✅ **Cleaner promise bridges**: Single rejection path, no redundant listeners
 2. ✅ **Consistent naming**: State names match trigger events
 3. ✅ **Reliable tests**: No timeout leaks causing test pollution
@@ -1604,6 +1716,7 @@ if (delay > 0) {
 5. ✅ **Maintainability**: Architectural issues resolved before adding more complexity
 
 **Remaining Issues:**
+
 - ⚠️ Unhandled promise rejection warnings still appear in timeout tests (2 warnings)
   - Tests pass (rejection IS caught by test's try/catch)
   - Node detects rejection before test catch handler runs
@@ -1614,6 +1727,7 @@ if (delay > 0) {
 ---
 
 ### Phase 4: State Handlers Implementation
+
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
 Implement all 10 event handlers for the state machine:
@@ -1693,7 +1807,7 @@ Implement all 10 event handlers for the state machine:
 10. **error paths (4 tests)**
     - [x] Socket error during connection
     - [x] Write error handling
-    - [x] Relaxed greeting validation ("OK*" pattern)
+    - [x] Relaxed greeting validation ("OK\*" pattern)
     - [x] Invalid session ID
 
 11. **Phase 3.3: Socket Close State Machine Integration (10 tests)**
@@ -1709,6 +1823,7 @@ Implement all 10 event handlers for the state machine:
     - [x] BYE race condition handling
 
 **Implementation Summary:**
+
 - ✅ All 10 event handlers fully implemented in agentProxy.ts
 - ✅ All 3 promise bridges (connectAgent, sendCommands, disconnectAgent) working
 - ✅ Socket close integration with state machine (.once() pattern)
@@ -1723,13 +1838,14 @@ Implement all 10 event handlers for the state machine:
 
 **Test Coverage Analysis:**
 
-*Actual vs Planned:* Phase 4 plan targeted ~15-20 foundational tests. Actual implementation delivered 45 comprehensive tests covering functionality originally planned for Phases 4-8. Test organization follows functional areas (connectAgent, sendCommands, response handling) rather than numbered test categories from original plan.
+_Actual vs Planned:_ Phase 4 plan targeted ~15-20 foundational tests. Actual implementation delivered 45 comprehensive tests covering functionality originally planned for Phases 4-8. Test organization follows functional areas (connectAgent, sendCommands, response handling) rather than numbered test categories from original plan.
 
-*Coverage highlights:*
+_Coverage highlights:_
+
 - Promise bridge patterns tested thoroughly (success, error, cleanup)
 - Socket close tested in multiple states (graceful and error)
 - Response detection covers all Assuan protocol patterns (OK, ERR, INQUIRE, END)
-- Timeout handling verified  
+- Timeout handling verified
 - Nonce authentication flow validated
 - BYE command and disconnect flow tested
 - Error paths and edge cases covered
@@ -1737,6 +1853,7 @@ Implement all 10 event handlers for the state machine:
 **Note:** Phase 5 (Error Consolidation & Cleanup Sequence) was completed concurrently with Phase 4 - the handleErrorOccurred and handleCleanupRequested implementations include the full cleanup sequence originally planned for Phase 5.
 
 **CLEANUP_REQUESTED Event Design (ONLY Path to CLOSING):**
+
 - **ONLY event that transitions to CLOSING state**
 - Two sources emit this event:
   1. **ERROR state handler** - emits CLEANUP_REQUESTED {hadError: true}
@@ -1754,12 +1871,14 @@ Implement all 10 event handlers for the state machine:
 - **Registered with `.once()`** to ensure cleanup runs exactly once, preventing races
 
 **Response Detection Migration:** ✅
+
 - [x] Migrate `waitForResponse()` promise-based logic to event-driven `handleWaitingForAgent` — handleAgentDataChunk accumulates, handleAgentDataReceived completes
 - [x] Keep `isCompleteResponse()` helper, call from AGENT_DATA_CHUNK handler — uses detectResponseCompletion() from shared
 - [x] Add **30s timeout** via `setTimeout()` in `handleSendingToAgent`, clear in `handleWaitingForAgent` — ⚠️ NOT IMPLEMENTED (no response timeout, only connection/greeting timeouts)
 - [x] Emit `AGENT_DATA_RECEIVED` when complete, `ERROR_OCCURRED` on timeout — AGENT_DATA_RECEIVED emitted, timeout not implemented
 
 **Protocol Violation Detection:** ⚠️ PARTIALLY COMPLETE
+
 - [x] In public API `sendCommands(sessionId, commandBlock)`, check session state BEFORE emitting event — agentProxy.ts:766-773
   - [x] If state is not READY, emit `ERROR_OCCURRED` with "Protocol violation: sendCommands called while session in <state>" and reject promise — implemented
   - [x] If state is READY, emit `CLIENT_DATA_RECEIVED` event — implemented
@@ -1769,16 +1888,19 @@ Implement all 10 event handlers for the state machine:
 - ❌ **Missing tests**: State-based protocol violations not explicitly tested (see Phase 7)
 
 **BYE Command Handling:** ✅
+
 - [x] `disconnectAgent()` sends BYE via normal command flow — disconnectAgent test line 202
 - [x] BYE flows through: READY → SENDING_TO_AGENT → WAITING_FOR_AGENT → READY — validated in disconnectAgent tests
 - [x] Agent closes socket after OK response — socket close integration tested
 - [x] Socket 'close' event (hadError=false) → CLEANUP_REQUESTED → CLOSING — Phase 3.3 tests validate this
 
 **AGENT_WRITE_OK Reuse Pattern (matches request-proxy WRITE_OK):** ✅
+
 - [x] In SOCKET_CONNECTED state: AGENT_WRITE_OK from nonce write → wait for AGENT_DATA_RECEIVED (greeting) — handleAgentWriteOk transitions to WAITING_FOR_AGENT
 - [x] In SENDING_TO_AGENT state: AGENT_WRITE_OK from command write (including BYE) → transition to WAITING_FOR_AGENT — same handler, context-aware via state
 
 **Promise Bridge Implementation Example:**
+
 ```typescript
 // Public API method bridges Promise to EventEmitter
 async sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }> {
@@ -1850,6 +1972,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
 ```
 
 **Why `.once()` with manual cleanup?**
+
 - `.once()` automatically removes its own listener when the event fires
 - Each handler manually removes the OTHER unfired listener to prevent memory leaks
 - Simpler than separate `cleanup()` function while still preventing leaks
@@ -1861,17 +1984,20 @@ async disconnectAgent(sessionId: string): Promise<void> {
 ---
 
 ### Phase 5: Error Consolidation & Cleanup Sequence ✅ COMPLETE
+
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
 **Status:** Completed concurrently with Phase 4 implementation.
 
 #### Error Handling ✅
+
 - [x] Implement `handleErrorOccurred` to emit CLEANUP_REQUESTED with {hadError: true}, then transition ERROR → CLOSING
 - [x] Consolidate all error types into single `ERROR_OCCURRED` event
 - [x] Contextual error messages at emission sites (preserve debugging info)
 - [x] Log errors at emission sites, handlers focus on state transitions
 
 #### Cleanup Sequence ✅
+
 - [x] Implement `handleCleanupRequested` with full session cleanup:
   - [x] `socket.removeAllListeners()` in try/catch
   - [x] `socket.destroy()` in try/catch
@@ -1885,10 +2011,12 @@ async disconnectAgent(sessionId: string): Promise<void> {
 - [x] `handleCleanupError` → ERROR (log terminal state, session not added back to Map)
 
 **Socket Close During Cleanup:** ✅
+
 - [x] Socket 'close' event during CLOSING state handled gracefully (expected behavior)
 - [x] `.once()` pattern ensures handler only fires once, preventing duplicate cleanup
 
 **Implementation Notes:**
+
 - Error consolidation follows request-proxy pattern: all errors routed through ERROR_OCCURRED event
 - Cleanup sequence guarantees resource release using first-error-wins pattern
 - `handleCleanupRequested` stores error in session.lastError for promise bridge rejection
@@ -1900,6 +2028,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
 ---
 
 ### Phase 6: Testing - State Machine Fundamentals ✅ COMPLETE
+
 **File:** `agent-proxy/src/test/agentProxy.test.ts`
 
 **Status:** Complete. 22/26 tests covered by existing integration tests, 4 new unit tests added for state machine internals validation (47 tests total).
@@ -1907,11 +2036,13 @@ async disconnectAgent(sessionId: string): Promise<void> {
 **Original Plan (Superseded):**
 
 #### Transition Table Validation (3 tests)
+
 - [NA] Test transition table has entry for all valid (state, event) pairs (compile-time via TypeScript) — TypeScript enforces this at compile time
 - [ ] Test all 8 states have registered handlers — "should have all 10 event handlers registered on construction"
 - [x] Test invalid (state, event) pairs throw descriptive errors — "should throw descriptive error on session"
 
 #### State Transition Verification (7 tests)
+
 - [NA] Test DISCONNECTED → CONNECTING_TO_AGENT (CLIENT_CONNECT_REQUESTED) — covered by connectAgent tests
 - [NA] Test CONNECTING_TO_AGENT → READY (AGENT_SOCKET_CONNECTED → AGENT_WRITE_OK → AGENT_GREETING_RECEIVED) — covered by connectAgent tests
 - [NA] Test READY → SENDING_TO_AGENT (CLIENT_COMMAND_RECEIVED) — covered by sendCommands tests
@@ -1921,6 +2052,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
 - [NA] Test any state → ERROR → CLOSING → DISCONNECTED on errors — covered by timeout and error path tests
 
 #### Event Handling (5 tests)
+
 - [NA] Test socket 'connect' event emits AGENT_SOCKET_CONNECTED — implicitly tested in connectAgent flows
 - [NA] Test socket 'data' event emits AGENT_DATA_CHUNK in WAITING_FOR_AGENT — implicitly tested in response accumulation tests
 - [NA] Test socket 'error' event emits ERROR_OCCURRED — covered by error path tests
@@ -1928,18 +2060,21 @@ async disconnectAgent(sessionId: string): Promise<void> {
 - [NA] Test socket 'close' event with hadError=false routes to CLOSING — covered by Phase 3.3 test "should emit CLEANUP_REQUESTED(false) on graceful agent socket close"
 
 #### Promise Bridge (4 tests)
+
 - [NA] Test sendCommands() returns Promise that resolves with response — covered by all sendCommands tests
 - [NA] Test sendCommands() Promise resolves when AGENT_RESPONSE_COMPLETE event fires — implicitly tested by sendCommands success tests
 - [NA] Test sendCommands() Promise rejects when ERROR_OCCURRED event fires — covered by error path tests (write error, socket error)
 - [x] Test listeners are cleaned up after Promise settles (no memory leak) — "should cleanup Promise bridge listeners after Promise settles"
 
 #### BYE Command / Disconnect Flow (4 tests)
+
 - [NA] Test disconnectAgent() sends BYE command through normal flow — covered by "should send BYE command and cleanup session" test
 - [NA] Test BYE command flows: READY → SENDING_TO_AGENT → WAITING_FOR_AGENT → READY — covered by disconnectAgent test flow
 - [NA] Test socket close after BYE response triggers CLEANUP_REQUESTED — covered by disconnectAgent test (socket.emit('close', false))
 - [NA] Test CLEANUP_REQUESTED transitions READY → CLOSING — covered by Phase 3.3 test "should handle CLEANUP_REQUESTED from READY state"
 
 #### BYE Race Condition Tests (3 tests)
+
 - [NA] Test socket close fires while in WAITING_FOR_AGENT (before response processed) → CLOSING — covered by Phase 3.3 test "should handle CLEANUP_REQUESTED from SENDING_TO_AGENT state"
 - [x] Test socket close fires after transition to READY (slow close) → CLOSING — "should handle socket close after transition to READY (slow close race)"
 - [NA] Test disconnectAgent() Promise resolves on CLEANUP_REQUESTED regardless of state timing — covered by disconnectAgent test flow
@@ -1949,6 +2084,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
 **Completion:** All 26 Phase 6 tests complete (22 via integration tests + 4 new unit tests)
 
 **Phase 6 Status Summary:**
+
 - [x] 22 tests covered by existing 43 integration tests (marked NA)
 - [x] 4 new unit tests implemented and passing:
   1. ✅ Verify all 10 event handlers registered on construction
@@ -1961,6 +2097,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
 ---
 
 ### Phase 7: Testing - Protocol & Timeouts ✅ COMPLETE
+
 **File:** `agent-proxy/src/test/agentProxy.test.ts`
 
 **Status:** Complete with practical coverage. Timeout basics tested in Phase 4. Comprehensive socket close coverage achieved.
@@ -1968,6 +2105,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
 **Test count:** 47 → 51 tests (+4)
 
 #### Timeout Handling (5 tests)
+
 - [x] Test **connection timeout** (5s) emits ERROR_OCCURRED — line 865
 - [x] Test **greeting timeout** (5s) emits ERROR_OCCURRED — line 887
 - [NA] ~~Test **response timeout** (30s)~~ — **NO response timeout** - commands can be interactive (password prompts, INQUIRE). Network failures detected via socket 'close' event. See "Key Design Decisions: Timeout Strategy for Interactive Operations"
@@ -1975,6 +2113,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
 - [NA] Test timeout cleanup in ERROR state — implicit in timeout tests (ERROR → CLEANUP → clear)
 
 #### Protocol Violations (6 tests)
+
 - [NA] Test sendCommands() called in CONNECTING_TO_AGENT state — not testable via integration (transient state)
 - [NA] Test sendCommands() called in SOCKET_CONNECTED state — not testable via integration (transient state)
 - [NA] Test sendCommands() called in SENDING_TO_AGENT state — not testable via integration (synchronous transition)
@@ -1985,12 +2124,14 @@ async disconnectAgent(sessionId: string): Promise<void> {
 - [x] NEW: Test sendCommands() on invalid sessionId (Phase 7) — line 1558-1577
 
 #### Greeting Validation (4 tests)
+
 - [x] Test greeting "OK " accepted (current format) — implicit in nonce authentication tests
 - [x] NEW: Test greeting "OK\n" accepted (minimal format) — line 1582-1607
 - [x] Test greeting "OK Pleased to meet you" accepted (standard GPG) — line 1094 "relaxed greeting"
 - [x] NEW: Test bad nonce → socket close (GPG agent behavior) — line 968-996
 
 #### Socket Close Scenarios (12 tests - Comprehensive Coverage)
+
 **Complete via Phase 3.3 + Phase 7 gap testing:**
 
 - [x] **Test socket error close (hadError=true) in socket-having states:**
@@ -2003,7 +2144,7 @@ async disconnectAgent(sessionId: string): Promise<void> {
   - [x] CONNECTING_TO_AGENT → CLOSING (agent rejects immediately) — line 1416
   - [x] READY → CLOSING (agent-initiated or BYE completed) — line 1200
   - [x] SENDING_TO_AGENT → CLOSING (agent closes during write) — line 1236
-- [x] Test socket close in (hadError=false) in socket-having states:**
+- [x] Test socket close in (hadError=false) in socket-having states:\*\*
   - [x] CONNECTING_TO_AGENT → CLOSING (agent rejects immediately) — line 1416
   - [x] READY → CLOSING (agent-initiated or BYE completed) — line 1200
   - [x] SENDING_TO_AGENT → CLOSING (agent closes during write) — line 1236
@@ -2018,19 +2159,22 @@ async disconnectAgent(sessionId: string): Promise<void> {
 **Phase 7 Implementation Summary:**
 
 **Tests Added:** 4 new tests (+1 bad nonce test not in original plan = 5 total)
+
 1. Protocol violation: invalid sessionId → rejection
 2. Greeting validation: minimal "OK\n" format acceptance
 3. Socket close gap: WAITING_FOR_AGENT error
-4. Socket close gap: CONNECTING_TO_AGENT error  
+4. Socket close gap: CONNECTING_TO_AGENT error
 5. Bad nonce handling: socket close during nonce authentication
 
 **Code Changes:**
+
 - Removed greeting validation from handleAgentDataReceived() (GPG agent closes socket on bad nonce, never sends ERR)
 - Added comment documenting GPG agent check_nonce() behavior (immediately closes socket)
 - Enhanced MockSocket with afterWriteCallback for simulating socket close after write
 - Enhanced MockSocketFactory with setCloseAfterFirstWrite() method
 
 **GPG Protocol Behavior Verified:**
+
 - Bad nonce → `assuan_sock_close()` immediately (no ERR response sent)
 - Socket close experienced as graceful (hadError=false) by Node.js
 - State machine context (SENDING_TO_AGENT during nonce) determines it's an error
@@ -2041,35 +2185,41 @@ async disconnectAgent(sessionId: string): Promise<void> {
 ---
 
 ### Phase 7.1: Remove Response Timeout for Interactive Operations ✅ COMPLETE
+
 **File:** `agent-proxy/src/services/agentProxy.ts`
 
 **Status:** Complete. Response timeout removed to support interactive GPG operations requiring indefinite human response time.
 
 **Rationale:**
 GPG operations frequently require human interaction with no predictable timeout:
+
 1. **Password prompts:** gpg-agent spawns pinentry → waits indefinitely for user to enter password
 2. **INQUIRE responses:** Client may prompt human for data → indefinite wait time
 3. **Smartcard operations:** PIN entry, confirmations, physical device interaction
 4. **Passphrase caching:** First operation prompts (slow), subsequent cached (fast) → unpredictable timing
 
 As passthrough proxies, we cannot distinguish between:
+
 - Network timeout (connection lost) vs Human processing delay (user thinking/typing)
 - Fast cached operation vs slow interactive operation
 
 **Solution:**
+
 - **Keep connection timeout (5s):** Non-interactive network operation
-- **Keep greeting timeout (5s):** Non-interactive nonce authentication  
+- **Keep greeting timeout (5s):** Non-interactive nonce authentication
 - **Remove response timeout:** Support indefinite human interaction
 - **Network failure detection:** Rely on socket 'close' event (TCP layer handles connection loss)
 
 **Implementation Changes:**
 
 **Interface & Configuration:**
+
 - Removed `responseTimeoutMs` from `AgentSessionManagerConfig` interface (line 136)
 - Removed `response: 30000` from `sessionTimeouts` configuration (line 643-647)
 - Updated `createSessionConfig()` to not include responseTimeoutMs (line 665-670)
 
 **Session Manager:**
+
 - Removed `responseTimeout` property from `AgentSessionManager` (line 162)
 - Updated `handleAgentWriteOk()` (line 257-277):
   - Only sets greeting timeout for first response (after nonce)
@@ -2083,22 +2233,26 @@ As passthrough proxies, we cannot distinguish between:
 
 **Network Failure Handling:**
 All network failures detected through existing socket 'close' event mechanism:
+
 - Connection lost → socket closes → 'close' event → CLEANUP_REQUESTED → proper error handling (Phase 3.3)
 - Agent crash → socket closes → same flow
 - TCP keepalive handles hung connections at network layer
 
 **Verification:**
+
 - ✅ All 51 tests still passing (no response timeout tests to update)
 - ✅ TypeScript compilation successful (no type errors)
 - ✅ Connection and greeting timeouts still functional
 - ✅ Network failure detection unchanged (socket close events)
 
 **Documentation Updates:**
+
 - Updated Key Design Decision #1: "Timeout Strategy for Interactive Operations"
 - Updated Phase 7 status: Response timeout marked as [REMOVED] by design
 - Updated Success Criteria: Removed "command timeouts (30s NEW) fire correctly"
 
 **Benefits:**
+
 1. ✅ Supports password prompts via pinentry (can take minutes)
 2. ✅ Supports INQUIRE responses requiring human input (indefinite time)
 3. ✅ Supports smartcard operations (PIN entry, confirmations)
@@ -2107,6 +2261,7 @@ All network failures detected through existing socket 'close' event mechanism:
 6. ✅ No arbitrary timeout killing legitimate operations
 
 **Interactive Operations Testing (2 new tests):**
+
 - [x] Test long response delay for interactive operations (simulates password prompts) — line 1717-1771
   - Uses MockSocket.emitDataDelayed() to simulate delayed response (25 second delay)
   - Verifies command completes successfully despite delay (no timeout)
@@ -2118,6 +2273,7 @@ All network failures detected through existing socket 'close' event mechanism:
   - Verifies all commands succeed regardless of timing
 
 **Shared Test Infrastructure Enhancement:**
+
 - Added `MockSocket.emitDataDelayed(data: Buffer, delayMs: number): Promise<void>` to shared/src/test/helpers.ts
 - Enables simulation of slow agent responses for interactive operations
 - Returns promise that resolves when data is emitted (for test sequencing)
@@ -2128,11 +2284,13 @@ All network failures detected through existing socket 'close' event mechanism:
 ---
 
 ### Phase 8: Testing - Concurrent Sessions & Integration
+
 **File:** `agent-proxy/src/test/agentProxy.test.ts`
 
 **Status:** ✅ COMPLETE (2026-02-18). Added 8 comprehensive tests for concurrent sessions, end-to-end workflows, and error isolation. Total test count: 61 (53 baseline + 8 Phase 8).
 
 #### Concurrent Session Management (7 tests)
+
 - [x] Test multiple concurrent sessions (3+) with independent state machines — line 1876 (2 concurrent sessions)
 - [x] Test session isolation: one session error doesn't affect others — lines 1952, 2231 (socket error & write error isolation)
 - [x] Test rapid connect/disconnect cycles — line 2185 (3 sequential rapid cycles)
@@ -2142,6 +2300,7 @@ All network failures detected through existing socket 'close' event mechanism:
 - [x] Test session cleanup removes only target session from Map — line 263 (session lifecycle test)
 
 #### End-to-End Flows (5 tests)
+
 - [x] Test full happy path: connect → send command → response → BYE → disconnect — line 2296 (full workflow with 4 operations)
 - [x] Test INQUIRE response returned to caller (not handled internally) — lines 429, 2008 (INQUIRE response detection & interactive flow)
 - [x] Test large response (>1MB) with many chunks — line 703 (large response accumulation)
@@ -2149,6 +2308,7 @@ All network failures detected through existing socket 'close' event mechanism:
 - [x] Test multiple commands in sequence on same session — line 2296 (4 sequential commands)
 
 #### Error Recovery (4 tests)
+
 - [x] Test connection failure cleanup — line 2065 (connection failure for one session while keeping others)
 - [x] Test error during command send recovery — line 2231 (write error with session isolation)
 - [x] Test agent crash (socket close with hadError=true) during command — line 1172 (socket error during connection)
@@ -2160,16 +2320,19 @@ All network failures detected through existing socket 'close' event mechanism:
 ---
 
 ### Phase 9: Shared Code Extraction (During Refactor)
+
 **Files:** `shared/src/protocol.ts`, `shared/src/types.ts`, `shared/src/test/helpers.ts`
 
 Extract duplicate code discovered during refactor to shared package:
 
 #### Response Detection ✅ **COMPLETE**
+
 - [x] Extract `detectResponseCompletion(response: string): { complete: boolean; type: 'OK' | 'ERR' | 'INQUIRE' | null }` to shared
 - [x] Unit test with 28 test cases covering all response types and edge cases (OK/ERR/INQUIRE detection, incomplete responses, edge cases)
 - [x] Update agent-proxy to use shared utility (replaced isCompleteResponse with detectResponseCompletion)
 
 #### Command/Inquire Extraction ✅ **COMPLETE**
+
 - [x] Extract `extractCommand(buffer: string): { extracted: string | null; remaining: string }` to shared
 - [x] Extract `extractInquireBlock(buffer: string): { extracted: string | null; remaining: string }` to shared
 - [x] Unit test with 29 test cases (12 command extraction + 17 D-block extraction)
@@ -2178,18 +2341,21 @@ Extract duplicate code discovered during refactor to shared package:
 - [x] Benefits: Pure functions, testable in isolation, consistent with detectResponseCompletion() pattern
 
 #### Socket Cleanup Helper ✅ **COMPLETE**
+
 - [x] Extract `cleanupSocket(socket: net.Socket, config: LogConfig, sessionId: string): Error | null` with try/catch wrappers
 - [x] Pattern: `removeAllListeners()` → `destroy()` → return first error or null (first-error-wins)
 - [x] Unit test cleanup sequence and error handling (7 test cases covering success, errors, logging, first-error-wins)
 - [x] Update both agent-proxy and request-proxy to use shared utility
 
 #### State Machine Base Class ⏭️ **DEFERRED**
+
 - Evaluation: Both extensions use EventEmitter-based state machines with STATE_TRANSITIONS tables
 - Decision: Patterns are similar but context-specific enough that extraction would add indirection without clear benefit
 - Current approach: Document state machine pattern in AGENTS.md, keep implementations separate
 - Defer extraction unless future needs justify it
 
 #### Testing Utilities ✅ **COMPLETE**
+
 - [x] MockSocketFactory already supports TCP sockets with nonce (via host/port options and setCloseAfterFirstWrite)
 - [x] Add `MockSocket.simulateGreeting(message: string)` helper
 - [x] Add `MockSocket.simulateChunkResponse(chunks: string[], delayMs: number)` helper
@@ -2199,12 +2365,14 @@ Extract duplicate code discovered during refactor to shared package:
 - [x] Mocks tested indirectly via extension test suites (dedicated mock tests not required)
 
 **Mock Helper Usage in Tests:**
+
 - `simulateGreeting()`: Replaced 42 manual greeting emissions in agent-proxy tests (reduced from 61 → 19 remaining, where remaining are BYE responses)
 - `simulateChunkResponse()`: Replaced 2 multi-chunk accumulation test patterns with clean async/await syntax
 - `simulateClose()`: Replaced 10 socket close emissions with semantic close helper (graceful vs error)
 - Benefits: Less boilerplate, clearer test intent, consistent timing behavior
 
 #### Request-Proxy Socket Event Review ✅ **COMPLETE**
+
 - [x] Review request-proxy socket event handlers (client socket in `startRequestProxy`)
 - [x] Socket 'close' event already uses `.once()` ✓ (line 591)
 - [x] Socket 'error' event already uses `.once()` ✓ (line 610)
@@ -2214,6 +2382,7 @@ Extract duplicate code discovered during refactor to shared package:
   - request-proxy: clientSocket.once('error'), clientSocket.once('close'), clientSocket.on('readable')
 
 **Achieved:**
+
 - Shared utilities:
   - detectResponseCompletion (28 tests) - agent response validation
   - cleanupSocket (7 tests) - socket cleanup with first-error-wins
@@ -2231,10 +2400,11 @@ Extract duplicate code discovered during refactor to shared package:
 ---
 
 ### Phase 10: Documentation & Migration Cleanup ✅ **COMPLETE**
+
 **Files:** Multiple
 
 - [x] Update `agent-proxy/README.md` with state machine architecture
-- [x] Document socket 'close' hadError routing behavior  
+- [x] Document socket 'close' hadError routing behavior
 - [x] Document BYE command flow (reuses normal command path)
 - [x] Update `AGENTS.md` if integration points changed ✅ Already documented
 - [x] Remove old promise-based code paths from `agentProxy.ts` ✅ None found - all event-driven
@@ -2244,6 +2414,7 @@ Extract duplicate code discovered during refactor to shared package:
 - [ ] Add architecture diagram to docs/ if helpful (optional) ⏭️ Deferred - mermaid diagrams in refactor.md sufficient
 
 **Achieved:**
+
 - Created comprehensive [agent-proxy/README.md](../agent-proxy/README.md) documenting:
   - State machine architecture (8 states, 10 events, transition flow)
   - Socket close handling with hadError routing in ALL states
@@ -2266,6 +2437,7 @@ Extract duplicate code discovered during refactor to shared package:
 ---
 
 ### Phase 10.1: Documentation & Migration Cleanup (request-proxy) ✅ **COMPLETE**
+
 **Files:** Multiple
 
 - [x] Create/update `request-proxy/README.md` with state machine architecture
@@ -2280,6 +2452,7 @@ Extract duplicate code discovered during refactor to shared package:
 - [ ] Add architecture diagram to docs/ if helpful (optional) ⏭️ Deferred - mermaid diagrams in refactor.md sufficient
 
 **Achieved:**
+
 - Created comprehensive [request-proxy/README.md](../request-proxy/README.md) documenting:
   - State machine architecture (12 states, 14 events, transition flow)
   - Socket close handling with hadError routing in ALL states
@@ -2303,6 +2476,7 @@ Extract duplicate code discovered during refactor to shared package:
 **Deliverable:** ✅ Request-proxy documentation current, architecture documented, no dead code
 
 ---
+
 - Mock implementations: MockCommandExecutor, MockServerFactory, MockFileSystem
 - 124 tests covering state transitions, buffering, INQUIRE flows, error handling, cleanup
 
@@ -2318,11 +2492,12 @@ Extract duplicate code discovered during refactor to shared package:
 
 #### Deliverable
 
-* ✅ Request-proxy documentation current, architecture documented, no dead code
+- ✅ Request-proxy documentation current, architecture documented, no dead code
 
 ---
 
 ### Phase 11: Final Validation
+
 **Files:** Root directory
 
 - [ ] Run `npm run compile` — all packages must compile without error
@@ -2341,6 +2516,7 @@ Extract duplicate code discovered during refactor to shared package:
 ## Success Criteria
 
 ### Functional ✅
+
 - [ ] All 102+ agent-proxy tests pass (30 safety net + 26 state machine + 21 protocol + 16 integration + 9 original)
 - [ ] All 109 request-proxy tests still pass (shared code changes compatible)
 - [ ] Manual testing: GPG signing workflow successful
@@ -2352,6 +2528,7 @@ Extract duplicate code discovered during refactor to shared package:
 - [ ] BYE command testing: Graceful disconnect flows through normal command path
 
 ### Code Quality ✅
+
 - [ ] All 8 states explicitly defined with handlers
 - [ ] All 10 events explicitly defined
 - [ ] Transition table covers all valid (state, event) pairs
@@ -2362,6 +2539,7 @@ Extract duplicate code discovered during refactor to shared package:
 - [ ] Socket 'close' hadError routing tested and validated with real gpg-agent
 
 ### Maintainability ✅
+
 - [ ] Architecture matches request-proxy (team familiar with pattern)
 - [ ] State transitions logged clearly (`setState()` with logging)
 - [ ] Testing approach consistent across extensions
@@ -2371,6 +2549,7 @@ Extract duplicate code discovered during refactor to shared package:
 - [ ] BYE handled as normal command (no special-case logic)
 
 ### Performance ✅
+
 - [ ] No regressions in connection time (<5s for typical connection)
 - [ ] No timeout overhead for command responses (supports indefinite interactive operations)
 - [ ] Memory usage stable under load (long-running sessions, many sessions)
@@ -2381,11 +2560,13 @@ Extract duplicate code discovered during refactor to shared package:
 ## Key Design Decisions
 
 ### 1. Timeout Strategy for Interactive Operations ✅
+
 **Decision:** NO response timeout for commands. Only timeout non-interactive operations (connection, greeting).
 
 **Rationale:**
+
 - **Connection timeout (5s):** ✅ Network operation, should complete quickly
-- **Greeting timeout (5s):** ✅ Nonce authentication, non-interactive  
+- **Greeting timeout (5s):** ✅ Nonce authentication, non-interactive
 - **Response timeout:** ❌ REMOVED - Commands can be interactive (password prompts, confirmations)
 - GPG operations often require human interaction:
   1. **Signing:** gpg-agent spawns pinentry → waits for password → indefinite time
@@ -2396,49 +2577,58 @@ Extract duplicate code discovered during refactor to shared package:
 - Socket 'close' event provides network failure detection without arbitrary timeouts
 
 **Implementation:**
+
 - Connection timeout: `setTimeout()` in `handleClientConnectRequested`, clear in `handleAgentSocketConnected` or ERROR
 - Greeting timeout: `setTimeout()` in `handleAgentWriteOk` (first response only), clear when greeting received
 - **NO timeout** in `handleAgentWriteOk` for non-greeting responses (interactive operations)
 - Rely on socket 'close' event for network failure detection
 
 **Why This Works:**
+
 - Human operations: No timeout, can take hours if needed
 - Network failures: Socket closes → 'close' event → CLEANUP_REQUESTED → proper error handling
 - Process crashes: Socket closes → same flow as network failure
 - Hung connections: Rare (TCP keepalive handles this), acceptable tradeoff for supporting interactive operations
 
 ### 2. Concurrent Commands ✅
+
 **Decision:** Disallow and treat as protocol error  
 **Rationale:** The VS Code command `_gpg-agent-proxy.sendCommands` is only valid when session is in READY state. Any call while in other states (CONNECTING_TO_AGENT, SENDING_TO_AGENT, WAITING_FOR_AGENT, ERROR, CLOSING) is a protocol violation. This is similar to request-proxy's protocol violation detection for client data in invalid states.  
 **Implementation:**
+
 - Public API `sendCommands(sessionId, commandBlock)` validates session is in READY state BEFORE emitting CLIENT_COMMAND_RECEIVED
 - If not READY, emit ERROR_OCCURRED and reject the promise
 - Additional race condition check in `handleReady` if state changed between validation and handler execution
 
 ### 3. BYE Command Handling ✅
+
 **Decision:** BYE is a normal command, flows through SENDING_TO_AGENT → WAITING_FOR_AGENT → READY, then socket 'close' triggers disconnect  
 **Rationale:**
+
 - Eliminates need for separate DISCONNECTING state
 - Reuses all existing command machinery (write, response detection, timeout, error handling)
 - GPG agent closes socket after BYE OK response per protocol spec
 - Socket 'close' event with hadError parameter handles transition to CLOSING
-**Implementation:**
+  **Implementation:**
 - `disconnectAgent()` sends BYE via normal command flow
 - Socket 'close' event listener checks `hadError` parameter
 - `hadError === false` (graceful) → emit CLEANUP_REQUESTED → CLOSING
 - `hadError === true` (error) → emit ERROR_OCCURRED → ERROR → CLOSING
 
 ### 4. Socket 'close' Event Routing ✅
+
 **Decision:** Use Node.js socket 'close' event `hadError` boolean parameter to route to ERROR or CLOSING. **CRITICAL: Socket 'close' can fire in ANY state where socket exists.**
 
 **Rationale:**
+
 - Node.js socket 'close' event fires whenever the underlying socket closes, regardless of state machine state
 - Socket can close at ANY TIME: connection failure, agent crash, network error, graceful disconnect, timeout
 - Must handle defensively in ALL states where socket exists: CONNECTING_TO_AGENT, READY, SENDING_TO_AGENT, WAITING_FOR_AGENT, ERROR, CLOSING
 - hadError parameter indicates transmission error vs clean close
 - Unified handler for all disconnect scenarios eliminates need for separate DISCONNECTING state
 
-**State-by-State Handling:****
+**State-by-State Handling:\*\***
+
 - CONNECTING_TO_AGENT: Connection refused, nonce rejected, greeting timeout → can close here
 - READY: Agent crash, network failure, agent-initiated close → can close here
 - SENDING_TO_AGENT: Write failure, agent crashes during write → can close here
@@ -2448,6 +2638,7 @@ Extract duplicate code discovered during refactor to shared package:
 - DISCONNECTED: No socket → ignore (shouldn't happen but safe)
 
 **Testing Requirements (Socket Close in ALL States):**
+
 - Test socket close (hadError=true) in: CONNECTING_TO_AGENT, READY, SENDING_TO_AGENT, WAITING_FOR_AGENT
 - Test socket close (hadError=false) in: CONNECTING_TO_AGENT, READY, SENDING_TO_AGENT, WAITING_FOR_AGENT
 - Test socket close ignored in: ERROR, CLOSING, DISCONNECTED
@@ -2458,12 +2649,14 @@ Extract duplicate code discovered during refactor to shared package:
 - Verify graceful close (hadError=false) from any state → CLOSING (not ERROR)
 
 ### 5. Shared Code Extraction Timing ✅
+
 **Decision:** Extract during refactor (Phases 4, 5, 6-8)  
 **Rationale:** Avoid duplicate work, ensure consistency, validate shared utilities immediately.  
 **Implementation:** Phase 4 (response detection), Phase 5 (socket cleanup), Phase 6-8 (testing utilities)
 
 ### 6. Greeting Validation ✅
-**Decision:** Relax to accept any "OK*" response  
+
+**Decision:** Relax to accept any "OK\*" response  
 **Rationale:** More forgiving, matches actual GPG agent behavior, reduces false rejections.  
 **Implementation:** Change validation from `startsWith('OK ')` to `startsWith('OK')` in Phase 4
 
@@ -2474,50 +2667,56 @@ Extract duplicate code discovered during refactor to shared package:
 ### Alignment with Request-Proxy
 
 **States:** 7 vs 12 (simpler flow, no INQUIRE buffering, no bidirectional sending)
+
 - Both use: DISCONNECTED, READY, ERROR, CLOSING, FATAL
 - Agent-proxy: CONNECTING_TO_AGENT, SENDING_TO_AGENT, WAITING_FOR_AGENT
 - Request-proxy: CLIENT_CONNECTED, AGENT_CONNECTING, BUFFERING_COMMAND, BUFFERING_INQUIRE, SENDING_TO_AGENT, WAITING_FOR_AGENT, SENDING_TO_CLIENT
 
 **Events:** 11 vs 14 (similar count, different contexts)
-- Shared patterns: CLIENT_* prefix, AGENT_* prefix, CLEANUP_* prefix, ERROR_OCCURRED consolidation
+
+- Shared patterns: CLIENT*\* prefix, AGENT*\_ prefix, CLEANUP\_\_ prefix, ERROR_OCCURRED consolidation
 - Request-proxy: CLIENT_DATA_START, CLIENT_DATA_PARTIAL, CLIENT_DATA_COMPLETE, RESPONSE_OK_OR_ERR, RESPONSE_INQUIRE
 
 **Event naming alignment:**
+
 - CLIENT_CONNECT_REQUESTED vs CLIENT_SOCKET_CONNECTED (minor difference)
 - AGENT_WRITE_OK vs WRITE_OK (agent-proxy more explicit)
 - CLEANUP_REQUESTED vs CLEANUP_START (minor difference)
 - AGENT_GREETING_RECEIVED vs AGENT_GREETING_OK (minor difference)
 
-| Purpose | Agent-Proxy | Request-Proxy | Pattern |
-|---------|-------------|---------------|---------|
-| Connection initiated | CLIENT_CONNECT_REQUESTED | CLIENT_SOCKET_CONNECTED | CLIENT_* |
-| Write succeeded | AGENT_WRITE_OK | WRITE_OK | *_WRITE_OK |
-| Greeting received | AGENT_GREETING_RECEIVED | AGENT_GREETING_OK | AGENT_*_RECEIVED/*_OK |
-| Request command | CLIENT_COMMAND_RECEIVED | (CLIENT_DATA_START) | CLIENT_* |
-| Data chunk received | AGENT_DATA_CHUNK | (CLIENT_DATA_PARTIAL) | *_DATA_CHUNK |
-| Response complete | AGENT_RESPONSE_COMPLETE | AGENT_RESPONSE_COMPLETE | *_COMPLETE |
-| Error occurred | ERROR_OCCURRED | ERROR_OCCURRED | ERROR_* |
-| Begin cleanup | CLEANUP_REQUESTED | CLEANUP_START | CLEANUP_* |
-| Cleanup done | CLEANUP_COMPLETE | CLEANUP_COMPLETE | CLEANUP_* |
-| Cleanup failed | CLEANUP_ERROR | CLEANUP_ERROR | CLEANUP_* |
+| Purpose              | Agent-Proxy              | Request-Proxy           | Pattern                  |
+| -------------------- | ------------------------ | ----------------------- | ------------------------ |
+| Connection initiated | CLIENT_CONNECT_REQUESTED | CLIENT_SOCKET_CONNECTED | CLIENT\_\*               |
+| Write succeeded      | AGENT_WRITE_OK           | WRITE_OK                | \*\_WRITE_OK             |
+| Greeting received    | AGENT_GREETING_RECEIVED  | AGENT_GREETING_OK       | AGENT\__\_RECEIVED/_\_OK |
+| Request command      | CLIENT_COMMAND_RECEIVED  | (CLIENT_DATA_START)     | CLIENT\_\*               |
+| Data chunk received  | AGENT_DATA_CHUNK         | (CLIENT_DATA_PARTIAL)   | \*\_DATA_CHUNK           |
+| Response complete    | AGENT_RESPONSE_COMPLETE  | AGENT_RESPONSE_COMPLETE | \*\_COMPLETE             |
+| Error occurred       | ERROR_OCCURRED           | ERROR_OCCURRED          | ERROR\_\*                |
+| Begin cleanup        | CLEANUP_REQUESTED        | CLEANUP_START           | CLEANUP\_\*              |
+| Cleanup done         | CLEANUP_COMPLETE         | CLEANUP_COMPLETE        | CLEANUP\_\*              |
+| Cleanup failed       | CLEANUP_ERROR            | CLEANUP_ERROR           | CLEANUP\_\*              |
 
 ### EventEmitter Pattern
+
 - **Deterministic**: Events processed in order, no race conditions
 - **Testable**: Observable outcomes via event listeners, no internal state access needed
 - **Familiar**: Matches NodeJS Socket API pattern
 - **Maintainable**: Clear event flow, explicit state transitions
-- **Consistent naming**: CLIENT_* for request-proxy requests, AGENT_* for gpg-agent responses, CLEANUP_* for lifecycle (matches request-proxy)
+- **Consistent naming**: CLIENT*\* for request-proxy requests, AGENT*\_ for gpg-agent responses, CLEANUP\_\_ for lifecycle (matches request-proxy)
 - **Event reuse**: AGENT_WRITE_OK used in multiple states (CONNECTING_TO_AGENT/SENDING_TO_AGENT) like request-proxy uses WRITE_OK
 - **Promise bridge**: Public API remains async/Promise-based, internally uses EventEmitter for state machine
 
 ### Promise ↔ EventEmitter Bridge Architecture
 
 **Why Both?**
+
 - VS Code commands are async and return Promises (request-proxy awaits results)
 - Internal state machine benefits from EventEmitter (explicit states, testable events)
 - Bridge pattern allows synchronous command handlers to await asynchronous event processing
 
 **Bridge Pattern:**
+
 ```
 Request-Proxy → vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands', ...)
               ↓
@@ -2539,18 +2738,21 @@ Request-Proxy → vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands'
 ```
 
 **Memory Management:**
+
 - Use `.once()` for event listeners that fire at most once
 - Each handler manually removes the OTHER unfired listener to prevent leaks
 - Pattern: fired listener auto-removes via `.once()`, handler removes unfired listener
 - Prevents memory leaks in long-running sessions with many commands
 
 ### Binary Safety
+
 - Latin1 encoding throughout
 - Preserves all byte values 0-255
 - `sanitizeForLog()` for logging (first token + byte count)
 - Never log raw binary data
 
 ### Timeout Strategy
+
 - **Connection timeout**: 5s (existing)
 - **Greeting timeout**: 5s (existing)
 - **Response timeout**: 30s (NEW) — prevents indefinite hangs
@@ -2558,6 +2760,7 @@ Request-Proxy → vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands'
 - **Timeouts stored** in session manager for cleanup
 
 ### Session Lifecycle
+
 ```
 1. connectAgent() → emit CLIENT_CONNECT_REQUESTED → DISCONNECTED → CONNECTING_TO_AGENT
 2. Socket connects (AGENT_SOCKET_CONNECTED), nonce written (AGENT_WRITE_OK), greeting received (AGENT_GREETING_RECEIVED) → READY
@@ -2568,6 +2771,7 @@ Request-Proxy → vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands'
 ```
 
 ### Cleanup Guarantees
+
 - **Individual try/catch** for each operation (socket.removeAllListeners, socket.destroy, etc.)
 - **First-error-wins**: Capture first error, continue remaining cleanup
 - **Always executes**: No early returns in cleanup handler
@@ -2577,6 +2781,7 @@ Request-Proxy → vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands'
 ### Protocol Violation Detection
 
 **Validation Layers:**
+
 1. **Public API** (first line of defense): `sendCommands()` checks session.state === 'READY' before emitting event
 2. **State Handler** (defensive check): `handleReady()` validates state hasn't changed (race condition protection)
 
@@ -2594,17 +2799,20 @@ Request-Proxy → vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands'
 ```
 
 **Why This Matters:**
+
 - Request-proxy calls `_gpg-agent-proxy.sendCommands` after forwarding client command to agent
 - If agent-proxy is still processing a previous command (SENDING_TO_AGENT/WAITING_FOR_AGENT), this is a protocol error
 - Enforcing READY-state-only prevents response interleaving and data corruption
 - Matches request-proxy's pattern: client data only valid in specific states (READY, BUFFERING_COMMAND, BUFFERING_INQUIRE)
 
 **Race Condition Handling:**
+
 - State could change between public API validation and event handler execution (unlikely but possible)
 - `handleReady` includes additional validation: if CLIENT_COMMAND_RECEIVED received but state is no longer READY, emit ERROR_OCCURRED
 - This defensive check ensures correctness even under concurrent access patterns
 
 **Validation Summary:**
+
 - Valid states for sendCommands(): **READY only**
 - Invalid states: DISCONNECTED, CONNECTING_TO_AGENT, SENDING_TO_AGENT, WAITING_FOR_AGENT, ERROR, CLOSING
 - BYE command follows same rules (must be in READY state)
@@ -2613,21 +2821,21 @@ Request-Proxy → vscode.commands.executeCommand('_gpg-agent-proxy.sendCommands'
 
 ## Progress Tracking
 
-| Phase | Description | Tests Added | Total Tests | Status |
-|-------|-------------|-------------|-------------|--------|
-| Current | Baseline | - | 9 | ✅ Complete |
-| Phase 1 | Types & Infrastructure | 0 | 9 | ✅ Complete |
-| Phase 2 | Safety Net Tests | +30 | 39 | ✅ Complete |
-| Phase 3 | EventEmitter Architecture | 0 | 39 | ✅ Complete |
-| Phase 4 | State Handlers | 0 | 39 | ✅ Complete |
-| Phase 5 | Error & Cleanup | 0 | 39 | ✅ Complete |
-| Phase 6 | State Machine Tests | +14 | 53 | ✅ Complete |
-| Phase 7 | Protocol & Timeout Tests | 0 | 53 | ✅ Complete |
-| Phase 7.1 | Interactive Operations | 0 | 53 | ✅ Complete |
-| Phase 8 | Concurrent Sessions & Integration | +10 | 63 | ✅ Complete (2026-02-18) |
-| Phase 9 | Shared Code Extraction | 0 | 63 | ⬜ Deferred |
-| Phase 10 | Documentation | 0 | 63 | ⬜ Not Started |
-| Phase 11 | Final Validation | 0 | 63 | ⬜ Not Started |
-| **Target** | **Phases 1-8 Complete** | **+54** | **63** | **✅ Core Complete** |
+| Phase      | Description                       | Tests Added | Total Tests | Status                   |
+| ---------- | --------------------------------- | ----------- | ----------- | ------------------------ |
+| Current    | Baseline                          | -           | 9           | ✅ Complete              |
+| Phase 1    | Types & Infrastructure            | 0           | 9           | ✅ Complete              |
+| Phase 2    | Safety Net Tests                  | +30         | 39          | ✅ Complete              |
+| Phase 3    | EventEmitter Architecture         | 0           | 39          | ✅ Complete              |
+| Phase 4    | State Handlers                    | 0           | 39          | ✅ Complete              |
+| Phase 5    | Error & Cleanup                   | 0           | 39          | ✅ Complete              |
+| Phase 6    | State Machine Tests               | +14         | 53          | ✅ Complete              |
+| Phase 7    | Protocol & Timeout Tests          | 0           | 53          | ✅ Complete              |
+| Phase 7.1  | Interactive Operations            | 0           | 53          | ✅ Complete              |
+| Phase 8    | Concurrent Sessions & Integration | +10         | 63          | ✅ Complete (2026-02-18) |
+| Phase 9    | Shared Code Extraction            | 0           | 63          | ⬜ Deferred              |
+| Phase 10   | Documentation                     | 0           | 63          | ⬜ Not Started           |
+| Phase 11   | Final Validation                  | 0           | 63          | ⬜ Not Started           |
+| **Target** | **Phases 1-8 Complete**           | **+54**     | **63**      | **✅ Core Complete**     |
 
 **Timeline Estimate:** 2-3 weeks for complete refactor (following request-proxy precedent)

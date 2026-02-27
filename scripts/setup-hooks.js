@@ -14,13 +14,13 @@ const repoRoot = join(__dirname, '..');
 const gitDir = join(repoRoot, '.git');
 
 if (existsSync(gitDir)) {
-    try {
-        execSync('prek install', { stdio: 'inherit', cwd: repoRoot });
-    } catch (e) {
-        // Non-fatal: hooks are a convenience, not a hard requirement for npm install.
-        console.warn('Warning: prek install failed:', e.message);
-        console.warn('Run `prek install` manually to set up git hooks.');
-    }
+  try {
+    execSync('prek install', { stdio: 'inherit', cwd: repoRoot });
+  } catch (e) {
+    // Non-fatal: hooks are a convenience, not a hard requirement for npm install.
+    console.warn('Warning: prek install failed:', e.message);
+    console.warn('Run `prek install` manually to set up git hooks.');
+  }
 } else {
-    console.log('Skipping prek install: not running inside a git repository.');
+  console.log('Skipping prek install: not running inside a git repository.');
 }

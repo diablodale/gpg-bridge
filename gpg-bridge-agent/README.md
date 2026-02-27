@@ -17,17 +17,17 @@ install the pack rather than this extension directly.
 
 ## Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `gpgBridgeAgent.gpgBinDir` | *(auto-detect)* | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\Program Files\GnuPG\bin`). Leave empty to auto-detect. |
-| `gpgBridgeAgent.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Agent** output channel |
+| Setting                       | Default         | Description                                                                                                                       |
+| ----------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `gpgBridgeAgent.gpgBinDir`    | _(auto-detect)_ | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\Program Files\GnuPG\bin`). Leave empty to auto-detect. |
+| `gpgBridgeAgent.debugLogging` | `false`         | Enable verbose logging in the **GPG Bridge Agent** output channel                                                                 |
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `GPG Bridge Agent: Start` | Start the agent proxy |
-| `GPG Bridge Agent: Stop` | Stop the agent proxy |
+| Command                         | Description                                        |
+| ------------------------------- | -------------------------------------------------- |
+| `GPG Bridge Agent: Start`       | Start the agent proxy                              |
+| `GPG Bridge Agent: Stop`        | Stop the agent proxy                               |
 | `GPG Bridge Agent: Show Status` | Show current proxy status and active session count |
 
 The proxy starts automatically on VS Code launch. Manual commands are available via

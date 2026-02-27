@@ -86,6 +86,7 @@ stateDiagram-v2
 ## Implementation Plan
 
 ### Phase 1: Type Definitions & Infrastructure ✅ COMPLETE
+
 **File:** `request-proxy/src/services/requestProxy.ts`
 
 - [x] Define `SessionState` type with all 12 states
@@ -96,6 +97,7 @@ stateDiagram-v2
 - [x] Create `dispatch(event: StateEvent) → Promise<void>` function as central router (implemented as EventEmitter pattern in Phase 5)
 
 #### Dependency Injection Design ✅ COMPLETE
+
 - [x] `RequestProxyConfig` — public API, no `commandExecutor` (static config only)
 - [x] `RequestProxyDeps` — optional dependencies for injection (includes `commandExecutor`, `serverFactory`, `fileSystem`, `getSocketPath`)
 - [x] `RequestProxyConfigWithExecutor` — internal type used by handlers (guarantees `commandExecutor` is present)
@@ -103,6 +105,7 @@ stateDiagram-v2
 - [x] All handlers use internal type with executor (non-optional, type-safe)
 
 ### Phase 2: State Handlers ✅ COMPLETE
+
 **File:** `request-proxy/src/services/requestProxy.ts`  
 Implement handler for each state:
 
@@ -123,6 +126,7 @@ Implement handler for each state:
 - [x] `dispatchStateEvent()` — central router for state machine dispatch
 
 ### Phase 3: Socket Event Integration ✅ COMPLETE
+
 **File:** `request-proxy/src/services/requestProxy.ts`  
 Wire socket callbacks to emit events:
 
@@ -138,6 +142,7 @@ Wire socket callbacks to emit events:
 - [x] Write operations use existing `writeToClient()` function with error callback (emits WRITE_OK/ERROR_OCCURRED events)
 
 ### Phase 4: Buffer Management ✅ COMPLETE
+
 **File:** `request-proxy/src/services/requestProxy.ts`
 
 Create a shared buffer utility to avoid duplication:
@@ -152,10 +157,11 @@ Create a shared buffer utility to avoid duplication:
 Then in the state handlers:
 
 - [x] `handleReady`: call `extractFromBuffer(buffer, '\n')`, processes extracted command via processCompleteData helper
-- [x] `handleBufferingCommand`: call `extractFromBuffer(buffer, '\n')`, processes extracted command via processCompleteData helper  
+- [x] `handleBufferingCommand`: call `extractFromBuffer(buffer, '\n')`, processes extracted command via processCompleteData helper
 - [x] `handleBufferingInquire`: call `extractFromBuffer(buffer, 'END\n')`, processes extracted D-block via processCompleteData helper
 
 **Phase 4 Completion Notes:**
+
 - Created `extractFromBuffer(buffer, delimiter)` helper function that cleanly extracts data and returns remaining buffer
 - Refactored all three buffering handlers (handleReady, handleBufferingCommand, handleBufferingInquire) to use this helper
 - Proper buffer management: extracted data is processed, remaining data is preserved for pipelined commands
@@ -163,6 +169,7 @@ Then in the state handlers:
 - All 88 tests passing (39 shared + 9 agent + 40 request)
 
 ### Phase 5: EventEmitter Architecture ✅ COMPLETE
+
 **File:** `request-proxy/src/services/requestProxy.ts`
 
 **Implemented NodeJS EventEmitter pattern for event-driven state machine:**
@@ -198,6 +205,7 @@ Then in the state handlers:
 - [x] Remove old state machine dispatch code
 
 **Phase 5 Completion Notes:**
+
 - EventEmitter pattern mimics NodeJS Socket API for consistency
 - Event count reduced from 23→14 (39% reduction through consolidation)
 - Code reduction: ~150 lines removed from various consolidations
@@ -207,6 +215,7 @@ Then in the state handlers:
 - Removed `processCompleteData()` bypass - proper async pipeline via events
 
 ### Phase 6: Error Handling & Cleanup (EventEmitter Architecture) ✅ COMPLETE
+
 **File:** `request-proxy/src/services/requestProxy.ts`
 
 **Status:** ✅ Complete - All error handlers and cleanup implemented
@@ -226,6 +235,7 @@ Then in the state handlers:
 - [x] Validate that cleanup errors transition to `FATAL` (not loop back to CLOSING)
 
 **Phase 6 Completion Notes:**
+
 - Simplified cleanup with `socket.removeAllListeners()` instead of manual listener tracking
 - Individual try/catch blocks for each cleanup operation ensures guaranteed execution
 - First-error-wins pattern: `cleanupError = cleanupError ?? err` captures root cause
@@ -236,15 +246,18 @@ Then in the state handlers:
 - All 109 request-proxy tests passing (86 original + 18 Phase 7d + 5 cleanup failure tests)
 
 ### Phase 7a: Tests for Current Implementation (Phases 1-3) ✅ COMPLETE
+
 **File:** `request-proxy/src/test/requestProxy.test.ts`
 
 #### State Machine Fundamentals
+
 - [x] Transition table validation: use TypeScript type system to ensure all (state, event) pairs are handled
 - [x] Add tests for each valid state transition in the table (focus on implemented transitions)
 - [x] Add tests for implemented error transitions (AGENT_CONNECT_ERROR → ERROR)
 - [x] Ensure all 12 states have handlers (compile-time validation via stateHandlers map)
 
 #### State-Aware Socket Event Emission (Critical - would catch Phase 3 bug)
+
 - [x] Test socket handler in READY state with empty buffer emits `CLIENT_DATA_START`
 - [x] Test socket handler in BUFFERING_COMMAND state with data in buffer emits `CLIENT_DATA_PARTIAL`
 - [x] Test socket handler in BUFFERING_INQUIRE state with empty buffer emits `INQUIRE_DATA_START`
@@ -253,6 +266,7 @@ Then in the state handlers:
 - [x] Test transition from READY with first data chunk
 
 #### State Transition Verification
+
 - [x] Add helper/mechanism to capture and inspect `session.state` field during tests
 - [x] Test complete connection sequence: DISCONNECTED → CLIENT_CONNECTED → AGENT_CONNECTING → READY
 - [x] Test that CLIENT_SOCKET_CONNECTED event transitions from DISCONNECTED to CLIENT_CONNECTED
@@ -263,6 +277,7 @@ Then in the state handlers:
 - [x] Test that greeting is written to client socket upon AGENT_GREETING_OK
 
 #### Invalid Event Tests (Current States)
+
 - [x] Test sending invalid event to DISCONNECTED state (e.g., AGENT_GREETING_OK)
 - [x] Test sending invalid event to CLIENT_CONNECTED state (e.g., CLIENT_DATA_START)
 - [x] Test sending invalid event to AGENT_CONNECTING state (e.g., COMMAND_COMPLETE)
@@ -271,12 +286,14 @@ Then in the state handlers:
 - [x] Verify error transitions state to ERROR via dispatchStateEvent error handler
 
 #### Basic Session Lifecycle
+
 - [x] Test socket close event calls disconnectAgent
 - [x] Test socket error event is logged
 - [x] Test server creation and listening
 - [x] Test server stop and cleanup
 
 **Phase 7a Completion Notes:**
+
 - Added 22 new tests (40 total for request-proxy) covering:
   - State machine fundamentals (3 tests): Transition table validation, state handler coverage
   - State-aware socket event emission (6 tests): Verifies correct event types based on current state
@@ -295,11 +312,13 @@ Then in the state handlers:
 - All tests passing: 40 request-proxy tests (19 original + 21 Phase 7a)
 
 ### Phase 7b: Tests for Buffer Management (Phase 4) ✅ **COMPLETE**
+
 **File:** `request-proxy/src/test/requestProxy.test.ts`
 
 **Status:** 22 of 28 buffer management tests implemented and passing. 6 tests deferred to Phase 7c (require async pipeline).
 
 #### Buffering Scenarios - Commands
+
 - [x] Test partial data arrival in BUFFERING_COMMAND (multiple chunks before newline)
 - [x] Test command split across 2 chunks
 - [x] Test command split across 3+ chunks
@@ -310,6 +329,7 @@ Then in the state handlers:
 - [x] Test very long command (multiple KB)
 
 #### Buffering Scenarios - INQUIRE D-blocks
+
 - [x] Test partial D-block arrival in BUFFERING_INQUIRE (multiple chunks before END\n)
 - [x] Test D-block split across 2 chunks
 - [x] Test D-block split across 3+ chunks
@@ -320,10 +340,12 @@ Then in the state handlers:
 - [x] Test very large D-block (multiple MB)
 
 #### Buffer Management & Clearing
+
 - [x] Test buffer retains remaining data after extracting first command/D-block
 - [x] Test buffer state when pipelined data arrives (remains in buffer for next processing)
 
 **Phase 7b Completion Notes:**
+
 - Implemented 22 buffer extraction and management tests covering all edge cases
 - Successfully handles: multi-chunk splits, boundary splits, empty commands, large data (KB/MB)
 - Pipelined command processing working correctly via iterative loop in handleReady/handleBufferingCommand
@@ -331,11 +353,13 @@ Then in the state handlers:
 - 6 event emission/buffer clearing tests deferred to Phase 7c (require Phase 5 async pipeline implementation)
 
 ### Phase 7c: Tests for Response Processing & INQUIRE (Phase 5)
+
 **File:** `request-proxy/src/test/requestProxy.test.ts`
 
 **Status:** ✅ Complete - All 28 tests implemented and passing
 
 #### Event Emission from Buffering States (EventEmitter Architecture)
+
 - [x] Test BUFFERING_COMMAND emits CLIENT_DATA_COMPLETE when newline detected
 - [x] Test BUFFERING_COMMAND stays in state when newline not detected
 - [x] Test BUFFERING_INQUIRE emits CLIENT_DATA_COMPLETE when END\n detected
@@ -344,12 +368,14 @@ Then in the state handlers:
 - [x] Test CLIENT_DATA_COMPLETE event from BUFFERING_INQUIRE includes extracted D-block string
 
 #### Buffer Clearing During State Transitions (EventEmitter Architecture)
+
 - [x] Test buffer is cleared after command is extracted and CLIENT_DATA_COMPLETE emitted
 - [x] Test buffer is cleared after transitioning from BUFFERING_COMMAND to SENDING_TO_AGENT
 - [x] Test buffer is cleared after D-block is extracted and CLIENT_DATA_COMPLETE emitted
 - [x] Test buffer is cleared after INQUIRE response and before entering BUFFERING_INQUIRE
 
 #### INQUIRE Response Detection
+
 - [x] Test INQUIRE response detection (starts with "INQUIRE")
 - [x] Test INQUIRE response detection (contains "\nINQUIRE")
 - [x] Test case sensitivity of INQUIRE detection
@@ -359,6 +385,7 @@ Then in the state handlers:
 - [x] Test RESPONSE_OK_OR_ERR event emission
 
 #### INQUIRE Flow (Comprehensive End-to-End)
+
 - [x] Test full INQUIRE cycle:
   1. Send command → READY → BUFFERING_COMMAND → SENDING_TO_AGENT
   2. Command sent to agent, receive INQUIRE response
@@ -375,30 +402,35 @@ Then in the state handlers:
 - [x] Test INQUIRE followed by regular command
 
 #### Response Processing
+
 - [x] Test multi-line agent response accumulation
 - [x] Test complete response detection ending with OK
-- [x] Test complete response detection ending with ERR  
+- [x] Test complete response detection ending with ERR
 - [x] Test complete response detection ending with INQUIRE
 - [x] Test response with binary data is preserved
 
 **Phase 7c Completion Notes:**
+
 - Implemented 28 comprehensive tests for INQUIRE flow and response processing
 - All tests use behavioral testing (observable outcomes) rather than internal state access
 - Tests verify: event emission, buffer management, INQUIRE detection, nested INQUIRE, binary data preservation
 - All 64 request-proxy tests passing (40 original + 22 Phase 7a + 24 Phase 7b + 28 Phase 7c)
 
 ### Phase 7d: Tests for Error Handling & Cleanup (Phase 6) ✅ COMPLETE
+
 **File:** `request-proxy/src/test/requestProxy.test.ts`
 
 **Status:** ✅ Complete - All 23 tests implemented and passing
 
 #### Error Handling (4 tests)
+
 - [x] Test transition to ERROR state on agent connection failure
 - [x] Test transition to ERROR state on sendCommands error
 - [x] Test error logging when ERROR_OCCURRED event fires
 - [x] Test protocol violations (client data in wrong state)
 
 #### Cleanup Sequence (6 tests)
+
 - [x] Test ERROR → CLOSING → DISCONNECTED sequence
 - [x] Test disconnectAgent called during cleanup if session exists
 - [x] Test socket destroyed on cleanup complete
@@ -407,18 +439,21 @@ Then in the state handlers:
 - [x] Test session buffer cleared during cleanup
 
 #### Pipelined Data & Edge Cases (4 tests)
+
 - [x] Test client data handling during state transitions
 - [x] Test client data rejected in ERROR state
 - [x] Test rapid connect/disconnect cycles
 - [x] Test socket errors during various states
 
 #### Session Lifecycle & Cleanup (4 tests)
+
 - [x] Test full session teardown after client disconnects
 - [x] Test multiple sequential sessions reusing same server
 - [x] Test new connections accepted in DISCONNECTED state after cleanup
 - [x] Test no session data leakage into new sessions
 
 #### Cleanup Failure Scenarios (5 tests)
+
 - [x] Test socket.removeAllListeners() throwing during cleanup
 - [x] Test socket.destroy() throwing during cleanup
 - [x] Test both socket operations throwing (first-error-wins validation)
@@ -426,6 +461,7 @@ Then in the state handlers:
 - [x] Test multiple failures across all operations (extreme scenario)
 
 **Phase 7d Completion Notes:**
+
 - Implemented 23 comprehensive error handling and cleanup tests
 - Extended MockSocket with error injection: setRemoveAllListenersError(), setDestroyError()
 - Tests verify: error transitions, cleanup sequence, listener removal, buffer clearing, session isolation
@@ -434,6 +470,7 @@ Then in the state handlers:
 - All 109 request-proxy tests passing (86 original + 23 Phase 7d)
 
 ### Phase 8: Cleanup
+
 **Files:** `shared/src/protocol.ts`, `shared/src/test/protocol.test.ts`
 
 - [x] Check if `extractNextCommand()` is used elsewhere (agent-proxy, other extensions) — **Not used**
@@ -445,6 +482,7 @@ Then in the state handlers:
 **Summary:** Removed `extractNextCommand()`, `determineNextState()`, and `CommandExtraction` interface from `shared/src/protocol.ts`. Removed 17 test cases from `shared/src/test/protocol.test.ts` that tested these deprecated functions. All remaining tests pass (22 in shared, 140 total). These functions were replaced by internal methods (`checkCommandComplete()`, `checkInquireComplete()`) during Phase 4's EventEmitter refactor.
 
 ### Phase 9: Compile & Test
+
 **Files:** Root directory
 
 - [x] Run `npm run compile` — all packages must compile without error

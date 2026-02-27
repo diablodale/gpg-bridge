@@ -19,11 +19,11 @@ This is an extension **pack** that installs two cooperating components:
 
 ## Requirements
 
-| Requirement | Detail |
-|-------------|--------|
-| **Windows host** | [Gpg4win](https://www.gpg4win.org/) v4.4.1+ installed and working |
-| **VS Code** | v1.91.0+ with remote support (WSL, Dev Containers, or Remote-SSH extension) |
-| **Remote** | WSL, Dev Container, or SSH — any Linux environment VS Code can connect to |
+| Requirement      | Detail                                                                      |
+| ---------------- | --------------------------------------------------------------------------- |
+| **Windows host** | [Gpg4win](https://www.gpg4win.org/) v4.4.1+ installed and working           |
+| **VS Code**      | v1.91.0+ with remote support (WSL, Dev Containers, or Remote-SSH extension) |
+| **Remote**       | WSL, Dev Container, or SSH — any Linux environment VS Code can connect to   |
 
 ## Installation
 
@@ -77,11 +77,11 @@ to preserve raw binary content (signatures, encrypted blocks, nonces) unchanged.
 
 ## Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `gpgBridgeAgent.gpgBinDir` | *(auto-detect)* | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\Program Files\GnuPG\bin`). Leave empty to auto-detect. |
-| `gpgBridgeAgent.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Agent** output channel |
-| `gpgBridgeRequest.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Request** output channel |
+| Setting                         | Default         | Description                                                                                                                       |
+| ------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `gpgBridgeAgent.gpgBinDir`      | _(auto-detect)_ | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\Program Files\GnuPG\bin`). Leave empty to auto-detect. |
+| `gpgBridgeAgent.debugLogging`   | `false`         | Enable verbose logging in the **GPG Bridge Agent** output channel                                                                 |
+| `gpgBridgeRequest.debugLogging` | `false`         | Enable verbose logging in the **GPG Bridge Request** output channel                                                               |
 
 ```json
 {
@@ -96,13 +96,13 @@ to preserve raw binary content (signatures, encrypted blocks, nonces) unchanged.
 Both proxies start automatically. These commands are available via the Command Palette
 (`Ctrl+Shift+P`) if you need to manually control them:
 
-| Command | Runs on | Description |
-|---------|---------|-------------|
-| `GPG Bridge Agent: Start` | Windows host | Start the agent proxy |
-| `GPG Bridge Agent: Stop` | Windows host | Stop the agent proxy |
+| Command                         | Runs on      | Description                                    |
+| ------------------------------- | ------------ | ---------------------------------------------- |
+| `GPG Bridge Agent: Start`       | Windows host | Start the agent proxy                          |
+| `GPG Bridge Agent: Stop`        | Windows host | Stop the agent proxy                           |
 | `GPG Bridge Agent: Show Status` | Windows host | Display current proxy status and session count |
-| `GPG Bridge Request: Start` | Remote | Start the request proxy |
-| `GPG Bridge Request: Stop` | Remote | Stop the request proxy |
+| `GPG Bridge Request: Start`     | Remote       | Start the request proxy                        |
+| `GPG Bridge Request: Stop`      | Remote       | Stop the request proxy                         |
 
 ## Typical Workflow
 
@@ -134,6 +134,7 @@ UI context; the request must run in the remote workspace context. The pack bundl
 so users install one item.
 
 For detailed protocol and state machine documentation see:
+
 - [gpg-bridge-agent/README.md](gpg-bridge-agent/README.md)
 - [gpg-bridge-request/README.md](gpg-bridge-request/README.md)
 - [docs/gpg-agent-protocol.md](docs/gpg-agent-protocol.md)
