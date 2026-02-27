@@ -11,7 +11,6 @@ default_install_hook_types:
 # default_stages doesn't work because repo hooks often define their stages which overrides default_stages
 
 repos:
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -35,7 +34,16 @@ repos:
 
   - repo: local
     hooks:
-      # reject tabs in text files
+      # Prettier format
+      - id: prettier
+        name: Prettier
+        stages: [pre-commit]
+        language: system
+        entry: node node_modules/prettier/bin/prettier.cjs --write
+        types_or: [ts, javascript, json, yaml, markdown]
+        priority: 80
+
+      # reject tabs in text files — runs after Prettier (90) so Prettier reformats first
       - id: reject-tabs
         name: Reject Tabs
         stages: [pre-commit]
@@ -66,8 +74,9 @@ repos:
             process.exit(1);
           }
           '
+        priority: 90
 
-        # pre-commit: TypeScript compile — must pass before lint runs
+      # pre-commit: TypeScript compile — must pass before lint runs
       - id: compile
         name: TypeScript compile
         stages: [pre-commit]
@@ -77,7 +86,7 @@ repos:
         always_run: true
         priority: 100
 
-        # pre-commit: ESLint — runs after compile
+      # pre-commit: ESLint — runs after compile
       - id: lint
         name: ESLint
         stages: [pre-commit]
@@ -87,7 +96,7 @@ repos:
         always_run: true
         priority: 110
 
-        # commit-msg: Conventional Commits format via commitlint
+      # commit-msg: Conventional Commits format via commitlint
       - id: conventional-commits
         name: Conventional Commits
         stages: [commit-msg]
@@ -95,7 +104,7 @@ repos:
         entry: node node_modules/@commitlint/cli/cli.js --edit
         pass_filenames: true
 
-        # pre-push: unit tests only
+      # pre-push: unit tests only
       - id: tests
         name: Unit tests
         stages: [pre-push]

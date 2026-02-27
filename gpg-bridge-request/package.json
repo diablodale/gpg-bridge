@@ -88,7 +88,11 @@
           "oneOf": [
             {
               "type": "string",
-              "enum": ["", "all", "pairs"],
+              "enum": [
+                "",
+                "all",
+                "pairs"
+              ],
               "enumDescriptions": [
                 "Disabled — no auto-sync on activation",
                 "Export all public keys",
@@ -97,7 +101,9 @@
             },
             {
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "markdownDescription": "List of key identifiers to export (fingerprints, emails, UIDs)"
             }
           ]
@@ -139,6 +145,7 @@
     "chai": "^4.5.0",
     "esbuild": "^0.27.3",
     "eslint": "^10.0.0",
+    "eslint-config-prettier": "^10",
     "glob": "^13.0.1",
     "mocha": "^10.5.0",
     "typescript": "^5.9.3",
