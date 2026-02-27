@@ -24,7 +24,7 @@ flowchart TD
     %% Client owns conversation
     SEND_COMMAND[Client sends
     one-line command]
-    
+
     SEND_COMMAND -- anything except BYE\n --> WAIT_RESPONSE
 
     %% Any of these reponses moves conversation back to client

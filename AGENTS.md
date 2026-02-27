@@ -41,7 +41,7 @@ Project is two cooperating VS Code extensions written in TypeScript
   - Explicit state tracking and transition validation `transition()`
   - String events, not objects
   - String literal unions for type safety
-- Sessions are stored in `Map` keyed by UUID 
+- Sessions are stored in `Map` keyed by UUID
 - Cleanup via socket 'close' handlers; spontaneous socket closures through `CLEANUP_REQUESTED` event
 - Error handling: Async functions rethrow after local cleanup if caller expects rejection.
 - Use `latin1` encoding for socket I/O (preserves raw bytes)

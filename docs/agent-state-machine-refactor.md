@@ -113,7 +113,7 @@ stateDiagram-v2
     WAITING_FOR_AGENT --> WAITING_FOR_AGENT: AGENT_DATA_CHUNK
     WAITING_FOR_AGENT --> READY: AGENT_DATA_RECEIVED
     WAITING_FOR_AGENT --> ERROR: ERROR_OCCURRED
-    
+
     SOCKET_CLOSE_HANDLER --> CLOSING: CLEANUP_REQUESTED(hadError=hadError)
     ERROR --> CLOSING: CLEANUP_REQUESTED(hadError=true)
     CLOSING --> DISCONNECTED: CLEANUP_COMPLETE
@@ -139,7 +139,7 @@ stateDiagram-v2
         Connection timeout (5s)
         active during this state.
     end note
-    
+
     note right of SOCKET_CONNECTED
         Socket connected,
         connection timeout cleared.
@@ -170,7 +170,7 @@ stateDiagram-v2
         - socket errors
         - protocol violations
     end note
-    
+
     note right of CLOSING
         Registered with .once()
         to prevent races.
@@ -211,7 +211,7 @@ socket.once('close', (hadError: boolean) => {
   // CRITICAL: This event fires exactly once (registered with .once())
   // Can fire in ANY state where socket exists
   // State machine handlers will process events appropriately
-  
+
   if (hadError) {
     // Transmission error during socket I/O
     session.emit('ERROR_OCCURRED', { error: new Error('Socket closed with transmission error') });
@@ -387,7 +387,7 @@ The public API methods bridge between Promises (external) and EventEmitter (inte
 ---
 
 ### Phase 2: Safety Net - Test Current Implementation ✅ COMPLETE
-**Files:** 
+**Files:**
 - `agent-proxy/src/test/agentProxy.test.ts`
 - `shared/src/test/helpers.ts` (mock infrastructure enhancements)
 
@@ -551,7 +551,7 @@ socket.once('close', (hadError) => { /* routing logic */ });
 ---
 
 ### Phase 3.1: Type System Alignment (agent-proxy ↔ request-proxy)
-**Files:** 
+**Files:**
 - `agent-proxy/src/services/agentProxy.ts` (remove StateHandler dead code)
 - `request-proxy/src/services/requestProxy.ts` (remove dead code + strengthen typing)
 
@@ -899,7 +899,7 @@ private setState(newState: SessionState): void {
 
 **Phase 3.2b: Update event handlers to use transition()**
 
-- [x] `handleClientSocketConnected()` 
+- [x] `handleClientSocketConnected()`
   - Replace: `this.setState('CLIENT_CONNECTED')`
   - With: `this.transition('CLIENT_SOCKET_CONNECTED')`
 
@@ -1044,7 +1044,7 @@ If tests fail:
 ---
 
 ### Phase 3.2f: Inline setState() Simplification
-**Files:** 
+**Files:**
 - `agent-proxy/src/services/agentProxy.ts`
 - `request-proxy/src/services/requestProxy.ts`
 
@@ -1297,7 +1297,7 @@ Replace direct cleanup with event emission:
   // - local destroy without arg: socket.destroy() -> 'close'
   clientSocket.on('close', (hadError: boolean) => {
       log(sessionManager.config, `[${sessionManager.sessionId ?? 'pending'}] Client socket closed (hadError=${hadError})`);
-      
+
       // Emit event to state machine for validated cleanup
       if (hadError) {
           // Transmission error during socket I/O
@@ -1396,7 +1396,7 @@ During Phase 4 implementation (event handlers and promise bridges), several arch
 
 - [x] Rename state in SessionState type
   ```typescript
-  type SessionState = 
+  type SessionState =
       | 'DISCONNECTED'
       | 'CONNECTING_TO_AGENT'
       | 'SOCKET_CONNECTED'  // Was: AGENT_CONNECTED
@@ -1471,18 +1471,18 @@ Promise bridges should **only listen to CLEANUP_REQUESTED**, not both events.
           session.removeListener('CLEANUP_REQUESTED', handleCleanup);
           resolve(payload);
       };
-      
+
       const handleCleanup = () => {
           session.removeListener('AGENT_DATA_RECEIVED', handleResponse);
           // Retrieve stored error from session (set by handleErrorOccurred)
           const error = session.lastError ?? new Error('Session closed during operation');
           reject(error);
       };
-      
+
       // Only listen to CLEANUP_REQUESTED - covers both error and graceful cleanup
       session.once('CLEANUP_REQUESTED', handleCleanup);
       session.once('AGENT_DATA_RECEIVED', handleResponse);
-      
+
       session.emit('CLIENT_CONNECT_REQUESTED', { port, nonce });
   });
   ```
@@ -1521,11 +1521,11 @@ if (delay > 0) {
   ```typescript
   export class MockSocket extends EventEmitter {
       private connectTimeout: NodeJS.Timeout | null = null;
-      
+
       setConnectTimeout(timeout: NodeJS.Timeout): void {
           this.connectTimeout = timeout;
       }
-      
+
       destroy(error?: Error): void {
           // Cancel pending connect timeout to prevent test pollution
           if (this.connectTimeout) {
@@ -1784,13 +1784,13 @@ Implement all 10 event handlers for the state machine:
 async sendCommands(sessionId: string, commandBlock: string): Promise<{ response: string }> {
   const session = this.sessions.get(sessionId);
   if (!session) throw new Error('Invalid session');
-  
+
   // Protocol violation check (state validation)
   if (session.getState() !== 'READY') {
     session.emit('ERROR_OCCURRED', { message: `Protocol violation: sendCommands while in ${session.getState()}` });
     throw new Error(`Protocol violation: sendCommands while session in ${session.getState()}`);
   }
-  
+
   // Bridge: Create promise that event handlers will resolve/reject
   return new Promise((resolve, reject) => {
     // Note: handleComplete/handleError cross-reference each other.
@@ -1799,17 +1799,17 @@ async sendCommands(sessionId: string, commandBlock: string): Promise<{ response:
       session.removeListener('ERROR_OCCURRED', handleError); // Clean up unfired listener
       resolve(data);
     };
-    
+
     const handleError = (data: { error: Error }) => {
       session.removeListener('AGENT_DATA_RECEIVED', handleComplete); // Clean up unfired listener
       reject(data.error);
     };
-    
+
     // Register listeners with .once() for automatic cleanup when fired
     // Each handler also removes the other unfired listener to prevent leaks
     session.once('AGENT_DATA_RECEIVED', handleComplete);
     session.once('ERROR_OCCURRED', handleError);
-    
+
     // Emit event to start state machine processing
     session.emit('CLIENT_DATA_RECEIVED', { commandBlock });
   });
@@ -1819,13 +1819,13 @@ async sendCommands(sessionId: string, commandBlock: string): Promise<{ response:
 async disconnectAgent(sessionId: string): Promise<void> {
   const session = this.sessions.get(sessionId);
   if (!session) throw new Error('Invalid session');
-  
+
   return new Promise((resolve, reject) => {
     const handleDisconnected = () => {
       session.removeListener('ERROR_OCCURRED', handleError); // Clean up unfired listener
       resolve();
     };
-    
+
     const handleError = (data: { error: Error }) => {
       // Clean up CLEANUP_REQUESTED listener - we reject on ERROR_OCCURRED immediately
       // Note: ERROR state will ALSO emit CLEANUP_REQUESTED {hadError: true}, but
@@ -1833,12 +1833,12 @@ async disconnectAgent(sessionId: string): Promise<void> {
       session.removeListener('CLEANUP_REQUESTED', handleDisconnected);
       reject(data.error);
     };
-    
+
     // Listen for CLEANUP_REQUESTED (socket close), NOT AGENT_RESPONSE_COMPLETE
     // This ensures we wait for socket close (which may happen before or after OK response is processed)
     session.once('CLEANUP_REQUESTED', handleDisconnected);
     session.once('ERROR_OCCURRED', handleError);
-    
+
     // Send BYE command through normal flow
     session.emit('CLIENT_COMMAND_RECEIVED', { commandBlock: 'BYE\n' });
     // Flow: READY → SENDING_TO_AGENT → WAITING_FOR_AGENT
@@ -2213,8 +2213,8 @@ Extract duplicate code discovered during refactor to shared package:
   - agent-proxy: socket.once('connect'), socket.once('error'), socket.once('close'), socket.on('data')
   - request-proxy: clientSocket.once('error'), clientSocket.once('close'), clientSocket.on('readable')
 
-**Achieved:** 
-- Shared utilities: 
+**Achieved:**
+- Shared utilities:
   - detectResponseCompletion (28 tests) - agent response validation
   - cleanupSocket (7 tests) - socket cleanup with first-error-wins
   - extractCommand (12 tests) - newline-delimited command extraction
@@ -2410,14 +2410,14 @@ Extract duplicate code discovered during refactor to shared package:
 ### 2. Concurrent Commands ✅
 **Decision:** Disallow and treat as protocol error  
 **Rationale:** The VS Code command `_gpg-agent-proxy.sendCommands` is only valid when session is in READY state. Any call while in other states (CONNECTING_TO_AGENT, SENDING_TO_AGENT, WAITING_FOR_AGENT, ERROR, CLOSING) is a protocol violation. This is similar to request-proxy's protocol violation detection for client data in invalid states.  
-**Implementation:** 
+**Implementation:**
 - Public API `sendCommands(sessionId, commandBlock)` validates session is in READY state BEFORE emitting CLIENT_COMMAND_RECEIVED
 - If not READY, emit ERROR_OCCURRED and reject the promise
 - Additional race condition check in `handleReady` if state changed between validation and handler execution
 
 ### 3. BYE Command Handling ✅
 **Decision:** BYE is a normal command, flows through SENDING_TO_AGENT → WAITING_FOR_AGENT → READY, then socket 'close' triggers disconnect  
-**Rationale:** 
+**Rationale:**
 - Eliminates need for separate DISCONNECTING state
 - Reuses all existing command machinery (write, response detection, timeout, error handling)
 - GPG agent closes socket after BYE OK response per protocol spec
