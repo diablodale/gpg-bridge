@@ -27,9 +27,6 @@
     "vscode": "^1.108.1",
     "node": ">=22.21.1"
   },
-  "os": [
-    "win32"
-  ],
   "extensionKind": [
     "ui"
   ],

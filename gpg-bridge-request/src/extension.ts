@@ -39,12 +39,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // Register commands
         context.subscriptions.push(
-            vscode.commands.registerCommand('gpg-bridge-request.start', async () => {
-                await startRequestProxy();
-            }),
-            vscode.commands.registerCommand('gpg-bridge-request.stop', async () => {
-                await stopRequestProxy();
-            }),
+            vscode.commands.registerCommand('gpg-bridge-request.start', startRequestProxy),
+            vscode.commands.registerCommand('gpg-bridge-request.stop', stopRequestProxy),
             vscode.commands.registerCommand('gpg-bridge-request.syncPublicKeys', async (filter?: KeyFilter) => {
                 await publicKeySyncService?.syncPublicKeys(filter);
             }),

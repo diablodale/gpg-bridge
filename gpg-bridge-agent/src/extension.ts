@@ -56,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
             // Run sanity probe in background (fire-and-forget)
             // It will update status bar to Ready after successful probe
-            probeGpgAgent();
+            void probeGpgAgent();
         } catch (error: unknown) {
             outputChannel.appendLine(`Start failed: ${extractErrorMessage(error)}`);
         }
