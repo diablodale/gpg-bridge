@@ -19,11 +19,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile, spawn } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import which from 'which';
-
-const execFileRaw = promisify(execFile);
 
 // ============================================================================
 // Well-known Gpg4win installation paths probed on Windows when PATH misses
@@ -62,7 +59,7 @@ export interface GpgCliOpts {
 }
 
 /**
- * Shape of errors thrown by `promisify(execFile)` on non-zero exit.
+ * Shape of errors thrown by `defaultExecFileAsync` on non-zero exit.
  * `code` is `null` when the process was killed by a signal rather than exiting normally.
  */
 export interface ExecFileError {
@@ -83,6 +80,19 @@ export interface GpgExecResult {
 // ============================================================================
 
 /** Low-level subprocess execution function signature (injectable for tests). */
+/**
+ * Function type for executing a binary with arguments.
+ *
+ * @param binary - Path to the binary to execute
+ * @param args - Read-only array of command-line arguments to pass to the binary
+ * @param opts - Execution options object
+ * @param opts.encoding - Character encoding for stdout/stderr streams
+ * @param opts.env - Environment variables for the spawned process
+ * @param opts.timeout - Optional timeout in milliseconds for process execution
+ * @param opts.maxBuffer - Optional maximum buffer size in bytes for stdout/stderr
+ * @param opts.shell - Is `false` (literal type) to prevent shell execution and ensure direct binary invocation for security
+ * @returns Promise resolving to an object containing stdout and stderr as strings
+ */
 export type ExecFileFn = (
   binary: string,
   args: readonly string[],
@@ -120,43 +130,113 @@ export interface GpgCliDeps {
 // Default production implementations
 // ============================================================================
 
-/** Wraps `promisify(execFile)` with the simpler `ExecFileFn` signature. */
-const defaultExecFileAsync: ExecFileFn = (binary, args, opts) =>
-  // execFile's promisify overload returns { stdout: string; stderr: string }
-  // when encoding is set; cast is safe here.
-  execFileRaw(binary, [...args], opts) as unknown as Promise<{ stdout: string; stderr: string }>;
+/** Options for the internal `spawnProcess` helper. */
+interface SpawnProcessOpts {
+  env: NodeJS.ProcessEnv;
+  encoding: BufferEncoding;
+  /** If provided, piped to stdin; if absent, stdin is closed (ignored). */
+  stdin?: Buffer;
+  timeout?: number;
+  maxBuffer?: number;
+}
 
-/** Spawns a process and pipes `input` to stdin; collects stdout/stderr as latin1. */
-function defaultSpawnForStdin(
+/**
+ * Core subprocess helper. Always resolves with `GpgExecResult`; never rejects on non-zero exit.
+ * Rejects only for spawn errors (ENOENT, EACCES) or exceeded limits (timeout, maxBuffer).
+ */
+function spawnProcess(
   binary: string,
   args: readonly string[],
-  input: Buffer,
-  env: NodeJS.ProcessEnv,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  opts: SpawnProcessOpts,
+): Promise<GpgExecResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, [...args], {
-      env,
+      env: opts.env,
       shell: false, // never allow shell interpolation — binary is invoked directly
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+
+    if (opts.stdin) {
+      // stdin is non-null: stdio[0] is 'pipe' when opts.stdin is provided
+      child.stdin!.write(opts.stdin);
+      child.stdin!.end();
+    }
+
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
+    const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
+    let totalStdout = 0;
+    let totalStderr = 0;
+    let spawnError: Error | null = null;
+    let earlyError: Error | null = null;
 
-    child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+    const timer = opts.timeout
+      ? setTimeout(() => {
+          earlyError = new Error(`Process timed out after ${opts.timeout}ms`);
+          child.kill();
+        }, opts.timeout)
+      : null;
 
-    child.stdin.write(input);
-    child.stdin.end();
-
-    child.on('close', (code) => {
-      const stdout = Buffer.concat(stdoutChunks).toString('latin1');
-      const stderr = Buffer.concat(stderrChunks).toString('latin1');
-      resolve({ stdout, stderr, exitCode: code ?? 0 });
+    // stdout/stderr are non-null: stdio[1] and stdio[2] are always 'pipe'
+    child.stdout!.on('data', (chunk: Buffer) => {
+      totalStdout += chunk.length;
+      if (totalStdout > maxBuffer) {
+        earlyError = new Error(`stdout maxBuffer (${maxBuffer} bytes) exceeded`);
+        child.kill();
+        return;
+      }
+      stdoutChunks.push(chunk);
     });
 
-    child.on('error', reject);
+    child.stderr!.on('data', (chunk: Buffer) => {
+      totalStderr += chunk.length;
+      if (totalStderr > maxBuffer) {
+        earlyError = new Error(`stderr maxBuffer (${maxBuffer} bytes) exceeded`);
+        child.kill();
+        return;
+      }
+      stderrChunks.push(chunk);
+    });
+
+    // 'close' is the single settlement point — it always fires last, even after 'error'
+    child.once('close', (code) => {
+      if (timer) clearTimeout(timer);
+      const stdout = Buffer.concat(stdoutChunks).toString(opts.encoding);
+      const stderr = Buffer.concat(stderrChunks).toString(opts.encoding);
+      if (spawnError) {
+        reject(spawnError);
+      } else if (earlyError) {
+        reject(earlyError);
+      } else {
+        resolve({ exitCode: code ?? 0, stdout, stderr });
+      }
+    });
+
+    // Must attach to prevent unhandled 'error' crash; 'close' fires after and handles settlement
+    child.once('error', (err) => {
+      spawnError = err;
+    });
   });
 }
+
+/**
+ * `ExecFileFn` production default.
+ * Wraps `spawnProcess` and rejects with an `ExecFileError` on non-zero exit.
+ */
+const defaultExecFileAsync: ExecFileFn = (binary, args, opts) =>
+  spawnProcess(binary, args, opts).then(({ exitCode, stdout, stderr }) => {
+    if (exitCode !== 0) {
+      throw { code: exitCode, stdout, stderr } satisfies ExecFileError;
+    }
+    return { stdout, stderr };
+  });
+
+/**
+ * `SpawnForStdinFn` production default.
+ * Wraps `spawnProcess`; always resolves so callers can inspect the exit code.
+ */
+const defaultSpawnForStdin: SpawnForStdinFn = (binary, args, input, env) =>
+  spawnProcess(binary, args, { env, encoding: 'latin1', stdin: input });
 
 // ============================================================================
 // --with-colons field decoder (pure function — unit testable without subprocess)
@@ -449,7 +529,7 @@ export class GpgCli {
     try {
       return await this.run(binary, args);
     } catch (err: unknown) {
-      // promisify(execFile) rejects with ExecFileError on non-zero exit;
+      // defaultExecFileAsync rejects with ExecFileError on non-zero exit;
       // code is null only when the process was killed by a signal.
       // Extract those values and return normally.
       const e = err as ExecFileError;
