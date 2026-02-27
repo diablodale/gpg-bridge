@@ -43,7 +43,7 @@ repos:
         types_or: [ts, javascript, json, yaml, markdown]
         priority: 80
 
-      # reject tabs in text files — runs after Prettier (90) so Prettier reformats first
+      # reject tabs in most text files
       - id: reject-tabs
         name: Reject Tabs
         stages: [pre-commit]

@@ -21,6 +21,16 @@ if (existsSync(gitDir)) {
     console.warn('Warning: prek install failed:', e.message);
     console.warn('Run `prek install` manually to set up git hooks.');
   }
+
+  try {
+    execSync('git config blame.ignoreRevsFile .git-blame-ignore-revs', {
+      stdio: 'inherit',
+      cwd: repoRoot,
+    });
+    console.log('Configured this git repo to ignore .git-blame-ignore-revs in blames');
+  } catch (e) {
+    console.warn('Warning: failed to set blame.ignoreRevsFile:', e.message);
+  }
 } else {
   console.log('Skipping prek install: not running inside a git repository.');
 }
