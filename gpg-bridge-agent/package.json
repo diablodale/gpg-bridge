@@ -119,10 +119,10 @@
     "@vscode/vsce": "^3.7.1",
     "chai": "^4.5.0",
     "esbuild": "^0.27.3",
-    "eslint": "^9.39.2",
+    "eslint": "^10.0.0",
     "glob": "^13.0.1",
     "mocha": "^10.5.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.52.0"
+    "typescript-eslint": "^8.56.1"
   }
 }

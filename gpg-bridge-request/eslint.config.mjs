@@ -11,9 +11,7 @@ export default [
         },
         languageOptions: {
             parser: tseslint.parser,
-            parserOptions: {
-                sourceType: 'module'
-            }
+            sourceType: 'module'
         },
         rules: {
             '@typescript-eslint/no-explicit-any': 'warn'

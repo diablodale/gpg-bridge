@@ -53,9 +53,9 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.x",
     "chai": "^4.5.0",
-    "eslint": "^9.39.2",
+    "eslint": "^10.0.0",
     "mocha": "^10.5.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.52.0"
+    "typescript-eslint": "^8.56.1"
   }
 }
