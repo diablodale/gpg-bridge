@@ -94,7 +94,7 @@ async function startPublicKeySync(): Promise<void> {
   try {
     // Create a log callback that respects the debugLogging setting
     const config = vscode.workspace.getConfiguration('gpgBridgeRequest');
-    const debugLogging = config.get<boolean>('debugLogging') || true; // TODO remove forced debug logging
+    const debugLogging = config.get<boolean>('debugLogging') ?? false;
     const logCallback = debugLogging
       ? (message: string) => outputChannel.appendLine(message)
       : undefined;
@@ -123,7 +123,7 @@ async function startRequestProxy(): Promise<void> {
 
     // Create a log callback that respects the debugLogging setting
     const config = vscode.workspace.getConfiguration('gpgBridgeRequest');
-    const debugLogging = config.get<boolean>('debugLogging') || true; // TODO remove forced debug logging
+    const debugLogging = config.get<boolean>('debugLogging') ?? false;
     const logCallback = debugLogging
       ? (message: string) => outputChannel.appendLine(message)
       : undefined;

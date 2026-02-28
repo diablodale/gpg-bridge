@@ -198,7 +198,7 @@ async function startAgentProxy(): Promise<void> {
 
     const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
     const gpgBinDir = config.get<string>('gpgBinDir') ?? '';
-    const debugLogging = config.get<boolean>('debugLogging') || true; // TODO remove forced debug logging
+    const debugLogging = config.get<boolean>('debugLogging') ?? false;
     const logCallback = debugLogging
       ? (message: string) => outputChannel.appendLine(message)
       : undefined;

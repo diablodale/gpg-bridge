@@ -106,7 +106,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
 > Goal: ensure no sensitive data reaches logs in any configuration.
 
-- [ ] **P1-1** Fix forced debug logging in all three extensions
+- [x] **P1-1** ✅ Fix forced debug logging in all three extensions
       There are **three** locations with the same `|| true` bug — fix all three:
 
   | File                                  | Line | Function               |
@@ -542,7 +542,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 ### Priority order for implementing agent
 
 ```
-P1-1  (fix forced debug logging)              ← 5-minute fix, high surface reduction
+P1-1  (fix forced debug logging)              ✅ done — no tests needed (config read)
 P1-3  (audit D-block log exposure)            ← read-only audit
 P2-1  (client buffer limit)                   ✅ done — tests added to requestProxy.test.ts
 P2-5  (agent response buffer limit)           ← same pattern, add tests
@@ -584,6 +584,7 @@ No items currently require a human product decision before implementation.
 
 | Work item                        | Test requirement                                                                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1-1 (forced debug logging)      | ✅ Done — no automated test needed; change is a one-line config read fix. All 386 existing tests continue to pass.                                                         |
 | P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                 |
 | P2-2 (port range)                | Unit: ports 0, -1, 65535, 65536, NaN — all should throw                                                                                                                    |
 | P2-3 (GNUPGHOME)                 | Unit: relative path, path with NUL, path with newline — all should throw in constructor                                                                                    |
