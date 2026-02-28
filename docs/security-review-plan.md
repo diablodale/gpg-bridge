@@ -231,7 +231,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
 > Goal: ensure only intended callers reach privileged operations.
 
-- [ ] **P3-1** Document VS Code command trust model
+- [x] **P3-1** ✅ Document VS Code command trust model
       **File:** `gpg-bridge-agent/src/extension.ts`
       The four `_gpg-bridge-agent.*` commands are in the global VS Code command registry and
       callable by any co-installed extension. This is an accepted architectural constraint.
@@ -527,7 +527,7 @@ P1-2  (audit sanitizeForLog discipline)       ✅ done — no gaps found across 
 P2-1  (client buffer limit)                   ✅ done — tests added to requestProxy.test.ts
 P2-5  (agent response buffer limit)           ✅ done — tests added to agentProxy.test.ts
 P2-2  (port range validation)                 ✅ done — 5 tests added to protocol.test.ts
-P3-1  (VS Code command trust comment)         ← comments only
+P3-1  (VS Code command trust comment)         ✅ done — comment added above registerCommand calls
 P5-1  (nonce clearance audit)                 ← read-only + comment
 P3-4  (UUID format guard)                     ← defensive one-liner
 P2-3  (GNUPGHOME validation)                  ← constructor guard
@@ -574,7 +574,7 @@ No items currently require a human product decision before implementation.
 | P4-2 (idle timeout)              | Integration: open socket, send nothing for 31 s, assert session cleaned up                                                                                                 |
 | P2-4 (pipelined data)            | Unit: send two commands back-to-back without waiting for first response; assert both are processed correctly and session ends cleanly                                      |
 | P2-5 (agent buffer limit)        | ✅ Done — 3 tests in `describe('P2-5: Agent response buffer size limit')`; replaced unrealistic `>1MB` response test with 500 KB pass case                                 |
-| P3-1 (command trust comments)    | No automated test — reviewer verifies comments are present and accurate                                                                                                    |
+| P3-1 (command trust comments)    | ✅ Done — comment block added above `registerCommand` calls in `gpg-bridge-agent/src/extension.ts`; no automated test                                                      |
 | P3-3 (dir + socket permissions)  | Unit: `existsSync`=`true` → `chmodSync(dir, 0o700)` then `chmodSync(socket, 0o600)`; `existsSync`=`false` → `mkdirSync` with `mode: 0o700` then `chmodSync(socket, 0o600)` |
 | P4-1 (session limit)             | Integration: open `MAX_SESSIONS + 1` connections simultaneously, assert the last connection is rejected/destroyed immediately                                              |
 | P4-3 (stop() CLOSING comment)    | No automated test — reviewer reads comment and verifies it accurately describes the `.once()` protection and contrasts correctly with `agentProxy.ts::stop()`              |

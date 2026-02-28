@@ -35,6 +35,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Register three command handlers for inter-extension communication
   context.subscriptions.push(
+    // ── Trust model for internal commands ──────────────────────────────────
+    // The underscore prefix is the VS Code convention for "internal" commands:
+    // it hides them from the command palette so users don't see them, but it
+    // does NOT restrict which extensions can call them. Any co-installed VS Code
+    // extension running in the same extension host can invoke these commands via
+    // vscode.commands.executeCommand('_gpg-bridge-agent.*', ...).
+    //
+    // This is an accepted architectural constraint for the single-user
+    // dev-container scenario this extension targets. The practical mitigations are:
+    //   1. Each handler throws (rejects) when agentProxyService === null, so
+    //      commands called before activation or after deactivation are rejected.
+    //   2. The bridge connects only to agent-extra-socket, where gpg-agent itself
+    //      enforces command restrictions — returning ERR 67109115 Forbidden for
+    //      sensitive operations (PRESET_PASSPHRASE, CLEAR_PASSPHRASE, etc.).
+    //   3. All operations require a caller-provided sessionId that maps to an
+    //      active session; unknown sessionIds are silently ignored or rejected.
+    // ────────────────────────────────────────────────────────────────────────
+
     // Internal commands called by request-proxy extension, hidden from user with underscore prefix
     vscode.commands.registerCommand('_gpg-bridge-agent.connectAgent', connectAgent),
     vscode.commands.registerCommand('_gpg-bridge-agent.sendCommands', sendCommands),
