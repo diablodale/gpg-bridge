@@ -583,54 +583,6 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
 }
 
 // ============================================================================
-// State Machine Validation
-// ============================================================================
-
-/**
- * Validate transition table completeness (for testing/debugging)
- * Returns array of missing (state, event) pairs
- */
-export function validateTransitionTable(): Array<{ state: SessionState; event: StateEvent }> {
-  const allStates: SessionState[] = [
-    'DISCONNECTED',
-    'CONNECTING_TO_AGENT',
-    'SOCKET_CONNECTED',
-    'READY',
-    'SENDING_TO_AGENT',
-    'WAITING_FOR_AGENT',
-    'ERROR',
-    'CLOSING',
-  ];
-
-  const allEvents: StateEvent[] = [
-    'CLIENT_CONNECT_REQUESTED',
-    'CLIENT_DATA_RECEIVED',
-    'AGENT_SOCKET_CONNECTED',
-    'AGENT_WRITE_OK',
-    'AGENT_DATA_CHUNK',
-    'AGENT_DATA_RECEIVED',
-    'ERROR_OCCURRED',
-    'CLEANUP_REQUESTED',
-    'CLEANUP_COMPLETE',
-    'CLEANUP_ERROR',
-  ];
-
-  const missing: Array<{ state: SessionState; event: StateEvent }> = [];
-
-  // Not all (state, event) pairs are valid - this just checks for completeness
-  // Valid transitions are explicitly defined in STATE_TRANSITIONS
-  for (const state of allStates) {
-    const transitions = STATE_TRANSITIONS[state];
-    for (const event of allEvents) {
-      // Skip if transition not defined (may be intentional)
-      // This function is mainly for debugging/documentation
-    }
-  }
-
-  return missing;
-}
-
-// ============================================================================
 // Agent Proxy (Public API)
 // ============================================================================
 
