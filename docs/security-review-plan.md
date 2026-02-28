@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-27
 **Scope:** `gpg-bridge-agent` (Windows local), `gpg-bridge-request` (remote), `@gpg-bridge/shared`
-**Status:** ⏳ In progress — one code change completed during review (see Completed Changes)
+**Status:** ⏳ In progress — two code changes completed during review (see Completed Changes)
 
 ---
 
@@ -76,6 +76,29 @@ const promise = new Promise<void>((resolve) => {
 Test named `'resolves when session cleanup reaches FATAL via CLEANUP_ERROR (no hang)'`
 added to the `stop()` describe block. Connects a session to READY, sets `destroyError`
 on the socket, races `stop()` against a 500 ms timeout, asserts the promise resolves.
+
+### `requestProxy.ts` — P2-1 client command-buffer size limit _(2026-02-28)_
+
+Added `MAX_CLIENT_BUFFER_BYTES = 1 * 1024 * 1024` (1 MB) constant and overflow checks in
+`RequestSessionManager`:
+
+- **`handleClientDataStart`** — checked unconditionally (always transitions to `BUFFERING_COMMAND`).
+- **`handleClientDataPartial`** — checked unconditionally for both `BUFFERING_COMMAND` and
+  `BUFFERING_INQUIRE`. Initial implementation incorrectly exempted `BUFFERING_INQUIRE` on
+  the assumption that D-blocks could be large (e.g. `PKDECRYPT` ciphertext). Investigation
+  of the [Agent PKDECRYPT protocol](https://www.gnupg.org/documentation/manuals/gnupg/Agent-PKDECRYPT.html)
+  confirmed this is wrong: D-blocks carry **asymmetric-encrypted session keys** (SPKI
+  S-expressions), not bulk ciphertext. RSA-4096 ciphertext is ~512 bytes; with SPKI +
+  hex encoding it is a few KB. No standard `gpg-agent` INQUIRE legitimately exceeds 1 MB.
+  The limit applies uniformly.
+
+**Tests** (`gpg-bridge-request/src/test/requestProxy.test.ts`): ✅ **Done**
+Three tests in `describe('P2-1: Client buffer size limit')` — exactly 1 MB succeeds,
+1 MB + 1 byte terminates the session, split chunks crossing the threshold also terminate.
+Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) with:
+
+- `'should handle a large-but-realistic D-block (under 1 MB)'` (500 KB — passes)
+- `'should terminate session when D-block exceeds 1 MB limit'` (1 MB + 1 byte — errors)
 
 ---
 
@@ -166,7 +189,7 @@ on the socket, races `stop()` against a 500 ms timeout, asserts the promise reso
 
 > Goal: reject malformed or oversized input before it reaches state machines or subprocesses.
 
-- [ ] **P2-1** Add client-side buffer size limit in `RequestSessionManager`
+- [x] **P2-1** ✅ Add client-side buffer size limit in `RequestSessionManager`
       **File:** `gpg-bridge-request/src/services/requestProxy.ts`
       `this.buffer` in `RequestSessionManager` accumulates client data without bound.
       A stalled or malicious client on the remote can exhaust memory on the local Windows host.
@@ -521,7 +544,7 @@ on the socket, races `stop()` against a 500 ms timeout, asserts the promise reso
 ```
 P1-1  (fix forced debug logging)              ← 5-minute fix, high surface reduction
 P1-3  (audit D-block log exposure)            ← read-only audit
-P2-1  (client buffer limit)                   ← memory safety, add tests
+P2-1  (client buffer limit)                   ✅ done — tests added to requestProxy.test.ts
 P2-5  (agent response buffer limit)           ← same pattern, add tests
 P2-2  (port range validation)                 ← one-liner + tests
 P3-1  (VS Code command trust comment)         ← comments only
@@ -561,7 +584,7 @@ No items currently require a human product decision before implementation.
 
 | Work item                        | Test requirement                                                                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P2-1 (buffer limit)              | Unit: send exactly `MAX_BUFFER_BYTES`, assert OK; send `MAX+1`, assert session closed with error                                                                           |
+| P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                 |
 | P2-2 (port range)                | Unit: ports 0, -1, 65535, 65536, NaN — all should throw                                                                                                                    |
 | P2-3 (GNUPGHOME)                 | Unit: relative path, path with NUL, path with newline — all should throw in constructor                                                                                    |
 | P3-4 (UUID guard)                | Unit: empty string, `"not-a-uuid"`, valid UUID — only last should proceed                                                                                                  |

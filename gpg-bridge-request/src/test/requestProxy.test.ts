@@ -1778,7 +1778,10 @@ describe('RequestProxy', () => {
       await instance.stop();
     });
 
-    it('should handle very large D-block (multiple MB)', async () => {
+    it('should handle a large-but-realistic D-block (under 1 MB)', async () => {
+      // Real INQUIRE D-blocks carry asymmetric-encrypted session keys or data-to-sign:
+      // RSA-4096 ciphertext is ~512 bytes raw; with SPKI S-expr + hex encoding a few KB.
+      // Use a generous 500 KB to confirm no false-positive limit trigger.
       mockCommandExecutor.connectAgentResponse = {
         sessionId: 'test-session',
         greeting: 'OK\n',
@@ -1800,8 +1803,8 @@ describe('RequestProxy', () => {
       clientSocket.simulateDataReceived(Buffer.from('CMD\n', 'latin1'));
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Send 2MB D-block
-      const largeData = 'A'.repeat(2 * 1024 * 1024);
+      // Send 500 KB D-block — large but well within the 1 MB limit
+      const largeData = 'A'.repeat(500 * 1024);
       const largeDBlock = `D ${largeData}\nEND\n`;
 
       mockCommandExecutor.setSendCommandsResponse('OK\n');
@@ -1809,6 +1812,41 @@ describe('RequestProxy', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+      await instance.stop();
+    });
+
+    it('should terminate session when D-block exceeds 1 MB limit', async () => {
+      // D-blocks exceeding 1 MB are not valid for any standard gpg-agent INQUIRE;
+      // treat as a protocol violation/attack and close the session.
+      mockCommandExecutor.connectAgentResponse = {
+        sessionId: 'test-session',
+        greeting: 'OK\n',
+      };
+      mockCommandExecutor.setSendCommandsResponse('INQUIRE DATA\n');
+
+      const instance = new RequestProxy(
+        { logCallback: mockLogConfig.logCallback },
+        createMockDeps(),
+      );
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Trigger INQUIRE
+      clientSocket.simulateDataReceived(Buffer.from('CMD\n', 'latin1'));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Send 1 MB + 1 byte D-block (no END needed — limit fires first)
+      const oversizedData = 'B'.repeat(1 * 1024 * 1024 + 1);
+      clientSocket.simulateDataReceived(Buffer.from(`D ${oversizedData}\nEND\n`, 'latin1'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // sendCommands should only have been called once (for the initial CMD, not for the D-block)
+      expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(1);
 
       await instance.stop();
     });
@@ -1878,6 +1916,105 @@ describe('RequestProxy', () => {
 
       // All three should eventually be processed
       expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(3);
+
+      await instance.stop();
+    });
+  });
+
+  // P2-1: Client buffer size limit
+  describe('P2-1: Client buffer size limit', () => {
+    it('should accept data exactly at MAX_CLIENT_BUFFER_BYTES (1 MB)', async () => {
+      mockCommandExecutor.connectAgentResponse = {
+        sessionId: 'test-buffer-limit',
+        greeting: 'OK\n',
+      };
+
+      const instance = new RequestProxy(
+        { logCallback: mockLogConfig.logCallback },
+        createMockDeps(),
+      );
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Build a payload of exactly 1 MB (1 * 1024 * 1024 bytes).
+      // latin1 decode is 1-to-1, so byte length === string length.
+      // Subtract 1 for the trailing newline so the buffer sits at exactly the limit.
+      const payloadSize = 1 * 1024 * 1024 - 1;
+      const chunk = Buffer.allocUnsafe(payloadSize).fill(0x41); // 'A' repeated
+      const withNewline = Buffer.concat([chunk, Buffer.from('\n', 'latin1')]);
+
+      clientSocket.simulateDataReceived(withNewline);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Session should still be alive — no error transition logged
+      const writtenData = clientSocket.getWrittenData().toString('latin1');
+      expect(writtenData).to.not.include('ERR');
+      // Should have sent data to agent (command complete detected)
+      expect(mockCommandExecutor.getCallCount('sendCommands')).to.be.greaterThanOrEqual(1);
+
+      await instance.stop();
+    });
+
+    it('should terminate session when client buffer exceeds MAX_CLIENT_BUFFER_BYTES', async () => {
+      const logs: string[] = [];
+      mockCommandExecutor.connectAgentResponse = {
+        sessionId: 'test-buffer-overflow',
+        greeting: 'OK\n',
+      };
+
+      const instance = new RequestProxy({ logCallback: (msg) => logs.push(msg) }, createMockDeps());
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Send 1 MB + 1 byte (no newline — forces buffering rather than command dispatch)
+      const oversize = Buffer.allocUnsafe(1 * 1024 * 1024 + 1).fill(0x41); // 'A' * (1MB+1)
+      clientSocket.simulateDataReceived(oversize);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Session must have transitioned to ERROR and then CLOSING
+      const errorTransitions = logs.filter((l) => l.includes('→ ERROR'));
+      expect(errorTransitions.length).to.be.greaterThan(0);
+
+      // Buffer exceeded message should appear in logs
+      const bufferErrors = logs.filter((l) => l.includes('exceeded'));
+      expect(bufferErrors.length).to.be.greaterThan(0);
+
+      await instance.stop();
+    });
+
+    it('should terminate session when buffer overflows across multiple partial chunks', async () => {
+      const logs: string[] = [];
+      mockCommandExecutor.connectAgentResponse = {
+        sessionId: 'test-buffer-overflow-partial',
+        greeting: 'OK\n',
+      };
+
+      const instance = new RequestProxy({ logCallback: (msg) => logs.push(msg) }, createMockDeps());
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // First chunk: start buffering with 512 KB (no newline)
+      const halfMB = Buffer.allocUnsafe(512 * 1024).fill(0x41);
+      clientSocket.simulateDataReceived(halfMB);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      // Second chunk: another 512 KB + 2 bytes — pushes total over the 1 MB limit
+      const halfMBPlusTwo = Buffer.allocUnsafe(512 * 1024 + 2).fill(0x41);
+      clientSocket.simulateDataReceived(halfMBPlusTwo);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Session must have errored out
+      const errorTransitions = logs.filter((l) => l.includes('→ ERROR'));
+      expect(errorTransitions.length).to.be.greaterThan(0);
 
       await instance.stop();
     });

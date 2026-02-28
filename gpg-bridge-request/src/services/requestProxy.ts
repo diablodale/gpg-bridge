@@ -180,6 +180,9 @@ interface RequestProxyConfigWithExecutor extends RequestProxyConfig {
   commandExecutor: ICommandExecutor;
 }
 
+/** Maximum bytes allowed in the client receive buffer before the session is terminated. */
+const MAX_CLIENT_BUFFER_BYTES = 1 * 1024 * 1024; // 1 MB
+
 /**
  * RequestSessionManager - Event-driven session manager (like NodeJS Socket)
  *
@@ -289,6 +292,10 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
     this.transition('CLIENT_DATA_START');
     try {
       this.buffer += decodeProtocolData(data);
+      if (this.buffer.length > MAX_CLIENT_BUFFER_BYTES) {
+        this.emit('ERROR_OCCURRED', `Client buffer exceeded ${MAX_CLIENT_BUFFER_BYTES} bytes`);
+        return;
+      }
       log(this.config, `[${this.sessionId}] Buffering command, received ${data.length} bytes`);
       this.checkCommandComplete();
     } catch (err) {
@@ -301,6 +308,14 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
     // Accumulate data in buffer (works for both BUFFERING_COMMAND and BUFFERING_INQUIRE)
     try {
       this.buffer += decodeProtocolData(data);
+      // Enforce limit for both BUFFERING_COMMAND and BUFFERING_INQUIRE.
+      // INQUIRE D-blocks carry asymmetric-encrypted session keys (PKDECRYPT), data to
+      // sign (PKSIGN), or similar small payloads — never legitimately multi-MB.
+      // e.g. RSA-4096 ciphertext is ~512 bytes; with SPKI S-expr + hex it is a few KB.
+      if (this.buffer.length > MAX_CLIENT_BUFFER_BYTES) {
+        this.emit('ERROR_OCCURRED', `Client buffer exceeded ${MAX_CLIENT_BUFFER_BYTES} bytes`);
+        return;
+      }
       log(
         this.config,
         `[${this.sessionId}] Buffering, received ${data.length} bytes, total: ${this.buffer.length}`,
