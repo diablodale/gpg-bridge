@@ -131,33 +131,19 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
   **Severity:** 🟡 Medium — all protocol traffic (session IDs, Assuan command verbs) goes to the
   output channel when this is forced on.
 
-- [ ] **P1-2** Audit `sanitizeForLog` call discipline
-      Every `log()` call that writes socket data must go through `sanitizeForLog()`.
-      Search `agentProxy.ts` and `requestProxy.ts` for `log(` calls where the final argument
-      is a raw buffer or decoded string rather than `sanitizeForLog(...)`.
-      Fix any gaps found.
-      **Severity:** 🟢 Low — `sanitizeForLog` is well-designed; this is a call-site audit.
+- [x] **P1-2** ✅ Audit `sanitizeForLog` call discipline
+      Audit complete: every `log()` call that uses socket data in `agentProxy.ts` and
+      `requestProxy.ts` either (a) logs metadata only (byte counts, state names) or
+      (b) wraps the payload in `sanitizeForLog()`. No gaps found. No code changes needed.
 
-- [ ] **P1-3** Ensure `D`-block data always goes through `sanitizeForLog`
-      The INQUIRE / D-block path carries data exchanged during operations such as `PKDECRYPT`
-      and `PKSIGN`. Because the bridge connects to `agent-extra-socket`, gpg-agent's restricted
-      mode forbids the commands that would transmit raw private key material — so no private
-      key bytes flow through this bridge by design.
-      However, D-block data can still contain ciphertext, signature inputs, or other
-      cryptographically sensitive material. Ensuring all `log()` calls on these paths go through
-      `sanitizeForLog` is an extra defensive layer that limits what is visible in the output
-      channel even if the restricted-socket boundary were ever relaxed.
+- [x] **P1-3** ✅ Ensure `D`-block data always goes through `sanitizeForLog`
 
-  **Fix:** Replace any ``log(config, `...${data}...`)`` involving decoded socket data with
-  ``log(config, `...${sanitizeForLog(data)}...`)`` so only the first Assuan verb and byte
-  count appear in logs.
-
-  **Severity:** 🟡 Medium — private key transmission is already prevented by the extra-socket
-  restriction; this is defence-in-depth for other sensitive payload data.
-
-  **Files to audit:**
-  - `requestProxy.ts`: `handleClientDataPartial` and `handleClientDataStart` (buffer appends)
-  - `agentProxy.ts`: `handleAgentDataChunk` (buffer accumulation)
+  Audit complete: all D-block paths are already clean. No code changes needed.
+  - `requestProxy.ts::handleClientDataStart` / `handleClientDataPartial` — log only
+    byte counts (`data.length`, `this.buffer.length`); no raw content.
+  - `requestProxy.ts::handleClientDataComplete` — logs `sanitizeForLog(data)`. ✅
+  - `agentProxy.ts::handleAgentDataChunk` — intermediate log is byte count only;
+    complete-response log uses `sanitizeForLog(this.buffer)`. ✅
 
 - [ ] **P1-4** Audit nonce bytes in log output
       The 16-byte nonce in the Gpg4win Assuan socket file (`S.gpg-agent`) is **not a per-session
@@ -543,7 +529,8 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
 ```
 P1-1  (fix forced debug logging)              ✅ done — no tests needed (config read)
-P1-3  (audit D-block log exposure)            ← read-only audit
+P1-3  (audit D-block log exposure)            ✅ done — all paths already use sanitizeForLog or metadata-only logging
+P1-2  (audit sanitizeForLog discipline)       ✅ done — no gaps found across both service files
 P2-1  (client buffer limit)                   ✅ done — tests added to requestProxy.test.ts
 P2-5  (agent response buffer limit)           ← same pattern, add tests
 P2-2  (port range validation)                 ← one-liner + tests
@@ -585,6 +572,8 @@ No items currently require a human product decision before implementation.
 | Work item                        | Test requirement                                                                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P1-1 (forced debug logging)      | ✅ Done — no automated test needed; change is a one-line config read fix. All 386 existing tests continue to pass.                                                         |
+| P1-2 (sanitizeForLog audit)      | ✅ Done — audit only; no code changes needed; no new tests required.                                                                                                       |
+| P1-3 (D-block log exposure)      | ✅ Done — audit only; all paths already clean; no code changes needed; no new tests required.                                                                              |
 | P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                 |
 | P2-2 (port range)                | Unit: ports 0, -1, 65535, 65536, NaN — all should throw                                                                                                                    |
 | P2-3 (GNUPGHOME)                 | Unit: relative path, path with NUL, path with newline — all should throw in constructor                                                                                    |
