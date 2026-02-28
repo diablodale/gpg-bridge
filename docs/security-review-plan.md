@@ -460,7 +460,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
 > Goal: document the nonce mechanism accurately and ensure no false assumptions exist in code comments.
 
-- [ ] **P5-1** Document nonce lifecycle and add clarifying comment
+- [x] **P5-1** ✅ Document nonce lifecycle and add clarifying comment
       **File:** `gpg-bridge-agent/src/services/agentProxy.ts`
       `pendingNonce` is cleared to `null` after the nonce is written to the socket — good
       hygiene, but note the nonce's actual threat model:
@@ -528,7 +528,7 @@ P2-1  (client buffer limit)                   ✅ done — tests added to reques
 P2-5  (agent response buffer limit)           ✅ done — tests added to agentProxy.test.ts
 P2-2  (port range validation)                 ✅ done — 5 tests added to protocol.test.ts
 P3-1  (VS Code command trust comment)         ✅ done — comment added above registerCommand calls
-P5-1  (nonce clearance audit)                 ← read-only + comment
+P5-1  (nonce clearance audit)                 ✅ done — comment added near pendingNonce = null
 P3-4  (UUID format guard)                     ← defensive one-liner
 P2-3  (GNUPGHOME validation)                  ← constructor guard
 P3-3  (dir + socket permissions)              ← two code changes + tests
@@ -578,7 +578,7 @@ No items currently require a human product decision before implementation.
 | P3-3 (dir + socket permissions)  | Unit: `existsSync`=`true` → `chmodSync(dir, 0o700)` then `chmodSync(socket, 0o600)`; `existsSync`=`false` → `mkdirSync` with `mode: 0o700` then `chmodSync(socket, 0o600)` |
 | P4-1 (session limit)             | Integration: open `MAX_SESSIONS + 1` connections simultaneously, assert the last connection is rejected/destroyed immediately                                              |
 | P4-3 (stop() CLOSING comment)    | No automated test — reviewer reads comment and verifies it accurately describes the `.once()` protection and contrasts correctly with `agentProxy.ts::stop()`              |
-| P5-1 (nonce clearance)           | No automated test — reviewer inspects code and adds comment confirming `pendingNonce = null`                                                                               |
+| P5-1 (nonce clearance)           | ✅ Done — comment added in `handleAgentSocketConnected` explaining nonce is a same-user capability token, not a per-session secret; no automated test needed               |
 | P6-1 (npm audit)                 | Run `npm audit --audit-level=high`; record findings and resolutions in `docs/security-review-plan.md` under a new **Phase 6 Findings** section                             |
 | Completed Changes (stop() FATAL) | ✅ Done — `'resolves when session cleanup reaches FATAL via CLEANUP_ERROR (no hang)'` in `agentProxy.test.ts` stop() describe block                                        |
 

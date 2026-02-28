@@ -277,7 +277,12 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
 
     log(this.config, `[${this.sessionId}] Socket connected, ready to send nonce`);
 
-    // Clean up pending nonce
+    // Clear pendingNonce as a hygiene measure — not because it is a unique per-session
+    // secret. The nonce is a same-user capability token written by gpg-agent at startup
+    // and readable by any process running as the same Windows user from the Gpg4win socket
+    // file in GNUPGHOME. It persists unchanged until gpg-agent restarts. All gpg clients
+    // running as that user share and read the same nonce. Clearing it here simply avoids
+    // holding a reference we no longer need after it has been sent.
     this.pendingNonce = null;
 
     // Send nonce as first data
