@@ -109,6 +109,10 @@ export function parseSocketFile(data: Buffer): ParsedSocketFile {
     throw new Error(`Invalid port in socket file: ${portStr}`);
   }
 
+  if (port < 1 || port > 65535) {
+    throw new Error(`Port out of range in socket file: ${port}`);
+  }
+
   // Extract raw 16-byte nonce after the newline
   const nonceStart = newlineIndex + 1;
   const nonce = data.subarray(nonceStart, nonceStart + 16);

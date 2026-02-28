@@ -185,7 +185,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
       Add a unit test: connect client, send 1 MB + 1 byte, assert session is closed with error.
       **Severity:** 🔴 High — unbounded memory growth.
 
-- [ ] **P2-2** Add port range validation in `parseSocketFile`
+- [x] **P2-2** ✅ Add port range validation in `parseSocketFile`
       **File:** `shared/src/protocol.ts`
       `parseInt(portStr, 10)` accepts 0, negative values, and integers > 65535.
       Add after the `isNaN` check:
@@ -526,7 +526,7 @@ P1-3  (audit D-block log exposure)            ✅ done — all paths already use
 P1-2  (audit sanitizeForLog discipline)       ✅ done — no gaps found across both service files
 P2-1  (client buffer limit)                   ✅ done — tests added to requestProxy.test.ts
 P2-5  (agent response buffer limit)           ✅ done — tests added to agentProxy.test.ts
-P2-2  (port range validation)                 ← one-liner + tests
+P2-2  (port range validation)                 ✅ done — 5 tests added to protocol.test.ts
 P3-1  (VS Code command trust comment)         ← comments only
 P5-1  (nonce clearance audit)                 ← read-only + comment
 P3-4  (UUID format guard)                     ← defensive one-liner
@@ -568,7 +568,7 @@ No items currently require a human product decision before implementation.
 | P1-2 (sanitizeForLog audit)      | ✅ Done — audit only; no code changes needed; no new tests required.                                                                                                       |
 | P1-3 (D-block log exposure)      | ✅ Done — audit only; all paths already clean; no code changes needed; no new tests required.                                                                              |
 | P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                 |
-| P2-2 (port range)                | Unit: ports 0, -1, 65535, 65536, NaN — all should throw                                                                                                                    |
+| P2-2 (port range)                | ✅ Done — 5 tests: ports 0, -1 throw; port 65535 accepted; port 65536 throws; NaN already covered by pre-existing test                                                     |
 | P2-3 (GNUPGHOME)                 | Unit: relative path, path with NUL, path with newline — all should throw in constructor                                                                                    |
 | P3-4 (UUID guard)                | Unit: empty string, `"not-a-uuid"`, valid UUID — only last should proceed                                                                                                  |
 | P4-2 (idle timeout)              | Integration: open socket, send nothing for 31 s, assert session cleaned up                                                                                                 |
