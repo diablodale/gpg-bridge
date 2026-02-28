@@ -221,6 +221,39 @@ describe('AgentProxy', () => {
       await proxy.stop();
       expect(proxy.getAgentSocketPath()).to.be.null;
     });
+
+    it('resolves when session cleanup reaches FATAL via CLEANUP_ERROR (no hang)', async () => {
+      // Regression test for the FATAL-hang fix:
+      // stop() registers resolve on CLEANUP_COMPLETE *and* CLEANUP_ERROR so that a session
+      // whose socket.destroy() throws (CLOSING → FATAL) does not block Promise.all forever.
+      const proxy = await makeProxy();
+
+      // Establish an active session (READY state) so the sessions map is non-empty.
+      const connectPromise = proxy.connectAgent();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const socket = mockSocketFactory.getLastSocket();
+      socket!.simulateGreeting();
+      await connectPromise;
+
+      // Arm the socket so destroy() throws — cleanupSocket returns a non-null error →
+      // handleCleanupRequested emits CLEANUP_ERROR → session reaches FATAL.
+      socket!.setDestroyError(new Error('Simulated socket.destroy() failure'));
+
+      // stop() must resolve even when the CLEANUP_ERROR path is taken.
+      // Race against 500 ms to make "does not hang" explicit in the assertion.
+      const TIMEOUT_MS = 500;
+      const hangDetector = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`stop() did not resolve within ${TIMEOUT_MS}ms`)),
+          TIMEOUT_MS,
+        ),
+      );
+      await Promise.race([proxy.stop(), hangDetector]);
+
+      // Confirm stop() ran to completion and cleared GpgCli state.
+      expect(proxy.getAgentSocketPath()).to.be.null;
+    });
   });
 
   describe('getters after start()', () => {

@@ -930,17 +930,19 @@ export class AgentProxy {
    * Stop the agent proxy and await deterministic cleanup of all active sessions.
    *
    * Called by stopAgentProxy() before the AgentProxy instance is dropped.
-   * Resolves only after every triggered session has emitted CLEANUP_COMPLETE,
-   * ensuring no TCP sockets leak and VS Code can correctly await deactivate().
+   * Resolves only after every session has finished cleanup, ensuring no TCP
+   * sockets leak and VS Code can correctly await deactivate().
    *
-   * Three-way split by session state:
-   * 1. DISCONNECTED / FATAL: skip — already clean or unrecoverable (FATAL has no
-   *    transitions and will never emit CLEANUP_COMPLETE)
-   * 2. ERROR / CLOSING: register CLEANUP_COMPLETE listener only — these sessions
-   *    are already progressing through teardown; emitting ERROR_OCCURRED would be
-   *    an invalid transition and the once() handler is already consumed
-   * 3. All other active states: register listener AND emit ERROR_OCCURRED to
-   *    drive them into teardown
+   * Only active sessions (CONNECTING_TO_AGENT, SOCKET_CONNECTED, READY,
+   * SENDING_TO_AGENT, WAITING_FOR_AGENT) can appear in this.sessions at
+   * stop() time: because handleCleanupRequested is synchronous, the entire
+   * CLOSING→DISCONNECTED/FATAL chain and the sessions.delete() call in
+   * onPermanentCleanup all complete on the same synchronous call stack before
+   * any external code can observe those states in the map.
+   *
+   * Promise resolves on CLEANUP_COMPLETE **or** CLEANUP_ERROR so a session
+   * that reaches FATAL (unrecoverable socket.destroy() failure) does not hang
+   * the Promise.all.
    */
   public async stop(): Promise<void> {
     if (this.sessions.size > 0) {
@@ -949,24 +951,16 @@ export class AgentProxy {
       const cleanupPromises: Promise<void>[] = [];
 
       for (const [sessionId, session] of this.sessions) {
-        const state = session.getState();
-
-        // 1. DISCONNECTED / FATAL: skip
-        if (state === 'DISCONNECTED' || state === 'FATAL') {
-          continue;
-        }
-
-        // 2 & 3. Register CLEANUP_COMPLETE listener (always); emit ERROR_OCCURRED only
-        // for active states that have not yet entered the teardown sequence.
+        // Resolve on either clean finish (DISCONNECTED) or unrecoverable failure (FATAL)
+        // so Promise.all never hangs regardless of cleanup outcome.
         const promise = new Promise<void>((resolve) => {
-          session.once('CLEANUP_COMPLETE', () => resolve());
+          session.once('CLEANUP_COMPLETE', resolve);
+          session.once('CLEANUP_ERROR', resolve);
         });
         cleanupPromises.push(promise);
 
-        if (state !== 'ERROR' && state !== 'CLOSING') {
-          log(this.config, `[${sessionId}] Force-closing session during stop (state: ${state})`);
-          session.emit('ERROR_OCCURRED', { error: stopError });
-        }
+        log(this.config, `[${sessionId}] Force-closing session during stop`);
+        session.emit('ERROR_OCCURRED', { error: stopError });
       }
 
       await Promise.all(cleanupPromises);
