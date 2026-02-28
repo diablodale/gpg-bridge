@@ -753,7 +753,10 @@ describe('AgentProxy', () => {
       expect(cmdResult.response).to.equal('S keyinfo data\nOK\n');
     });
 
-    it('should accumulate large response (>1MB)', async () => {
+    it('should accumulate a large-but-realistic response (under 1 MB)', async () => {
+      // Typical gpg-agent responses through the extra-socket are small: PKDECRYPT returns
+      // a session key (~hundreds of bytes), PKSIGN returns a signature (~hundreds of bytes).
+      // Use a generous 500 KB to confirm no false-positive limit trigger.
       const agentProxy = await makeProxy();
 
       const connectPromise = agentProxy.connectAgent();
@@ -768,12 +771,12 @@ describe('AgentProxy', () => {
       const commandPromise = agentProxy.sendCommands(sessionId, 'GETLARGE\n');
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Create 1MB+ of data
-      const largeData = Buffer.alloc(1024 * 1024 + 100, 'X');
+      // 500 KB D-block + OK\n — well within the 1 MB limit
+      const largeData = Buffer.alloc(500 * 1024, 'X');
       socket!.emit('data', Buffer.concat([Buffer.from('D '), largeData, Buffer.from('\nOK\n')]));
 
       const cmdResult = await commandPromise;
-      expect(cmdResult.response.length).to.be.greaterThan(1024 * 1024);
+      expect(cmdResult.response.length).to.be.greaterThan(500 * 1024);
     });
 
     it('should handle rapid chunk arrival', async () => {
@@ -2084,6 +2087,105 @@ describe('AgentProxy', () => {
         // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
         expect(id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
       });
+    });
+  });
+
+  // ─── P2-5: Agent response buffer size limit ───────────────────────────────
+  describe('P2-5: Agent response buffer size limit', () => {
+    it('should accept a response just under the 1 MB limit', async () => {
+      const agentProxy = await makeProxy();
+
+      // Connect and get greeting
+      const connectPromise = agentProxy.connectAgent();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const socket = mockSocketFactory.getLastSocket();
+      socket!.simulateGreeting();
+      const { sessionId } = await connectPromise;
+
+      // Send a command; agent will respond
+      const cmdPromise = agentProxy.sendCommands(sessionId, 'VERSION\n');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Send 1 MB - 1 byte of status lines (incomplete response — no OK/ERR terminator yet)
+      // then complete it with OK\n — total is just under 1 MB
+      const statusLine = 'S PROGRESS doit ? 0 0\n'; // 22 bytes each
+      const repeatCount = Math.floor(
+        (1 * 1024 * 1024 - 1 - 'OK 2.4.7\n'.length) / statusLine.length,
+      );
+      const bigPreamble = statusLine.repeat(repeatCount);
+      socket!.emit('data', Buffer.from(bigPreamble + 'OK 2.4.7\n', 'latin1'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const result = await cmdPromise;
+      expect(result.response).to.include('OK 2.4.7');
+
+      await agentProxy.stop();
+    });
+
+    it('should terminate session when agent response exceeds 1 MB limit', async () => {
+      const agentProxy = await makeProxy();
+
+      // Connect and get greeting
+      const connectPromise = agentProxy.connectAgent();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const socket = mockSocketFactory.getLastSocket();
+      socket!.simulateGreeting();
+      const { sessionId } = await connectPromise;
+
+      // Send a command
+      const cmdPromise = agentProxy.sendCommands(sessionId, 'VERSION\n');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Send 1 MB + 1 byte without any completion marker — buffer limit fires first
+      const oversized = 'S ' + 'A'.repeat(1 * 1024 * 1024); // 'S ' + 1 MB = 1 MB + 2 bytes, no newline
+      socket!.emit('data', Buffer.from(oversized, 'latin1'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // sendCommands must reject due to the buffer overflow error
+      try {
+        await cmdPromise;
+        expect.fail('Should have thrown due to buffer overflow');
+      } catch (error: unknown) {
+        expect((error as Error).message).to.match(/buffer exceeded/i);
+      }
+
+      // Session must have been removed
+      expect(agentProxy.getSessionCount()).to.equal(0);
+
+      await agentProxy.stop();
+    });
+
+    it('should terminate session when limit is crossed across multiple chunks', async () => {
+      const agentProxy = await makeProxy();
+
+      const connectPromise = agentProxy.connectAgent();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const socket = mockSocketFactory.getLastSocket();
+      socket!.simulateGreeting();
+      const { sessionId } = await connectPromise;
+
+      const cmdPromise = agentProxy.sendCommands(sessionId, 'VERSION\n');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Send 600 KB in first chunk — under limit, no completion marker
+      const chunk1 = 'S ' + 'B'.repeat(600 * 1024);
+      socket!.emit('data', Buffer.from(chunk1, 'latin1'));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Send another 500 KB — crosses the 1 MB threshold
+      const chunk2 = 'S ' + 'C'.repeat(500 * 1024);
+      socket!.emit('data', Buffer.from(chunk2, 'latin1'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      try {
+        await cmdPromise;
+        expect.fail('Should have thrown due to buffer overflow');
+      } catch (error: unknown) {
+        expect((error as Error).message).to.match(/buffer exceeded/i);
+      }
+      expect(agentProxy.getSessionCount()).to.equal(0);
+
+      await agentProxy.stop();
     });
   });
 });

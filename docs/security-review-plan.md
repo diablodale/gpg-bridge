@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-27
 **Scope:** `gpg-bridge-agent` (Windows local), `gpg-bridge-request` (remote), `@gpg-bridge/shared`
-**Status:** ⏳ In progress — two code changes completed during review (see Completed Changes)
+**Status:** ⏳ In progress — four code changes completed during review (see Completed Changes)
 
 ---
 
@@ -211,18 +211,11 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
     Throw `Error` on violation.
     **Severity:** 🟡 Medium — realistically only reachable via VS Code workspace settings.
 
-- [ ] **P2-5** Add response buffer size limit in `AgentSessionManager`
-      **File:** `gpg-bridge-agent/src/services/agentProxy.ts`
-      `this.buffer` in `AgentSessionManager` accumulates agent response chunks in
-      `handleAgentDataChunk` without bound. Although gpg-agent on localhost is trusted, a
-      malfunctioning or compromised agent process could send an arbitrarily large response
-      and exhaust memory on the Windows host.
-      Add the same `MAX_RESPONSE_BUFFER_BYTES = 1 * 1024 * 1024` constant (1 MB).
-      In `handleAgentDataChunk`, check `this.buffer.length` after appending; emit
-      `ERROR_OCCURRED` if the limit is exceeded.
-      Add a unit test: mock agent sending 1 MB + 1 byte, assert session is closed with error.
-      **Severity:** 🟡 Medium — lower risk than client-side (trusted source), but consistent
-      defence-in-depth.
+- [x] **P2-5** ✅ Add response buffer size limit in `AgentSessionManager`
+      Added `MAX_RESPONSE_BUFFER_BYTES = 1 * 1024 * 1024` (1 MB) constant and overflow check in
+      `handleAgentDataChunk`. Check fires after appending the chunk, before `detectResponseCompletion`.
+      Replaced unrealistic `'should accumulate large response (>1MB)'` test with a realistic
+      500 KB test; all three P2-5 tests pass (under-limit, single oversized chunk, split chunks).
 
 - [ ] **P2-4** Investigate `checkPipelinedData` empty-buffer edge case
       **File:** `gpg-bridge-request/src/services/requestProxy.ts`
@@ -532,7 +525,7 @@ P1-1  (fix forced debug logging)              ✅ done — no tests needed (conf
 P1-3  (audit D-block log exposure)            ✅ done — all paths already use sanitizeForLog or metadata-only logging
 P1-2  (audit sanitizeForLog discipline)       ✅ done — no gaps found across both service files
 P2-1  (client buffer limit)                   ✅ done — tests added to requestProxy.test.ts
-P2-5  (agent response buffer limit)           ← same pattern, add tests
+P2-5  (agent response buffer limit)           ✅ done — tests added to agentProxy.test.ts
 P2-2  (port range validation)                 ← one-liner + tests
 P3-1  (VS Code command trust comment)         ← comments only
 P5-1  (nonce clearance audit)                 ← read-only + comment
@@ -580,7 +573,7 @@ No items currently require a human product decision before implementation.
 | P3-4 (UUID guard)                | Unit: empty string, `"not-a-uuid"`, valid UUID — only last should proceed                                                                                                  |
 | P4-2 (idle timeout)              | Integration: open socket, send nothing for 31 s, assert session cleaned up                                                                                                 |
 | P2-4 (pipelined data)            | Unit: send two commands back-to-back without waiting for first response; assert both are processed correctly and session ends cleanly                                      |
-| P2-5 (agent buffer limit)        | Unit: mock agent sending 1 MB + 1 byte in chunks, assert session emits `ERROR_OCCURRED` and is cleaned up                                                                  |
+| P2-5 (agent buffer limit)        | ✅ Done — 3 tests in `describe('P2-5: Agent response buffer size limit')`; replaced unrealistic `>1MB` response test with 500 KB pass case                                 |
 | P3-1 (command trust comments)    | No automated test — reviewer verifies comments are present and accurate                                                                                                    |
 | P3-3 (dir + socket permissions)  | Unit: `existsSync`=`true` → `chmodSync(dir, 0o700)` then `chmodSync(socket, 0o600)`; `existsSync`=`false` → `mkdirSync` with `mode: 0o700` then `chmodSync(socket, 0o600)` |
 | P4-1 (session limit)             | Integration: open `MAX_SESSIONS + 1` connections simultaneously, assert the last connection is rejected/destroyed immediately                                              |

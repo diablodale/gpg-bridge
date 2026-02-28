@@ -171,6 +171,9 @@ interface AgentProxyDeps {
 // Agent Session Manager (Per-Session EventEmitter)
 // ============================================================================
 
+/** Maximum bytes allowed in the agent response buffer before the session is terminated. */
+const MAX_RESPONSE_BUFFER_BYTES = 1 * 1024 * 1024; // 1 MB
+
 /**
  * Per-session state machine extending EventEmitter
  * Manages single agent connection lifecycle with explicit state tracking
@@ -356,6 +359,13 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
   private handleAgentDataChunk(payload: EventPayloads['AGENT_DATA_CHUNK']): void {
     const { chunk } = payload;
     this.buffer += chunk;
+
+    if (this.buffer.length > MAX_RESPONSE_BUFFER_BYTES) {
+      this.emit('ERROR_OCCURRED', {
+        error: new Error(`Agent response buffer exceeded ${MAX_RESPONSE_BUFFER_BYTES} bytes`),
+      });
+      return;
+    }
 
     log(this.config, `[${this.sessionId}] Accumulated ${this.buffer.length} bytes`);
 
