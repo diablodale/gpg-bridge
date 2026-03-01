@@ -374,6 +374,63 @@ describe('RequestProxy', () => {
     });
   });
 
+  describe('P4-2: Client idle timeout', () => {
+    it('closes the session when no data arrives after greeting', async () => {
+      const logs: string[] = [];
+      mockCommandExecutor.connectAgentResponse = { sessionId: 'test-idle', greeting: 'OK\n' };
+
+      const instance = new RequestProxy(
+        { logCallback: (msg) => logs.push(msg) },
+        { ...createMockDeps(), clientIdleTimeoutMs: 50 },
+      );
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+
+      // Wait for greeting to be forwarded and idle timer to fire (50 ms) + cleanup headroom
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Session must have been cleaned up — proxy reports 0 active sessions
+      expect(instance.getSessionCount()).to.equal(0);
+      // Error log must mention idle timeout
+      expect(logs.some((l) => l.includes('idle timeout'))).to.be.true;
+
+      clientSocket; // referenced to avoid unused-var lint warning
+      await instance.stop();
+    });
+
+    it('does not fire when client sends data before timeout', async () => {
+      const logs: string[] = [];
+      mockCommandExecutor.connectAgentResponse = {
+        sessionId: 'test-idle-cancelled',
+        greeting: 'OK\n',
+      };
+      mockCommandExecutor.setSendCommandsResponse('OK\n');
+
+      const instance = new RequestProxy(
+        { logCallback: (msg) => logs.push(msg) },
+        { ...createMockDeps(), clientIdleTimeoutMs: 100 },
+      );
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+
+      // Wait for greeting, then send data well before the 100 ms timeout
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      clientSocket.simulateDataReceived(Buffer.from('GETINFO version\n', 'latin1'));
+
+      // Wait past what the timeout would have been
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // No idle-timeout error must appear in the logs
+      expect(logs.some((l) => l.includes('idle timeout'))).to.be.false;
+
+      await instance.stop();
+    });
+  });
+
   describe('client connection pool', () => {
     it('should accept client connections', async () => {
       const instance = new RequestProxy(

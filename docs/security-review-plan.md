@@ -368,7 +368,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
   **Severity:** 🟡 Medium — DoS risk in shared-container scenarios.
 
-- [ ] **P4-2** Add idle timeout in `RequestSessionManager`
+- [x] **P4-2** ✅ Add idle timeout in `RequestSessionManager`
       **File:** `gpg-bridge-request/src/services/requestProxy.ts`
       A client that opens the socket and sends nothing holds the session open indefinitely.
       The idle timeout must guard _client_ idle time — not the agent handshake phase.
@@ -532,7 +532,7 @@ P5-1  (nonce clearance audit)                 ✅ done — comment added near pe
 P3-4  (UUID format guard)                     ✅ done — UUID_RE guard added to sendCommands + disconnectAgent
 P2-3  (GNUPGHOME validation)                  ✅ done — constructor guard + 4 tests in gpgCli.test.ts
 P3-3  (dir + socket permissions)              ✅ done — else-branch chmodSync(dir, 0o700) + socket 0o666→0o600 + 2 tests updated/added
-P4-2  (idle timeout)                          ← new timer logic + tests
+P4-2  (idle timeout)                          ✅ done — CLIENT_IDLE_TIMEOUT_MS=30s, injectable via deps, timer in handleClientSocketConnected, cleared in handleClientDataStart + handleCleanupRequested, 2 tests
 P4-3  (stop() CLOSING safety verification)    ← comment only, no code change
 P2-4  (pipelined data edge case)              ← test only
 P1-4  (audit nonce log exposure)              ← read-only audit + comment
@@ -571,7 +571,7 @@ No items currently require a human product decision before implementation.
 | P2-2 (port range)                | ✅ Done — 5 tests: ports 0, -1 throw; port 65535 accepted; port 65536 throws; NaN already covered by pre-existing test                                                                   |
 | P2-3 (GNUPGHOME)                 | ✅ Done — 4 tests: relative path throws, NUL byte throws, newline throws, valid absolute path accepted                                                                                   |
 | P3-4 (UUID guard)                | ✅ Done — 3 tests: non-UUID sendCommands throws; non-UUID disconnectAgent throws; valid-UUID unknown session handled correctly (no throw)                                                |
-| P4-2 (idle timeout)              | Integration: open socket, send nothing for 31 s, assert session cleaned up                                                                                                               |
+| P4-2 (idle timeout)              | ✅ Done — 2 tests with `clientIdleTimeoutMs: 50/100` injection: idle with no data triggers cleanup + idle-timeout log; sending data before timeout cancels timer and logs no timeout     |
 | P2-4 (pipelined data)            | Unit: send two commands back-to-back without waiting for first response; assert both are processed correctly and session ends cleanly                                                    |
 | P2-5 (agent buffer limit)        | ✅ Done — 3 tests in `describe('P2-5: Agent response buffer size limit')`; replaced unrealistic `>1MB` response test with 500 KB pass case                                               |
 | P3-1 (command trust comments)    | ✅ Done — comment block added above `registerCommand` calls in `gpg-bridge-agent/src/extension.ts`; no automated test                                                                    |

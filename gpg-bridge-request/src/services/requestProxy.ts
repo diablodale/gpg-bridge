@@ -173,15 +173,25 @@ export interface RequestProxyDeps {
   serverFactory?: IServerFactory;
   fileSystem?: IFileSystem;
   gpgCliFactory?: IGpgCliFactory;
+  /** Override idle timeout (ms) — inject a short value in tests to avoid real 30 s waits. */
+  clientIdleTimeoutMs?: number;
 }
 
 // Internal config type used by handlers - always has commandExecutor after DI
 interface RequestProxyConfigWithExecutor extends RequestProxyConfig {
   commandExecutor: ICommandExecutor;
+  clientIdleTimeoutMs: number;
 }
 
 /** Maximum bytes allowed in the client receive buffer before the session is terminated. */
 const MAX_CLIENT_BUFFER_BYTES = 1 * 1024 * 1024; // 1 MB
+
+/**
+ * Milliseconds a client may stay idle (connected but sending no data) after the
+ * agent greeting is forwarded before the session is forcibly closed.
+ * Guards against connections that open the socket and never send a command.
+ */
+const CLIENT_IDLE_TIMEOUT_MS = 30_000;
 
 /**
  * RequestSessionManager - Event-driven session manager (like NodeJS Socket)
@@ -197,6 +207,7 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
   private state: SessionState = 'DISCONNECTED';
   private buffer: string = '';
   private lastCommand: string = ''; // First token (verb) of the most recent command sent to agent (e.g. 'BYE')
+  private idleTimeout: NodeJS.Timeout | null = null; // Cleared on first client data; fires if client stays idle
 
   constructor(config: RequestProxyConfigWithExecutor, socket: net.Socket, sessionId: string) {
     super();
@@ -279,6 +290,14 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
         this.emit('AGENT_RESPONSE_COMPLETE', result.greeting);
         // Resume socket now that greeting has been forwarded to the client
         this.socket.resume();
+        // Start idle timer — cleared by first client data in handleClientDataStart.
+        // Started here (not on connect) to avoid racing with the agent handshake timeouts.
+        this.idleTimeout = setTimeout(() => {
+          this.emit(
+            'ERROR_OCCURRED',
+            `Client idle timeout after ${this.config.clientIdleTimeoutMs}ms`,
+          );
+        }, this.config.clientIdleTimeoutMs);
       } else {
         this.emit('ERROR_OCCURRED', 'Agent connect failed: No greeting received');
       }
@@ -290,6 +309,11 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
 
   private handleClientDataStart(data: Buffer): void {
     this.transition('CLIENT_DATA_START');
+    // Client sent data — cancel the idle timer that started after the greeting.
+    if (this.idleTimeout !== null) {
+      clearTimeout(this.idleTimeout);
+      this.idleTimeout = null;
+    }
     try {
       this.buffer += decodeProtocolData(data);
       if (this.buffer.length > MAX_CLIENT_BUFFER_BYTES) {
@@ -410,6 +434,12 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
   private async handleCleanupRequested(hadError: boolean): Promise<void> {
     this.transition('CLEANUP_REQUESTED');
     log(this.config, `[${this.sessionId}] Starting cleanup (hadError=${hadError})`);
+
+    // Cancel idle timer so it cannot fire during or after teardown.
+    if (this.idleTimeout !== null) {
+      clearTimeout(this.idleTimeout);
+      this.idleTimeout = null;
+    }
 
     // Remove all operational event handlers before the first await.
     // Any in-flight async operations (connectAgent, sendCommands, writeToClient callbacks)
@@ -633,6 +663,7 @@ export class RequestProxy {
   private readonly fileSystem: IFileSystem;
   private gpgCli: GpgCli | null = null;
   private readonly gpgCliFactory?: IGpgCliFactory;
+  private readonly clientIdleTimeoutMs: number;
   private sessions: Map<string, RequestSessionManager> = new Map();
   private server: net.Server | null = null;
   private _socketPath: string | null = null;
@@ -649,6 +680,7 @@ export class RequestProxy {
       unlinkSync: fs.unlinkSync,
     };
     this.gpgCliFactory = deps?.gpgCliFactory;
+    this.clientIdleTimeoutMs = deps?.clientIdleTimeoutMs ?? CLIENT_IDLE_TIMEOUT_MS;
   }
 
   /** Socket path this proxy is listening on, or null if not started */
@@ -680,6 +712,7 @@ export class RequestProxy {
     const fullConfig: RequestProxyConfigWithExecutor = {
       ...this.config,
       commandExecutor: this.commandExecutor,
+      clientIdleTimeoutMs: this.clientIdleTimeoutMs,
     };
 
     // Construct GpgCli via injected factory or default — throws if gpgconf not found
