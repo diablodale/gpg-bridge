@@ -250,7 +250,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
   **Severity:** 🟡 Medium — guard code is already correct; this is documentation only.
 
-- [ ] **P3-2** Document Assuan command passthrough security model
+- [x] **P3-2** ✅ Document Assuan command passthrough security model
       **Files:** `gpg-bridge-agent/src/services/agentProxy.ts`, `docs/gpg-agent-protocol.md`
 
   The bridge connects to **`agent-extra-socket`** (not `agent-socket`). This is gpg-agent's
@@ -537,7 +537,7 @@ P4-3  (stop() CLOSING safety verification)    ✅ done — comment added in stop
 P2-4  (pipelined data edge case)              ✅ done — 2 tests in describe('P2-4'): back-to-back chunk verifies 2 sendCommands calls; empty-buffer test verifies args[1] contains full second command
 P1-4  (audit nonce log exposure)              ✅ done — audit only; all 3 paths already clean: connectAgent logs port only, handleAgentSocketConnected logs text only, handleClientDataReceived already uses `${length}-byte nonce`
 P5-2 / P5-3                                   ✅ done — P5-2: TOCTOU accepted-race comment in connectAgent near readFileSync; P5-3: expanded nonce validation comment in handleAgentDataReceived
-P3-2  (extra-socket model + OPTION args)      ← comment in agentProxy + doc update
+P3-2  (extra-socket model + OPTION args)      ✅ done — 13-line comment in agentProxy.ts::start() near extra-socket assignment; new §9 in gpg-agent-protocol.md covering socket comparison, forbidden commands, OPTION argument table, pinentry-mode and putenv notes, bridge-side policy rationale
 P6-1 / P6-2 / P6-3                            ← audit + documentation
 Completed Changes (stop() FATAL fix)          ✅ done — test added to agentProxy.test.ts
 ```

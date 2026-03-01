@@ -396,3 +396,80 @@ OK
 | Wait for `OK`/`ERR` before next command          | Maintain strict request/response order |
 | Support multiple sequential inquiries            | Some operations require them           |
 | Never pipeline commands                          | GPG agent does not support pipelining  |
+
+---
+
+# 9. Extra Socket vs. Main Socket (Security Model)
+
+This bridge connects exclusively to **`agent-extra-socket`** (`S.gpg-agent.extra`), not to
+the main `agent-socket` (`S.gpg-agent`). This is a deliberate security choice.
+
+## Why the extra socket is used
+
+`gpg-agent` exposes two Unix sockets (or, on Windows, Assuan TCP-over-localhost sockets):
+
+| Socket       | `gpgconf --list-dirs` key | Purpose                                            |
+| ------------ | ------------------------- | -------------------------------------------------- |
+| Main socket  | `agent-socket`            | Full-privilege local socket — all commands allowed |
+| Extra socket | `agent-extra-socket`      | Restricted socket for remote/forwarded access      |
+
+The extra socket is specifically designed for SSH-forwarding and VS Code remote scenarios
+where the socket is tunnelled to an untrusted host. `gpg-agent` enforces command
+restrictions at the **protocol layer** before executing any operation.
+
+## Commands forbidden on the extra socket
+
+The following commands return `ERR 67109115 Forbidden` regardless of how they are invoked:
+
+```
+PRESET_PASSPHRASE   → ERR 67109115 Forbidden
+CLEAR_PASSPHRASE    → ERR 67109115 Forbidden
+GET_PASSPHRASE      → ERR 67109115 Forbidden
+```
+
+These are the commands that could cache or expose plaintext passphrases. All other
+public-key operations (`PKDECRYPT`, `PKSIGN`, `GENKEY`, `KEYINFO`, `HAVEKEY`, `GETINFO`,
+`READKEY`, `KEYATTR`, …) are permitted.
+
+## OPTION arguments on the extra socket
+
+The `OPTION` verb itself is permitted. Most `OPTION` arguments are accepted because they
+configure per-session display and locale preferences that do not affect security:
+
+| OPTION argument         | Accepted          | Notes                                         |
+| ----------------------- | ----------------- | --------------------------------------------- |
+| `display=<X11 display>` | ✅                | Sets X11 display for pinentry                 |
+| `ttyname=<path>`        | ✅                | Sets TTY for pinentry                         |
+| `ttytype=<type>`        | ✅                | Sets terminal type                            |
+| `lc-messages=<locale>`  | ✅                | Locale for messages                           |
+| `lc-ctype=<locale>`     | ✅                | Locale for character classification           |
+| `allow-pinentry-notify` | ✅                | Enables pinentry-launched status lines        |
+| `no-grab`               | ✅                | Disables X11 keyboard grab in pinentry        |
+| `pinentry-mode=<mode>`  | ✅ (with caveats) | See note below                                |
+| `putenv=<NAME>=<value>` | ✅                | Sets env var forwarded to pinentry subprocess |
+
+### `pinentry-mode` note
+
+`OPTION pinentry-mode loopback` is **permitted** on the extra socket. Loopback mode
+redirects passphrase prompts back to the Assuan client rather than launching pinentry.
+In this bridge’s deployment scenario the Assuan client is the `gpg-bridge-request`
+extension on the remote machine — which does not implement passphrase prompting and
+will cause the operation to fail with an error. This is the correct outcome: the bridge
+does not handle secrets.
+
+### `putenv` note
+
+`OPTION putenv` injects environment variables into the pinentry subprocess. On the extra
+socket this arrives via the forwarded tunnel, meaning a remote process could influence
+pinentry’s environment. The practical risk is low: pinentry only reads a small set of
+environment variables (`DISPLAY`, `GPG_TERM`, locale vars), and the same-user restriction
+means the remote process already runs as the Windows user that owns the gpg-agent.
+
+## Bridge-side policy
+
+No bridge-side allowlist or denylist is implemented or needed. `gpg-agent` is the correct
+trust anchor for command authorization. Adding a bridge-side filter would:
+
+- Introduce false negatives (new legitimate commands get blocked)
+- Provide no additional security (gpg-agent already enforces the boundary)
+- Create a maintenance burden as gpg-agent evolves

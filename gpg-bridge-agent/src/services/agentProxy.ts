@@ -654,6 +654,17 @@ export class AgentProxy {
     }
     // Construct via injected factory or fall back to production default
     this.gpgCli = this.gpgCliFactory?.create() ?? new GpgCli();
+
+    // P3-2: Use agent-extra-socket, not agent-socket.
+    // The extra socket is gpg-agent's built-in restricted socket. gpg-agent enforces
+    // command-level access control at the protocol layer before executing any operation:
+    //   - PRESET_PASSPHRASE  → ERR 67109115 Forbidden
+    //   - CLEAR_PASSPHRASE   → ERR 67109115 Forbidden
+    //   - GET_PASSPHRASE     → ERR 67109115 Forbidden
+    // No bridge-side allowlist or denylist is needed — gpg-agent is the correct trust
+    // anchor. Commands permitted on the extra socket (GETINFO, KEYINFO, HAVEKEY,
+    // PKDECRYPT, PKSIGN, GENKEY, …) are the normal public-key operations that remote
+    // GPG clients need. See docs/gpg-agent-protocol.md §9 for the full security model.
     this.gpgAgentSocketPath = await this.gpgCli.gpgconfListDirs('agent-extra-socket');
     if (!this.fileSystem.existsSync(this.gpgAgentSocketPath)) {
       throw new Error(`GPG agent socket not found: ${this.gpgAgentSocketPath}`);
