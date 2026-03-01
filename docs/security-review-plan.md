@@ -145,7 +145,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
   - `agentProxy.ts::handleAgentDataChunk` — intermediate log is byte count only;
     complete-response log uses `sanitizeForLog(this.buffer)`. ✅
 
-- [ ] **P1-4** Audit nonce bytes in log output
+- [x] **P1-4** ✅ Audit nonce bytes in log output
       The 16-byte nonce in the Gpg4win Assuan socket file (`S.gpg-agent`) is **not a per-session
       secret**:
   - The socket file lives in a folder only accessible to the same Windows user that runs
@@ -535,7 +535,7 @@ P3-3  (dir + socket permissions)              ✅ done — else-branch chmodSync
 P4-2  (idle timeout)                          ✅ done — CLIENT_IDLE_TIMEOUT_MS=30s, injectable via deps, timer in handleClientSocketConnected, cleared in handleClientDataStart + handleCleanupRequested, 2 tests
 P4-3  (stop() CLOSING safety verification)    ✅ done — comment added in stop() explaining FATAL/DISCONNECTED unreachability and CLOSING .once() no-op safety
 P2-4  (pipelined data edge case)              ✅ done — 2 tests in describe('P2-4'): back-to-back chunk verifies 2 sendCommands calls; empty-buffer test verifies args[1] contains full second command
-P1-4  (audit nonce log exposure)              ← read-only audit + comment
+P1-4  (audit nonce log exposure)              ✅ done — audit only; all 3 paths already clean: connectAgent logs port only, handleAgentSocketConnected logs text only, handleClientDataReceived already uses `${length}-byte nonce`
 P5-2 / P5-3                                   ← comments only
 P3-2  (extra-socket model + OPTION args)      ← comment in agentProxy + doc update
 P6-1 / P6-2 / P6-3                            ← audit + documentation
