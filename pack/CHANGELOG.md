@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for guidelines.
+## [0.4.0](https://github.com/diablodale/gpg-bridge/compare/v0.3.0...v0.4.0) (2026-03-01)
+
+
+### Fixed
+
+* **agent:** cleanup in stop() of session states+cleanup promises, add test ([49c2ef6](https://github.com/diablodale/gpg-bridge/commit/49c2ef65b385e660e400b869a2fc3fb79f77849c))
+* **security:** add concurrent session limit P4-1 ([9996b78](https://github.com/diablodale/gpg-bridge/commit/9996b7818d589a18906d6652fdf78f4bd3fecd30))
+* **security:** add request client idle timeout (30s) P4-2 ([b1f2441](https://github.com/diablodale/gpg-bridge/commit/b1f24413c7a34666e0a43915b7a2e54fd4474c99))
+* **security:** add request gpgBinDir for hardened installs P6-3 ([edf0bb0](https://github.com/diablodale/gpg-bridge/commit/edf0bb0911a42d9b3c4339d6848006affbf249a5))
+* **security:** add UUID format guard on `sessionId` input P3-4 ([83f9402](https://github.com/diablodale/gpg-bridge/commit/83f9402cc756f22aa528d62bdef34f4e57673634))
+* **security:** agent buffer size limit P2-5 ([2a6c5cc](https://github.com/diablodale/gpg-bridge/commit/2a6c5cc44462e819c87e8651dbcd8be8b34717cd))
+* **security:** client command-buffer size limit P2-1 ([0e3c9d1](https://github.com/diablodale/gpg-bridge/commit/0e3c9d1bc6e22546d2aa7a74e33a13a4aa88f5f7))
+* **security:** harden socket access via directory + socket permissions P3-3 ([b868b1c](https://github.com/diablodale/gpg-bridge/commit/b868b1c0473763eb2134a9ca466cbfe2c481f152))
+* **security:** port range validation P2-2 ([3a51644](https://github.com/diablodale/gpg-bridge/commit/3a516444f8c84d9dabb424738bee99b4fa113414))
+* **security:** remove forced debug logging P1-1 ([d3640f3](https://github.com/diablodale/gpg-bridge/commit/d3640f3b7e3efae3adf89154a82dc80bd2b0a1f7))
+* **security:** validate `GNUPGHOME` before subprocess injection P2-3 ([421a85c](https://github.com/diablodale/gpg-bridge/commit/421a85c4c3e01828727d9ee56bb594d2ce17b886))
+
 ## [0.3.0](https://github.com/diablodale/gpg-bridge/compare/v0.2.0...v0.3.0) (2026-02-27)
 
 

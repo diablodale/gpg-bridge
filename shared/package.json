@@ -1,7 +1,7 @@
 {
   "name": "@gpg-bridge/shared",
   "description": "Shared code for GPG Bridge extensions",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "homepage": "https://github.com/diablodale/gpg-bridge",
   "repository": {
