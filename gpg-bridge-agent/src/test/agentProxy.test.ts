@@ -449,7 +449,8 @@ describe('AgentProxy', () => {
 
       // Should resolve without throwing — session not found means the gpg-agent
       // already closed the socket (e.g. after BYE) and CLEANUP_COMPLETE already ran.
-      await agentProxy.disconnectAgent('invalid-session-id');
+      // Use a valid UUID format that is simply not present in the sessions map.
+      await agentProxy.disconnectAgent('00000000-0000-4000-8000-000000000000');
     });
   });
 
@@ -1391,15 +1392,37 @@ describe('AgentProxy', () => {
     // creates race conditions because state transitions complete synchronously.
     // The guard is verified by code review. This test confirms it rejects invalid sessions.
 
-    it('should reject sendCommands on invalid sessionId', async () => {
+    it('should reject sendCommands on unknown (but valid-format) sessionId', async () => {
       const agentProxy = await makeProxy();
 
-      // Try to send command without connecting
+      // Valid UUID format but not in the sessions map
       try {
-        await agentProxy.sendCommands('nonexistent-session', 'VERSION\n');
+        await agentProxy.sendCommands('00000000-0000-4000-8000-000000000000', 'VERSION\n');
         expect.fail('Should have rejected invalid session');
       } catch (error: unknown) {
         expect((error as Error).message).to.include('Invalid session');
+      }
+    });
+
+    it('should reject sendCommands on non-UUID sessionId', async () => {
+      const agentProxy = await makeProxy();
+
+      try {
+        await agentProxy.sendCommands('not-a-uuid', 'VERSION\n');
+        expect.fail('Should have rejected non-UUID sessionId');
+      } catch (error: unknown) {
+        expect((error as Error).message).to.include('Invalid sessionId format');
+      }
+    });
+
+    it('should reject disconnectAgent on non-UUID sessionId', async () => {
+      const agentProxy = await makeProxy();
+
+      try {
+        await agentProxy.disconnectAgent('not-a-uuid');
+        expect.fail('Should have rejected non-UUID sessionId');
+      } catch (error: unknown) {
+        expect((error as Error).message).to.include('Invalid sessionId format');
       }
     });
   });

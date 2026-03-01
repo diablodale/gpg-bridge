@@ -335,7 +335,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
   **Severity:** 🟡 Medium — closes a permission-enforcement gap on restart; tightens overly
   broad socket permissions.
 
-- [ ] **P3-4** Add UUID format guard on `sessionId` input
+- [x] **P3-4** ✅ Add UUID format guard on `sessionId` input
       **Files:** `gpg-bridge-agent/src/services/agentProxy.ts` — `sendCommands`, `disconnectAgent`
       Both methods accept an arbitrary `sessionId: string` from the VS Code command caller.
       A non-UUID string misses the Map and is handled gracefully, but pollutes logs.
@@ -529,7 +529,7 @@ P2-5  (agent response buffer limit)           ✅ done — tests added to agentP
 P2-2  (port range validation)                 ✅ done — 5 tests added to protocol.test.ts
 P3-1  (VS Code command trust comment)         ✅ done — comment added above registerCommand calls
 P5-1  (nonce clearance audit)                 ✅ done — comment added near pendingNonce = null
-P3-4  (UUID format guard)                     ← defensive one-liner
+P3-4  (UUID format guard)                     ✅ done — UUID_RE guard added to sendCommands + disconnectAgent
 P2-3  (GNUPGHOME validation)                  ← constructor guard
 P3-3  (dir + socket permissions)              ← two code changes + tests
 P4-2  (idle timeout)                          ← new timer logic + tests
@@ -570,7 +570,7 @@ No items currently require a human product decision before implementation.
 | P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                 |
 | P2-2 (port range)                | ✅ Done — 5 tests: ports 0, -1 throw; port 65535 accepted; port 65536 throws; NaN already covered by pre-existing test                                                     |
 | P2-3 (GNUPGHOME)                 | Unit: relative path, path with NUL, path with newline — all should throw in constructor                                                                                    |
-| P3-4 (UUID guard)                | Unit: empty string, `"not-a-uuid"`, valid UUID — only last should proceed                                                                                                  |
+| P3-4 (UUID guard)                | ✅ Done — 3 tests: non-UUID sendCommands throws; non-UUID disconnectAgent throws; valid-UUID unknown session handled correctly (no throw)                                  |
 | P4-2 (idle timeout)              | Integration: open socket, send nothing for 31 s, assert session cleaned up                                                                                                 |
 | P2-4 (pipelined data)            | Unit: send two commands back-to-back without waiting for first response; assert both are processed correctly and session ends cleanly                                      |
 | P2-5 (agent buffer limit)        | ✅ Done — 3 tests in `describe('P2-5: Agent response buffer size limit')`; replaced unrealistic `>1MB` response test with 500 KB pass case                                 |

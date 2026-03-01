@@ -601,6 +601,12 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
 // Agent Proxy (Public API)
 // ============================================================================
 
+/**
+ * UUID v4 format regex used to validate sessionId parameters on public methods.
+ * Rejects non-UUID strings early rather than letting them silently miss the Map.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export class AgentProxy {
   private sessions: Map<string, AgentSessionManager> = new Map();
   private socketFactory: ISocketFactory;
@@ -805,6 +811,9 @@ export class AgentProxy {
     sessionId: string,
     commandBlock: string,
   ): Promise<{ response: string }> {
+    if (!UUID_RE.test(sessionId)) {
+      return Promise.reject(new Error(`Invalid sessionId format: ${sessionId}`));
+    }
     const session = this.sessions.get(sessionId);
     if (!session) {
       return Promise.reject(new Error(`Invalid session: ${sessionId}`));
@@ -878,6 +887,9 @@ export class AgentProxy {
    * console.log('Disconnected from agent');
    */
   public async disconnectAgent(sessionId: string): Promise<void> {
+    if (!UUID_RE.test(sessionId)) {
+      return Promise.reject(new Error(`Invalid sessionId format: ${sessionId}`));
+    }
     const session = this.sessions.get(sessionId);
     if (!session) {
       // Session already cleaned up — this is normal when gpg-agent closed the socket
