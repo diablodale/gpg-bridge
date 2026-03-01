@@ -498,9 +498,24 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
 ## Phase 6 — Supply Chain & Dependencies
 
-- [ ] **P6-1** Run `npm audit --audit-level=high` and remediate
+- [x] **P6-1** ✅ Run `npm audit --audit-level=high` and remediate
       From repository root. Document all high/critical findings and their resolution.
-      **Severity:** Variable.
+
+  **Findings:** Three high-severity vulnerabilities, all transitive dependencies of
+  `@j178/prek` (a root devDependency — a pre-commit / git-hook runner). None affect
+  production code; `@j178/prek` is never bundled into any VSIX.
+  | CVE / Advisory | Package | Vuln | Fixed in |
+  |---|---|---|---|
+  | GHSA-43fc-jf86-j433 | `axios` ≤ 1.13.4 | DoS via `__proto__` key in `mergeConfig` | `axios@1.13.5` |
+  | GHSA-3ppc-4f35-3m26, GHSA-7r86-cg39-jmmj, GHSA-23c5-xmqv-rm74 | `minimatch` 10.0.0–10.2.2 | Multiple ReDoS patterns | removed from dep tree |
+  | GHSA-7h2j-956f-4vf2 | `@isaacs/brace-expansion` 5.0.0 | Uncontrolled resource consumption | removed from dep tree |
+
+  **Resolution:** `@j178/prek@0.3.4` (within the existing `^0.3.3` range) updates
+  `axios` to `^1.13.5` and drops `minimatch` / `@isaacs/brace-expansion` from its
+  dependency tree. Updated via `npm update @j178/prek`. `npm audit --audit-level=high`
+  now reports `found 0 vulnerabilities`. All 410 tests pass.
+
+  **Severity:** 🟢 Low — dev tooling only; no production exposure.
 
 - [x] **P6-2** ✅ Verify `uuid` uses CSPRNG
       `uuid@^9`+ uses `crypto.randomFillSync` (Node native, not Math.random).
@@ -562,11 +577,11 @@ P3-2  (extra-socket model + OPTION args)      ✅ done — 13-line comment in ag
 P4-1  (concurrent session limit)              ✅ done — MAX_SESSIONS=32 constant + guard in requestProxy connection callback (destroy socket) + guard in agentProxy.connectAgent() (throw 'Session limit reached'); 3 tests added (2 requestProxy, 1 agentProxy)
 P6-2  (uuid CSPRNG verification)              ✅ done — both packages pin uuid@^9.0.1, installed 9.0.1; uses crypto.randomFillSync; no Math.random path; no code change needed
 P6-3  (which PATH injection doc)              ✅ done — comment in gpgCli.ts::detect(); gpgBridgeRequest.gpgBinDir config + code added to request extension; Security sections added to both READMEs
-P6-1                                           ← npm audit + documentation
+P6-1  (npm audit)                             ✅ done — 3 high findings in @j178/prek transitive deps (axios, minimatch, brace-expansion); resolved by npm update @j178/prek@0.3.4; 0 vulnerabilities
 Completed Changes (stop() FATAL fix)          ✅ done — test added to agentProxy.test.ts
 ```
 
-No items currently require a human product decision before implementation.
+**Security review complete.** All 22 items resolved.
 
 ### File → phase mapping
 
