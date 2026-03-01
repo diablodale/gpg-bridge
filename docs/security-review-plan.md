@@ -200,7 +200,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
   **Severity:** 🟢 Low — out-of-range port causes a connect failure, not a security bypass,
   but clean rejection is better than a cryptic OS error.
 
-- [ ] **P2-3** Validate `GNUPGHOME` before subprocess injection
+- [x] **P2-3** ✅ Validate `GNUPGHOME` before subprocess injection
       **File:** `shared/src/gpgCli.ts` (constructor / `env` getter)
       The `opts.gnupgHome` value is injected directly into the subprocess environment without
       validation. A path containing newlines or `=` characters could corrupt the environment block;
@@ -530,7 +530,7 @@ P2-2  (port range validation)                 ✅ done — 5 tests added to prot
 P3-1  (VS Code command trust comment)         ✅ done — comment added above registerCommand calls
 P5-1  (nonce clearance audit)                 ✅ done — comment added near pendingNonce = null
 P3-4  (UUID format guard)                     ✅ done — UUID_RE guard added to sendCommands + disconnectAgent
-P2-3  (GNUPGHOME validation)                  ← constructor guard
+P2-3  (GNUPGHOME validation)                  ✅ done — constructor guard + 4 tests in gpgCli.test.ts
 P3-3  (dir + socket permissions)              ← two code changes + tests
 P4-2  (idle timeout)                          ← new timer logic + tests
 P4-3  (stop() CLOSING safety verification)    ← comment only, no code change
@@ -569,7 +569,7 @@ No items currently require a human product decision before implementation.
 | P1-3 (D-block log exposure)      | ✅ Done — audit only; all paths already clean; no code changes needed; no new tests required.                                                                              |
 | P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                 |
 | P2-2 (port range)                | ✅ Done — 5 tests: ports 0, -1 throw; port 65535 accepted; port 65536 throws; NaN already covered by pre-existing test                                                     |
-| P2-3 (GNUPGHOME)                 | Unit: relative path, path with NUL, path with newline — all should throw in constructor                                                                                    |
+| P2-3 (GNUPGHOME)                 | ✅ Done — 4 tests: relative path throws, NUL byte throws, newline throws, valid absolute path accepted                                                                     |
 | P3-4 (UUID guard)                | ✅ Done — 3 tests: non-UUID sendCommands throws; non-UUID disconnectAgent throws; valid-UUID unknown session handled correctly (no throw)                                  |
 | P4-2 (idle timeout)              | Integration: open socket, send nothing for 31 s, assert session cleaned up                                                                                                 |
 | P2-4 (pipelined data)            | Unit: send two commands back-to-back without waiting for first response; assert both are processed correctly and session ends cleanly                                      |

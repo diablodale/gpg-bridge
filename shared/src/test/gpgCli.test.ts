@@ -152,6 +152,47 @@ describe('GpgCli', () => {
         /GnuPG bin not found/,
       );
     });
+
+    it('throws when gnupgHome is a relative path', () => {
+      expect(
+        () =>
+          new GpgCli(
+            { gpgBinDir: FAKE_BIN, gnupgHome: 'relative/path' },
+            { existsSync: existsAt(FAKE_GPGCONF_EXE), whichSync: whichMiss },
+          ),
+      ).to.throw(/gnupgHome must be an absolute path/);
+    });
+
+    it('throws when gnupgHome contains a NUL byte', () => {
+      expect(
+        () =>
+          new GpgCli(
+            { gpgBinDir: FAKE_BIN, gnupgHome: '/home/user/\x00evil' },
+            { existsSync: existsAt(FAKE_GPGCONF_EXE), whichSync: whichMiss },
+          ),
+      ).to.throw(/NUL bytes or newlines/);
+    });
+
+    it('throws when gnupgHome contains a newline', () => {
+      expect(
+        () =>
+          new GpgCli(
+            { gpgBinDir: FAKE_BIN, gnupgHome: '/home/user/\nevil' },
+            { existsSync: existsAt(FAKE_GPGCONF_EXE), whichSync: whichMiss },
+          ),
+      ).to.throw(/NUL bytes or newlines/);
+    });
+
+    it('accepts a valid absolute gnupgHome', () => {
+      const home = process.platform === 'win32' ? 'C:\\Users\\foo\\.gnupg' : '/home/foo/.gnupg';
+      expect(
+        () =>
+          new GpgCli(
+            { gpgBinDir: FAKE_BIN, gnupgHome: home },
+            { existsSync: existsAt(FAKE_GPGCONF_EXE), whichSync: whichMiss },
+          ),
+      ).not.to.throw();
+    });
   });
 
   // ============================================================================

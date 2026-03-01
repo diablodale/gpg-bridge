@@ -442,6 +442,19 @@ export class GpgCli {
     this._spawnForStdin = deps?.spawnForStdin ?? defaultSpawnForStdin;
 
     this.gnupgHome = opts?.gnupgHome;
+
+    // Validate gnupgHome before it is injected into any subprocess environment.
+    // A relative path could redirect gpg to attacker-controlled config; a path
+    // containing NUL bytes or newlines could corrupt the environment block.
+    if (this.gnupgHome !== undefined) {
+      if (!path.isAbsolute(this.gnupgHome)) {
+        throw new Error(`gnupgHome must be an absolute path: ${this.gnupgHome}`);
+      }
+      if (this.gnupgHome.includes('\x00') || this.gnupgHome.includes('\n')) {
+        throw new Error('gnupgHome must not contain NUL bytes or newlines');
+      }
+    }
+
     this.binDir = this.detect(opts?.gpgBinDir ?? '');
 
     const exe = (name: string) =>
