@@ -2103,6 +2103,83 @@ describe('RequestProxy', () => {
     });
   });
 
+  // P2-4: Pipelined data edge case
+  // Verifies that checkPipelinedData() correctly handles the empty Buffer it passes to
+  // CLIENT_DATA_START when the second command is already in this.buffer.
+  describe('P2-4: Pipelined data edge case', () => {
+    it('processes two back-to-back commands sent in a single chunk before any agent response', async () => {
+      const logs: string[] = [];
+      mockCommandExecutor.connectAgentResponse = {
+        sessionId: 'test-pipeline',
+        greeting: 'OK\n',
+      };
+      // Both commands will get the same response — we assert by call count, not content.
+      mockCommandExecutor.setSendCommandsResponse('OK\n');
+
+      const instance = new RequestProxy({ logCallback: (msg) => logs.push(msg) }, createMockDeps());
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+
+      // Wait for greeting to be forwarded and socket to resume
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      // Send two complete commands in one chunk without any await between them —
+      // the second command lands in this.buffer while state is still READY/BUFFERING,
+      // then checkPipelinedData() later emits CLIENT_DATA_START with Buffer.from([]).
+      clientSocket.simulateDataReceived(Buffer.from('CMD1\nCMD2\n', 'latin1'));
+
+      // Allow both commands to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Both commands must have been forwarded to the agent
+      expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+      // Both OK responses must have been written to the client socket
+      const written = clientSocket.getWrittenData().toString('latin1');
+      expect(written.match(/^OK/gm)?.length ?? 0).to.be.greaterThanOrEqual(2);
+
+      // No error transitions — session stays live
+      expect(logs.some((l) => l.includes('→ ERROR'))).to.be.false;
+
+      await instance.stop();
+    });
+
+    it('empty-buffer CLIENT_DATA_START does not corrupt the command already in this.buffer', async () => {
+      const logs: string[] = [];
+      mockCommandExecutor.connectAgentResponse = {
+        sessionId: 'test-pipeline-buf',
+        greeting: 'OK\n',
+      };
+      mockCommandExecutor.setSendCommandsResponse('OK\n');
+
+      const instance = new RequestProxy({ logCallback: (msg) => logs.push(msg) }, createMockDeps());
+      await instance.start();
+
+      const server = mockServerFactory.getServers()[0];
+      const clientSocket = server.simulateClientConnection();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      // Second command has a distinctive payload to verify it arrives intact at the agent
+      clientSocket.simulateDataReceived(
+        Buffer.from('FIRST\nSECOND distinctive-payload\n', 'latin1'),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Both commands processed without error
+      expect(logs.some((l) => l.includes('→ ERROR'))).to.be.false;
+      expect(mockCommandExecutor.getCallCount('sendCommands')).to.equal(2);
+
+      // The second sendCommands call must carry the full second command, not a truncated version.
+      // This confirms checkPipelinedData's empty-Buffer emit did not corrupt this.buffer.
+      const secondCallArgs = mockCommandExecutor.getCallArgs('sendCommands', 1) as string[];
+      expect(secondCallArgs[1]).to.include('SECOND distinctive-payload');
+
+      await instance.stop();
+    });
+  });
+
   // Phase 7c: Tests for Response Processing & INQUIRE (Phase 5)
   // Testing EventEmitter architecture - CLIENT_DATA_COMPLETE, RESPONSE_INQUIRE, RESPONSE_OK_OR_ERR
 

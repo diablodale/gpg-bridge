@@ -217,7 +217,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
       Replaced unrealistic `'should accumulate large response (>1MB)'` test with a realistic
       500 KB test; all three P2-5 tests pass (under-limit, single oversized chunk, split chunks).
 
-- [ ] **P2-4** Investigate `checkPipelinedData` empty-buffer edge case
+- [x] **P2-4** ✅ Investigate `checkPipelinedData` empty-buffer edge case
       **File:** `gpg-bridge-request/src/services/requestProxy.ts`
       `checkPipelinedData()` emits `CLIENT_DATA_START` with `Buffer.from([])` (empty buffer)
       when `this.buffer` already contains data. `handleClientDataStart` appends
@@ -534,7 +534,7 @@ P2-3  (GNUPGHOME validation)                  ✅ done — constructor guard + 4
 P3-3  (dir + socket permissions)              ✅ done — else-branch chmodSync(dir, 0o700) + socket 0o666→0o600 + 2 tests updated/added
 P4-2  (idle timeout)                          ✅ done — CLIENT_IDLE_TIMEOUT_MS=30s, injectable via deps, timer in handleClientSocketConnected, cleared in handleClientDataStart + handleCleanupRequested, 2 tests
 P4-3  (stop() CLOSING safety verification)    ✅ done — comment added in stop() explaining FATAL/DISCONNECTED unreachability and CLOSING .once() no-op safety
-P2-4  (pipelined data edge case)              ← test only
+P2-4  (pipelined data edge case)              ✅ done — 2 tests in describe('P2-4'): back-to-back chunk verifies 2 sendCommands calls; empty-buffer test verifies args[1] contains full second command
 P1-4  (audit nonce log exposure)              ← read-only audit + comment
 P5-2 / P5-3                                   ← comments only
 P3-2  (extra-socket model + OPTION args)      ← comment in agentProxy + doc update
@@ -562,24 +562,24 @@ No items currently require a human product decision before implementation.
 
 ### Testing requirements per phase
 
-| Work item                        | Test requirement                                                                                                                                                                               |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1-1 (forced debug logging)      | ✅ Done — no automated test needed; change is a one-line config read fix. All 386 existing tests continue to pass.                                                                             |
-| P1-2 (sanitizeForLog audit)      | ✅ Done — audit only; no code changes needed; no new tests required.                                                                                                                           |
-| P1-3 (D-block log exposure)      | ✅ Done — audit only; all paths already clean; no code changes needed; no new tests required.                                                                                                  |
-| P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                                     |
-| P2-2 (port range)                | ✅ Done — 5 tests: ports 0, -1 throw; port 65535 accepted; port 65536 throws; NaN already covered by pre-existing test                                                                         |
-| P2-3 (GNUPGHOME)                 | ✅ Done — 4 tests: relative path throws, NUL byte throws, newline throws, valid absolute path accepted                                                                                         |
-| P3-4 (UUID guard)                | ✅ Done — 3 tests: non-UUID sendCommands throws; non-UUID disconnectAgent throws; valid-UUID unknown session handled correctly (no throw)                                                      |
-| P4-2 (idle timeout)              | ✅ Done — 2 tests with `clientIdleTimeoutMs: 50/100` injection: idle with no data triggers cleanup + idle-timeout log; sending data before timeout cancels timer and logs no timeout           |
-| P2-4 (pipelined data)            | Unit: send two commands back-to-back without waiting for first response; assert both are processed correctly and session ends cleanly                                                          |
-| P2-5 (agent buffer limit)        | ✅ Done — 3 tests in `describe('P2-5: Agent response buffer size limit')`; replaced unrealistic `>1MB` response test with 500 KB pass case                                                     |
-| P3-1 (command trust comments)    | ✅ Done — comment block added above `registerCommand` calls in `gpg-bridge-agent/src/extension.ts`; no automated test                                                                          |
-| P3-3 (dir + socket permissions)  | ✅ Done — `existsSync`=`true` test: renamed + strengthened to assert 0o700 on dir + 0o600 on socket, no mkdirSync; `existsSync`=`false` test: retains mkdirSync + 0o600 socket assertion       |
-| P4-1 (session limit)             | Integration: open `MAX_SESSIONS + 1` connections simultaneously, assert the last connection is rejected/destroyed immediately                                                                  |
-| P4-3 (stop() CLOSING comment)    | ✅ Done — comment expanded above emit loop; explains FATAL/DISCONNECTED unreachable via .once(CLEANUP_COMPLETE/ERROR) deletion, CLOSING .once() no-op, and contrast with agentProxy.ts::stop() |
-| P5-1 (nonce clearance)           | ✅ Done — comment added in `handleAgentSocketConnected` explaining nonce is a same-user capability token, not a per-session secret; no automated test needed                                   |
-| P6-1 (npm audit)                 | Run `npm audit --audit-level=high`; record findings and resolutions in `docs/security-review-plan.md` under a new **Phase 6 Findings** section                                                 |
-| Completed Changes (stop() FATAL) | ✅ Done — `'resolves when session cleanup reaches FATAL via CLEANUP_ERROR (no hang)'` in `agentProxy.test.ts` stop() describe block                                                            |
+| Work item                        | Test requirement                                                                                                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P1-1 (forced debug logging)      | ✅ Done — no automated test needed; change is a one-line config read fix. All 386 existing tests continue to pass.                                                                               |
+| P1-2 (sanitizeForLog audit)      | ✅ Done — audit only; no code changes needed; no new tests required.                                                                                                                             |
+| P1-3 (D-block log exposure)      | ✅ Done — audit only; all paths already clean; no code changes needed; no new tests required.                                                                                                    |
+| P2-1 (buffer limit)              | ✅ Done — 3 tests in `describe('P2-1: Client buffer size limit')`; replaced unrealistic 2 MB D-block test with 500 KB pass case and 1 MB+1 byte error case                                       |
+| P2-2 (port range)                | ✅ Done — 5 tests: ports 0, -1 throw; port 65535 accepted; port 65536 throws; NaN already covered by pre-existing test                                                                           |
+| P2-3 (GNUPGHOME)                 | ✅ Done — 4 tests: relative path throws, NUL byte throws, newline throws, valid absolute path accepted                                                                                           |
+| P3-4 (UUID guard)                | ✅ Done — 3 tests: non-UUID sendCommands throws; non-UUID disconnectAgent throws; valid-UUID unknown session handled correctly (no throw)                                                        |
+| P4-2 (idle timeout)              | ✅ Done — 2 tests with `clientIdleTimeoutMs: 50/100` injection: idle with no data triggers cleanup + idle-timeout log; sending data before timeout cancels timer and logs no timeout             |
+| P2-4 (pipelined data)            | ✅ Done — 2 tests: (1) single chunk with CMD1\\nCMD2\\n asserts 2 sendCommands calls + ≥2 OK responses written; (2) buffer-corruption test verifies second command args[1] contains full payload |
+| P2-5 (agent buffer limit)        | ✅ Done — 3 tests in `describe('P2-5: Agent response buffer size limit')`; replaced unrealistic `>1MB` response test with 500 KB pass case                                                       |
+| P3-1 (command trust comments)    | ✅ Done — comment block added above `registerCommand` calls in `gpg-bridge-agent/src/extension.ts`; no automated test                                                                            |
+| P3-3 (dir + socket permissions)  | ✅ Done — `existsSync`=`true` test: renamed + strengthened to assert 0o700 on dir + 0o600 on socket, no mkdirSync; `existsSync`=`false` test: retains mkdirSync + 0o600 socket assertion         |
+| P4-1 (session limit)             | Integration: open `MAX_SESSIONS + 1` connections simultaneously, assert the last connection is rejected/destroyed immediately                                                                    |
+| P4-3 (stop() CLOSING comment)    | ✅ Done — comment expanded above emit loop; explains FATAL/DISCONNECTED unreachable via .once(CLEANUP_COMPLETE/ERROR) deletion, CLOSING .once() no-op, and contrast with agentProxy.ts::stop()   |
+| P5-1 (nonce clearance)           | ✅ Done — comment added in `handleAgentSocketConnected` explaining nonce is a same-user capability token, not a per-session secret; no automated test needed                                     |
+| P6-1 (npm audit)                 | Run `npm audit --audit-level=high`; record findings and resolutions in `docs/security-review-plan.md` under a new **Phase 6 Findings** section                                                   |
+| Completed Changes (stop() FATAL) | ✅ Done — `'resolves when session cleanup reaches FATAL via CLEANUP_ERROR (no hang)'` in `agentProxy.test.ts` stop() describe block                                                              |
 
 Run `npm test` after each phase. All existing tests must continue to pass.
