@@ -31,7 +31,7 @@
     "watch:shared": "npm --prefix shared run watch",
     "watch:agent": "npm --prefix gpg-bridge-agent run watch",
     "watch:request": "npm --prefix gpg-bridge-request run watch",
-    "prepackage": "npm run assets",
+    "prepackage": "npm run compile:shared && npm run assets",
     "assets": "npm run icon && npm run diagram",
     "diagram": "npm run diagram:render",
     "diagram:render": "mmdc -i assets/how-it-works.mmd -o assets/how-it-works.png -b transparent",
@@ -55,9 +55,12 @@
     "icon:render": "node -e \"const{Resvg}=require('@resvg/resvg-js');const fs=require('fs');const svg=fs.readFileSync('./assets/icon.svg');const png=new Resvg(svg,{fitTo:{mode:'width',value:256}}).render().asPng();fs.writeFileSync('./assets/icon.png',png);console.log('assets/icon.png written');\"",
     "icon:deploy": "node -e \"const fs=require('fs');['gpg-bridge-agent','gpg-bridge-request','pack'].forEach(d=>{fs.copyFileSync('./assets/icon.png',d+'/icon.png');console.log(d+'/icon.png copied');});\"",
     "clean": "rimraf -g \"gpg-bridge-agent/out\" \"gpg-bridge-request/out\" \"gpg-bridge-agent/gpg-bridge-agent-*.vsix\" \"gpg-bridge-request/gpg-bridge-request-*.vsix\" \"pack/gpg-bridge-*.vsix\" \"shared/out\"",
+    "prepublishOnly": "node -e \"console.error('ERROR: use npm run publish, not npm publish'); process.exit(1)\"",
     "release": "commit-and-tag-version",
     "release:dry-run": "commit-and-tag-version --dry-run",
-    "release:minor": "commit-and-tag-version --release-as minor"
+    "release:minor": "commit-and-tag-version --release-as minor",
+    "publish": "node scripts/publish.js",
+    "publish:dry-run": "node scripts/publish.js --dry-run"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
