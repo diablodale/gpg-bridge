@@ -885,8 +885,27 @@ export class RequestProxy {
         stopResolve();
       });
 
-      // Emit CLEANUP_REQUESTED on every live session so their sockets
-      // close, which unblocks server.close() above.
+      // Emit CLEANUP_REQUESTED on every live session so their sockets close,
+      // which unblocks server.close() above.
+      //
+      // Why FATAL/DISCONNECTED states are unreachable here:
+      // Sessions are deleted from this.sessions via the .once('CLEANUP_COMPLETE') /
+      // .once('CLEANUP_ERROR') listeners in the connection handler. Those listeners
+      // fire synchronously before the state machine advances to DISCONNECTED/FATAL,
+      // so those terminal states can never appear in the map.
+      //
+      // Why sessions already in CLOSING state are safe:
+      // CLEANUP_REQUESTED is registered with .once(), which Node's EventEmitter removes
+      // synchronously at invocation time, before the handler runs a single statement.
+      // By the time a session reaches CLOSING (mid-await inside handleCleanupRequested)
+      // its CLEANUP_REQUESTED listener is already gone. Emitting the event here becomes
+      // a silent no-op: transition() is never called a second time, no exception is thrown,
+      // and the in-progress cleanup continues independently until it closes the socket and
+      // unblocks server.close().
+      //
+      // Contrast with agentProxy.ts::stop(): that stop() emits ERROR_OCCURRED instead of
+      // CLEANUP_REQUESTED because the agent session lifecycle uses a different event chain.
+      // ERROR_OCCURRED is also .once(), so a second emit there is equally a no-op.
       for (const session of this.sessions.values()) {
         session.emit('CLEANUP_REQUESTED', false);
       }
