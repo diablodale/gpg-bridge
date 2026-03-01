@@ -510,14 +510,30 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
       `uuid@9.0.1` calls `crypto.randomFillSync` for all randomness — no `Math.random` path.
       `shared` and the root workspace do not use `uuid` directly.
       No code change needed.
-      **Severity:** 🟢 Low — informational confirmation.
 
-- [ ] **P6-3** Review `which` package for PATH injection (Windows)
+  **Severity:** 🟢 Low — informational confirmation.
+
+- [x] **P6-3** ✅ Review `which` package for PATH injection (Windows)
       `which.sync('gpgconf')` on Windows resolves against `PATH`. A malicious directory early in
       `PATH` could shadow `gpgconf.exe`. This is a general Windows security concern, not specific
       to this extension. Document that `gpgBinDir` (explicit path) is the preferred hardened
       configuration.
-      **Severity:** 🟢 Low.
+
+  **Findings:**
+  - 15-line comment added to `shared/src/gpgCli.ts::detect()` immediately before the
+    `which.sync` call. Explains the PATH injection risk, its OS-level scope, and that setting
+    `gpgBridgeAgent.gpgBinDir` / `gpgBridgeRequest.gpgBinDir` to an absolute path bypasses
+    the `which` probe entirely.
+  - `gpgBridgeRequest.gpgBinDir` config property added to `gpg-bridge-request/package.json`
+    (type `string`, scope `resource`, default empty) — mirrors the existing agent setting.
+  - `gpg-bridge-request/src/extension.ts`: reads `gpgBinDir` from VS Code config and passes
+    `gpgCliFactory: { create: () => new GpgCli({ gpgBinDir }) }` to `RequestProxy` deps,
+    making the setting take effect at proxy start.
+  - Both READMEs updated: agent README has Trust model + Hardened installation subsections;
+    request README has Socket permissions, Transport, Trust model, and Custom/non-standard
+    GPG location subsections. Configuration tables in both READMEs reflect the settings.
+
+  **Severity:** 🟢 Low.
 
 ---
 
@@ -545,7 +561,8 @@ P5-2 / P5-3                                   ✅ done — P5-2: TOCTOU accepted
 P3-2  (extra-socket model + OPTION args)      ✅ done — 13-line comment in agentProxy.ts::start() near extra-socket assignment; new §9 in gpg-agent-protocol.md covering socket comparison, forbidden commands, OPTION argument table, pinentry-mode and putenv notes, bridge-side policy rationale
 P4-1  (concurrent session limit)              ✅ done — MAX_SESSIONS=32 constant + guard in requestProxy connection callback (destroy socket) + guard in agentProxy.connectAgent() (throw 'Session limit reached'); 3 tests added (2 requestProxy, 1 agentProxy)
 P6-2  (uuid CSPRNG verification)              ✅ done — both packages pin uuid@^9.0.1, installed 9.0.1; uses crypto.randomFillSync; no Math.random path; no code change needed
-P6-1 / P6-3                                   ← audit + documentation
+P6-3  (which PATH injection doc)              ✅ done — comment in gpgCli.ts::detect(); gpgBridgeRequest.gpgBinDir config + code added to request extension; Security sections added to both READMEs
+P6-1                                           ← npm audit + documentation
 Completed Changes (stop() FATAL fix)          ✅ done — test added to agentProxy.test.ts
 ```
 

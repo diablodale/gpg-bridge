@@ -77,6 +77,12 @@
     "configuration": {
       "title": "GPG Bridge Request",
       "properties": {
+        "gpgBridgeRequest.gpgBinDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the GnuPG `bin` directory containing `gpgconf` (e.g. `/usr/local/bin` or `/opt/gnupg/bin`). Leave empty to auto-detect via PATH.",
+          "scope": "resource"
+        },
         "gpgBridgeRequest.debugLogging": {
           "type": "boolean",
           "default": false,

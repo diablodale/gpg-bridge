@@ -42,6 +42,37 @@ the Command Palette (`Ctrl+Shift+P`) if you need to restart it.
    calls to connect, send commands, and disconnect — one session per GPG client connection
 4. All Assuan protocol data passes through unchanged (`latin1` encoding preserves raw bytes)
 
+## Security
+
+### Trust model
+
+All bridge traffic uses Gpg4win's `S.gpg-agent.extra` socket, not the main `S.gpg-agent` socket.
+Gpg-agent enforces command-level access control on the extra socket at the protocol layer: sensitive
+operations such as `PRESET_PASSPHRASE`, `CLEAR_PASSPHRASE`, and `GET_PASSPHRASE` are rejected with
+`ERR 67109115 Forbidden` before they execute. No bridge-side allowlist or denylist is needed —
+Gpg4win is the trust anchor.
+
+Nonce authentication (the 16-byte token in the socket file) restricts connections to processes
+running as the same Windows user that owns the Gpg4win installation. Remote clients never gain
+more privilege than a local GPG client running as that user.
+
+### Hardened installation
+
+By default the extension auto-detects `gpgconf` by searching your system `PATH`. On Windows,
+a directory placed early in `PATH` could shadow `gpgconf.exe` with a malicious substitute
+(a general PATH-injection risk, not specific to this extension).
+
+To eliminate this risk, set `gpgBridgeAgent.gpgBinDir` to the absolute path of your
+Gpg4win `bin` directory:
+
+```json
+"gpgBridgeAgent.gpgBinDir": "C:\\Program Files (x86)\\GnuPG\\bin"
+```
+
+When this setting is present the extension validates the explicit path and never consults `PATH`.
+This is the recommended configuration for shared machines or environments where `PATH` integrity
+cannot be fully trusted.
+
 ---
 
 ## Contributing

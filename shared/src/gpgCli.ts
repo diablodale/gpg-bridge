@@ -479,7 +479,21 @@ export class GpgCli {
       return gpgBinDir;
     }
 
-    // Auto-detect: try PATH first (cross-platform, respects user environment)
+    // Auto-detect: try PATH first (cross-platform, respects user environment).
+    //
+    // P6-3 SECURITY NOTE (PATH injection): PATH resolution
+    // searches directories in order. A malicious directory placed early in PATH
+    // could contain a fake `gpgconf` that gets resolved here instead of the
+    // real gpg binary. This risk is present at the OS / user-profile level
+    // and is not specific to this extension — every tool that execs program names
+    // without absolute paths shares the same exposure.
+    //
+    // HARDENED CONFIGURATION: set `gpgBridgeAgent.gpgBinDir` (or the equivalent
+    // `gpgBridgeRequest.gpgBinDir`) to the absolute gpg bin path
+    // (e.g. `C:\Program Files (x86)\GnuPG\bin`). When `gpgBinDir` is set the
+    // `which` probe is never reached; `detect()` validates the explicit path and
+    // returns immediately. This is the recommended configuration for any
+    // environment where PATH integrity cannot be fully trusted.
     const fromPath = this._whichSync('gpgconf');
     if (fromPath) {
       return path.dirname(fromPath);

@@ -15,6 +15,7 @@ import {
   MockLogConfig,
   MockGpgCli,
 } from '@gpg-bridge/shared/test';
+import { GpgCli } from '@gpg-bridge/shared';
 import type { IGpgCliFactory } from '@gpg-bridge/shared';
 
 describe('RequestProxy', () => {
@@ -4311,6 +4312,87 @@ describe('RequestProxy', () => {
         expect(extraSocket.destroyed, '33rd socket must be destroyed immediately').to.be.true;
         expect(proxy.getSessionCount()).to.equal(32);
         await proxy.stop();
+      });
+    });
+
+    describe('gpgBinDir — explicit GnuPG location', () => {
+      it('factory.create() is called exactly once per start()', async () => {
+        let createCallCount = 0;
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: {
+            create: () => {
+              createCallCount++;
+              return new MockGpgCli('/tmp/test-gpg-agent');
+            },
+          } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        await instance.start();
+        expect(createCallCount).to.equal(1);
+        await instance.stop();
+      });
+
+      it('start() rejects with a path-specific message when gpgBinDir does not exist', async () => {
+        // GpgCli constructor calls detect() synchronously; if gpgBinDir is set and the path
+        // does not exist, detect() throws before gpgconfListDirs is ever called. That error
+        // must surface as a start() rejection so the caller can show a useful message.
+        const invalidDir = '/nonexistent/gpg/bin';
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: {
+            create: () => new GpgCli({ gpgBinDir: invalidDir }),
+          } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        let threw = false;
+        let errorMsg = '';
+        try {
+          await instance.start();
+        } catch (err) {
+          threw = true;
+          errorMsg = err instanceof Error ? err.message : String(err);
+        }
+        expect(threw, 'start() should reject when factory.create() throws').to.be.true;
+        expect(errorMsg, 'error should mention the invalid path').to.include(invalidDir);
+      });
+
+      it('start() succeeds when gpgBinDir points to a valid directory', async () => {
+        // Validates the explicit-path fast-path: GpgCli.detect() validates the directory,
+        // skips `which` entirely, and the proxy starts normally.
+        const customBinDir = '/custom/gpg/bin';
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: {
+            // Inject existsSync so detect() sees the dir as present without touching the
+            // real filesystem; also inject whichSync so the PATH fallback is never reached.
+            create: () =>
+              new GpgCli(
+                { gpgBinDir: customBinDir },
+                { existsSync: () => true, whichSync: () => null },
+              ),
+          } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        // start() will call gpgconfListDirs on the real GpgCli, which runs gpgconf.
+        // Replace gpgconfListDirs with a stub so no subprocess is spawned.
+        // We achieve this by subclassing:
+        class ExplicitBinGpgCli extends GpgCli {
+          constructor() {
+            super({ gpgBinDir: customBinDir }, { existsSync: () => true, whichSync: () => null });
+          }
+          override async gpgconfListDirs(dirName: string): Promise<string> {
+            return dirName === 'agent-socket' ? '/tmp/S.gpg-agent' : '';
+          }
+        }
+        const deps2 = {
+          ...createMockDeps(),
+          gpgCliFactory: { create: () => new ExplicitBinGpgCli() } as IGpgCliFactory,
+        };
+        const instance2 = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps2);
+        await instance2.start();
+        expect(instance2.getSocketPath()).to.equal('/tmp/S.gpg-agent');
+        await instance2.stop();
       });
     });
 

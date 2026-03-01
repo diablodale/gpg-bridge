@@ -20,9 +20,10 @@ install the pack rather than this extension directly.
 
 ## Configuration
 
-| Setting                         | Default | Description                                                         |
-| ------------------------------- | ------- | ------------------------------------------------------------------- |
-| `gpgBridgeRequest.debugLogging` | `false` | Enable verbose logging in the **GPG Bridge Request** output channel |
+| Setting                         | Default  | Description                                                                            |
+| ------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `gpgBridgeRequest.gpgBinDir`    | _(auto)_ | Path to the GnuPG `bin` directory (e.g. `/usr/local/bin`). Leave empty to auto-detect. |
+| `gpgBridgeRequest.debugLogging` | `false`  | Enable verbose logging in the **GPG Bridge Request** output channel                    |
 
 ## Commands
 
@@ -44,6 +45,51 @@ are available via the Command Palette (`Ctrl+Shift+P`) if you need to restart it
 5. Handles the full Assuan INQUIRE D-block pattern for operations that require client-supplied data
 
 All socket I/O uses `latin1` encoding to preserve raw binary content unchanged.
+
+## Security
+
+### Socket permissions
+
+The Unix socket and its parent directory are created with restrictive permissions:
+
+- Socket directory: `0o700` — accessible only by the owning user
+- Socket file: `0o600` — readable and writable only by the owning user
+
+This prevents other users on the remote from connecting to the socket and forwarding
+requests to your Gpg4win installation.
+
+### Transport
+
+This extension does not open any network ports. All communication with GPG Bridge Agent
+on the Windows host travels through VS Code's authenticated extension-host tunnel —
+the same channel used for all remote extension communication. No credentials, private keys,
+or passphrases are transmitted by the bridge; only Assuan protocol messages for public-key
+operations (signing, decryption, key listing) flow through.
+
+### Trust model
+
+Gpg4win's `S.gpg-agent.extra` socket (used by GPG Bridge Agent) enforces command-level
+access control: operations that could expose or preset passphrases are rejected by
+gpg-agent before they execute. The bridge does not implement its own allowlist or
+denylist — Gpg4win is the trust anchor for what remote clients may request.
+
+### Custom GPG or hardened installation
+
+By default the extension locates `gpgconf` by searching your remote's `PATH`.
+This works for standard package-manager installs (`/usr/bin`, `/usr/local/bin`).
+If you have compiled GnuPG from source, installed a newer version alongside the
+system copy, or used a package manager with a non-standard prefix (e.g. Homebrew
+on Linux, Nix, or Guix), set `gpgBridgeRequest.gpgBinDir` to the absolute `bin`
+directory:
+
+```json
+"gpgBridgeRequest.gpgBinDir": "/opt/gnupg/bin"
+```
+
+When this setting is present the extension validates the explicit path and never consults `PATH`.
+A directory placed early in `PATH` could shadow `gpgconf` with a malicious substitute
+(a general PATH-injection risk, not specific to this extension). This is the recommended
+configuration for shared machines or environments where `PATH` integrity cannot be fully trusted.
 
 ---
 

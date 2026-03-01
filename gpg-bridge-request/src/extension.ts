@@ -12,7 +12,7 @@
 import * as vscode from 'vscode';
 import { RequestProxy } from './services/requestProxy';
 import { PublicKeySync } from './services/publicKeySync';
-import { extractErrorMessage } from '@gpg-bridge/shared';
+import { GpgCli, extractErrorMessage } from '@gpg-bridge/shared';
 import type { KeyFilter } from '@gpg-bridge/shared';
 import { VSCodeCommandExecutor } from './services/commandExecutor';
 import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-bridge/shared';
@@ -127,17 +127,19 @@ async function startRequestProxy(): Promise<void> {
     const logCallback = debugLogging
       ? (message: string) => outputChannel.appendLine(message)
       : undefined;
+    const gpgBinDir = config.get<string>('gpgBinDir') ?? '';
 
     // GpgCli.gpgconfListDirs() resolves the socket path at start() time, so no
-    // path override is needed here. Both Phase 2 (no GNUPGHOME — defaults to
-    // ~/.gnupg) and Phase 3 (GNUPGHOME=/tmp/gpg-test-phase3) work transparently
-    // because the base devcontainer image has gnupg2 pre-installed.
+    // socket path override is needed here. Both Phase 2 (no GNUPGHOME — defaults
+    // to ~/.gnupg) and Phase 3 (GNUPGHOME=/tmp/gpg-test-phase3) work
+    // transparently because the base devcontainer image has gnupg2 pre-installed.
     requestProxyService = new RequestProxy(
       {
         logCallback: logCallback,
       },
       {
         commandExecutor: new VSCodeCommandExecutor(),
+        gpgCliFactory: { create: () => new GpgCli({ gpgBinDir: gpgBinDir || undefined }) },
       },
     );
     await requestProxyService.start();
