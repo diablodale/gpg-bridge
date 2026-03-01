@@ -194,6 +194,14 @@ const MAX_CLIENT_BUFFER_BYTES = 1 * 1024 * 1024; // 1 MB
 const CLIENT_IDLE_TIMEOUT_MS = 30_000;
 
 /**
+ * Maximum number of concurrent client sessions. Hard cap prevents unbounded Map
+ * growth and unbounded forwarding calls to the agent extension when many
+ * clients connect without sending data.
+ * Not a user-facing setting — change the constant in source if deployment needs differ.
+ */
+const MAX_SESSIONS = 32;
+
+/**
  * RequestSessionManager - Event-driven session manager (like NodeJS Socket)
  *
  * Manages state, buffer, and event handling for a single client connection.
@@ -754,6 +762,14 @@ export class RequestProxy {
 
     // Create the Unix socket server
     const server = this.serverFactory.createServer({ pauseOnConnect: true }, (clientSocket) => {
+      // P4-1: Reject connections once the hard session cap is reached.
+      // Protects against unbounded Map growth and unbounded forwarded requests.
+      if (this.sessions.size >= MAX_SESSIONS) {
+        log(fullConfig, `Client rejected: session limit of ${MAX_SESSIONS} reached`);
+        clientSocket.destroy();
+        return;
+      }
+
       // Mint UUID now so both extensions log the same identifier for this session
       const sessionId = uuidv4();
       const session = new RequestSessionManager(fullConfig, clientSocket, sessionId);

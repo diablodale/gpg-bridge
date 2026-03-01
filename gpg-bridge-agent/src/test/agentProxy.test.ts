@@ -2211,4 +2211,40 @@ describe('AgentProxy', () => {
       await agentProxy.stop();
     });
   });
+
+  describe('P4-1: Concurrent session limit', () => {
+    it('should reject connectAgent when 32 sessions are already active', async () => {
+      const agentProxy = await makeProxy();
+
+      // Start 32 sessions. Each connectAgent() adds the session to the map
+      // synchronously (before its internal await), so all 32 are in-flight by
+      // the time the loop finishes — no greeting is sent so they never resolve.
+      const pendingPromises: Promise<{ sessionId: string; greeting: string }>[] = [];
+      for (let i = 0; i < 32; i++) {
+        pendingPromises.push(agentProxy.connectAgent());
+      }
+      expect(agentProxy.getSessionCount()).to.equal(32);
+
+      // 33rd attempt must reject before touching the socket factory
+      const socketCountBefore = mockSocketFactory.getSockets().length;
+      try {
+        await agentProxy.connectAgent();
+        expect.fail('Should have thrown: session limit reached');
+      } catch (error: unknown) {
+        expect((error as Error).message).to.equal('Session limit reached');
+      }
+      expect(mockSocketFactory.getSockets().length).to.equal(
+        socketCountBefore,
+        'No new socket should be created for the rejected connection',
+      );
+
+      // Destroy all pending sockets so afterEach cleanup can finish
+      mockSocketFactory.getSockets().forEach((s) => {
+        if (!s.destroyed) {
+          s.destroy();
+        }
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+  });
 });

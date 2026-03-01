@@ -610,6 +610,13 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * Maximum number of concurrent agent sessions. Hard cap prevents unbounded Map
+ * growth and unbounded parallel TCP connections to gpg-agent.
+ * Not a user-facing setting — change the constant in source if deployment needs differ.
+ */
+const MAX_SESSIONS = 32;
+
 export class AgentProxy {
   private sessions: Map<string, AgentSessionManager> = new Map();
   private socketFactory: ISocketFactory;
@@ -722,6 +729,11 @@ export class AgentProxy {
 
     if (!this.gpgAgentSocketPath) {
       throw new Error('Agent proxy not started — call start() first');
+    }
+
+    // P4-1: Enforce session cap before allocating anything (socket, AgentSessionManager).
+    if (this.sessions.size >= MAX_SESSIONS) {
+      throw new Error('Session limit reached');
     }
 
     try {

@@ -4277,6 +4277,43 @@ describe('RequestProxy', () => {
       expect(errorMsg).to.include('gpgconf');
     });
 
+    describe('P4-1: Concurrent session limit', () => {
+      it('should accept exactly 32 simultaneous sessions', async () => {
+        const proxy = new RequestProxy(
+          { logCallback: mockLogConfig.logCallback },
+          createMockDeps(),
+        );
+        await proxy.start();
+
+        const server = mockServerFactory.getServers()[0];
+        for (let i = 0; i < 32; i++) {
+          server.simulateClientConnection();
+        }
+
+        expect(proxy.getSessionCount()).to.equal(32);
+        await proxy.stop();
+      });
+
+      it('should immediately destroy the 33rd connection and not add it to sessions', async () => {
+        const proxy = new RequestProxy(
+          { logCallback: mockLogConfig.logCallback },
+          createMockDeps(),
+        );
+        await proxy.start();
+
+        const server = mockServerFactory.getServers()[0];
+        for (let i = 0; i < 32; i++) {
+          server.simulateClientConnection();
+        }
+
+        const extraSocket = server.simulateClientConnection();
+
+        expect(extraSocket.destroyed, '33rd socket must be destroyed immediately').to.be.true;
+        expect(proxy.getSessionCount()).to.equal(32);
+        await proxy.stop();
+      });
+    });
+
     it('removes stale socket files at both agent-socket and agent-extra-socket paths', async () => {
       const agentSocket = '/tmp/S.gpg-agent';
       const agentExtraSocket = '/tmp/S.gpg-agent.extra';

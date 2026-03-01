@@ -354,7 +354,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
 
 > Goal: bound memory, connections, and session lifetime.
 
-- [ ] **P4-1** Implement concurrent session limit
+- [x] **P4-1** ✅ Implement concurrent session limit
       **Files:** `gpg-bridge-request/src/services/requestProxy.ts`,
       `gpg-bridge-agent/src/services/agentProxy.ts`
       Both session Maps grow without bound. A client that opens many connections and stalls
@@ -538,6 +538,7 @@ P2-4  (pipelined data edge case)              ✅ done — 2 tests in describe('
 P1-4  (audit nonce log exposure)              ✅ done — audit only; all 3 paths already clean: connectAgent logs port only, handleAgentSocketConnected logs text only, handleClientDataReceived already uses `${length}-byte nonce`
 P5-2 / P5-3                                   ✅ done — P5-2: TOCTOU accepted-race comment in connectAgent near readFileSync; P5-3: expanded nonce validation comment in handleAgentDataReceived
 P3-2  (extra-socket model + OPTION args)      ✅ done — 13-line comment in agentProxy.ts::start() near extra-socket assignment; new §9 in gpg-agent-protocol.md covering socket comparison, forbidden commands, OPTION argument table, pinentry-mode and putenv notes, bridge-side policy rationale
+P4-1  (concurrent session limit)              ✅ done — MAX_SESSIONS=32 constant + guard in requestProxy connection callback (destroy socket) + guard in agentProxy.connectAgent() (throw 'Session limit reached'); 3 tests added (2 requestProxy, 1 agentProxy)
 P6-1 / P6-2 / P6-3                            ← audit + documentation
 Completed Changes (stop() FATAL fix)          ✅ done — test added to agentProxy.test.ts
 ```
