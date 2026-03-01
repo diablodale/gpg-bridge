@@ -502,9 +502,14 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
       From repository root. Document all high/critical findings and their resolution.
       **Severity:** Variable.
 
-- [ ] **P6-2** Verify `uuid` uses CSPRNG
+- [x] **P6-2** ✅ Verify `uuid` uses CSPRNG
       `uuid@^9`+ uses `crypto.randomFillSync` (Node native, not Math.random).
       Confirm the installed version is ≥ 9.0.0 in all three `package.json` files.
+      **Findings:** Both `gpg-bridge-agent/package.json` and `gpg-bridge-request/package.json`
+      declare `"uuid": "^9.0.1"`. Installed version is `9.0.1` in both packages.
+      `uuid@9.0.1` calls `crypto.randomFillSync` for all randomness — no `Math.random` path.
+      `shared` and the root workspace do not use `uuid` directly.
+      No code change needed.
       **Severity:** 🟢 Low — informational confirmation.
 
 - [ ] **P6-3** Review `which` package for PATH injection (Windows)
@@ -539,7 +544,8 @@ P1-4  (audit nonce log exposure)              ✅ done — audit only; all 3 pat
 P5-2 / P5-3                                   ✅ done — P5-2: TOCTOU accepted-race comment in connectAgent near readFileSync; P5-3: expanded nonce validation comment in handleAgentDataReceived
 P3-2  (extra-socket model + OPTION args)      ✅ done — 13-line comment in agentProxy.ts::start() near extra-socket assignment; new §9 in gpg-agent-protocol.md covering socket comparison, forbidden commands, OPTION argument table, pinentry-mode and putenv notes, bridge-side policy rationale
 P4-1  (concurrent session limit)              ✅ done — MAX_SESSIONS=32 constant + guard in requestProxy connection callback (destroy socket) + guard in agentProxy.connectAgent() (throw 'Session limit reached'); 3 tests added (2 requestProxy, 1 agentProxy)
-P6-1 / P6-2 / P6-3                            ← audit + documentation
+P6-2  (uuid CSPRNG verification)              ✅ done — both packages pin uuid@^9.0.1, installed 9.0.1; uses crypto.randomFillSync; no Math.random path; no code change needed
+P6-1 / P6-3                                   ← audit + documentation
 Completed Changes (stop() FATAL fix)          ✅ done — test added to agentProxy.test.ts
 ```
 
