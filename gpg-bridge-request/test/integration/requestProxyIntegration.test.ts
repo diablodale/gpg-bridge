@@ -100,10 +100,11 @@ describe('Phase 2 — request-proxy → agent-proxy → Real gpg-agent', functio
     expect(socketPath).to.be.a('string').and.have.length.greaterThan(0);
     expect(fs.existsSync(socketPath), `socket file should exist at ${socketPath}`).to.be.true;
 
-    // Check permissions: all users must be able to read/write (0o666).
+    // Check permissions: owner-only read/write (0o600), matching gpg-agent's own socket mode.
+    // The parent directory is 0o700, providing defence-in-depth for multi-user environments.
     const stat = fs.statSync(socketPath);
     const mode = stat.mode & 0o777;
-    expect(mode, `socket permissions should be 0o666, got 0o${mode.toString(8)}`).to.equal(0o666);
+    expect(mode, `socket permissions should be 0o600, got 0o${mode.toString(8)}`).to.equal(0o600);
   });
 
   // -----------------------------------------------------------------------
