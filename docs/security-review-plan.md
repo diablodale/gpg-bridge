@@ -474,7 +474,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
       accessible to any same-user process that can read `GNUPGHOME`.
       **Severity:** 🟢 Low — informational; clearing `pendingNonce` is already done correctly.
 
-- [ ] **P5-2** Document TOCTOU on socket file read-then-connect
+- [x] **P5-2** ✅ Document TOCTOU on socket file read-then-connect
       **File:** `gpg-bridge-agent/src/services/agentProxy.ts::connectAgent`
       Between `readFileSync(gpgAgentSocketPath)` and the TCP connect, a process running as
       the same Windows user with write access to `GNUPGHOME` could replace the socket file
@@ -487,7 +487,7 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
       **Severity:** 🟢 Low — inherent Assuan client pattern; requires same-user write access
       to `GNUPGHOME`.
 
-- [ ] **P5-3** Confirm agent-side nonce validation (no bridge-side comparison needed)
+- [x] **P5-3** ✅ Confirm agent-side nonce validation (no bridge-side comparison needed)
       The nonce is sent to gpg-agent and validated there (`check_nonce()` in gpg-agent source).
       The bridge never compares nonces itself, so there is no timing-oracle risk.
       Add a comment in `handleAgentDataReceived` confirming: "GPG agent closes the socket
@@ -536,7 +536,7 @@ P4-2  (idle timeout)                          ✅ done — CLIENT_IDLE_TIMEOUT_M
 P4-3  (stop() CLOSING safety verification)    ✅ done — comment added in stop() explaining FATAL/DISCONNECTED unreachability and CLOSING .once() no-op safety
 P2-4  (pipelined data edge case)              ✅ done — 2 tests in describe('P2-4'): back-to-back chunk verifies 2 sendCommands calls; empty-buffer test verifies args[1] contains full second command
 P1-4  (audit nonce log exposure)              ✅ done — audit only; all 3 paths already clean: connectAgent logs port only, handleAgentSocketConnected logs text only, handleClientDataReceived already uses `${length}-byte nonce`
-P5-2 / P5-3                                   ← comments only
+P5-2 / P5-3                                   ✅ done — P5-2: TOCTOU accepted-race comment in connectAgent near readFileSync; P5-3: expanded nonce validation comment in handleAgentDataReceived
 P3-2  (extra-socket model + OPTION args)      ← comment in agentProxy + doc update
 P6-1 / P6-2 / P6-3                            ← audit + documentation
 Completed Changes (stop() FATAL fix)          ✅ done — test added to agentProxy.test.ts

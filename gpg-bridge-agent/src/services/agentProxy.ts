@@ -398,8 +398,11 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
    * Transition: WAITING_FOR_AGENT → READY
    */
   private handleAgentDataReceived(payload: EventPayloads['AGENT_DATA_RECEIVED']): void {
-    // Note: GPG agent does NOT send ERR for bad nonce - it immediately closes socket
-    // See gpg-agent source: check_nonce() calls assuan_sock_close() on nonce failure
+    // P5-3 nonce validation: gpg-agent validates the nonce itself (check_nonce() in the
+    // gpg-agent source). On a bad nonce it closes the socket immediately without sending
+    // any application-level error response — the bridge therefore sees a socket 'close'
+    // event, which flows through ERROR_OCCURRED → CLEANUP_REQUESTED normally.
+    // The bridge never compares nonces itself, so there is no timing-oracle risk here.
     this.transition('AGENT_DATA_RECEIVED');
     log(this.config, `[${this.sessionId}] Response received, ready for next command`);
 
@@ -711,7 +714,15 @@ export class AgentProxy {
     }
 
     try {
-      // Read and parse the socket file to get port and nonce
+      // Read and parse the socket file to get port and nonce.
+      //
+      // P5-2 TOCTOU accepted race: between this readFileSync and the TCP connect below,
+      // a process running as the same Windows user with write access to GNUPGHOME could
+      // replace the socket file, redirecting us to a different port+nonce. This is an
+      // inherent race shared by every Assuan client including the gpg CLI itself.
+      // Exploiting it requires write access to GNUPGHOME, which already grants full
+      // gpg-agent control for that user — a more direct attack path than intercepting
+      // this bridge. No mitigation is appropriate at the bridge layer.
       const socketData = this.fileSystem.readFileSync(this.gpgAgentSocketPath);
       const { port, nonce } = parseSocketFile(socketData);
 
