@@ -6,6 +6,7 @@
  */
 
 import { expect } from 'chai';
+import * as path from 'path';
 import { RequestProxy } from '../services/requestProxy';
 import {
   MockCommandExecutor,
@@ -335,14 +336,39 @@ describe('RequestProxy', () => {
       await instance.stop();
     });
 
-    it('should set socket permissions to 0o666', async () => {
+    it('should set socket permissions to 0o600', async () => {
       const instance = new RequestProxy(
         { logCallback: mockLogConfig.logCallback },
         createMockDeps(),
       );
       await instance.start();
 
-      expect(mockFileSystem.getCallCount('chmodSync')).to.be.greaterThan(0);
+      const chmodCalls = mockFileSystem.callLog.filter((c) => c.method === 'chmodSync');
+      expect(chmodCalls.some((c) => c.args[1] === 0o600)).to.be.true;
+
+      await instance.stop();
+    });
+
+    it('should chmod socket directory to 0o700 when directory already exists', async () => {
+      // Pre-populate the socketDir in the mock so existsSync returns true → else branch runs
+      const socketDir = path.dirname('/tmp/test-gpg-agent');
+      const localFileSystem = new MockFileSystem();
+      localFileSystem.mkdirSync(socketDir, {});
+      localFileSystem.clearLog();
+
+      const instance = new RequestProxy(
+        { logCallback: mockLogConfig.logCallback },
+        { ...createMockDeps(), fileSystem: localFileSystem },
+      );
+      await instance.start();
+
+      const chmodCalls = localFileSystem.callLog.filter((c) => c.method === 'chmodSync');
+      // mkdirSync must NOT run — dir already existed
+      expect(localFileSystem.getCallCount('mkdirSync')).to.equal(0);
+      // dir must be re-chmoded to 0o700
+      expect(chmodCalls.some((c) => c.args[0] === socketDir && c.args[1] === 0o700)).to.be.true;
+      // socket itself must be chmoded to 0o600
+      expect(chmodCalls.some((c) => c.args[1] === 0o600)).to.be.true;
 
       await instance.stop();
     });

@@ -605,7 +605,7 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
  * **Flow (start):**
  * 1. Detects GPG socket path via `gpgconf --list-dirs agent-socket`
  * 2. Creates Unix socket server at detected path
- * 3. Sets socket permissions to 0o666 (world-writable for GPG access)
+ * 3. Sets socket permissions to 0o600 (owner-only, matching gpg-agent's own socket mode)
  * 4. Starts listening; each connection mints a UUID and creates a
  *    RequestSessionManager with that sessionId so both extensions log the same id
  *
@@ -711,6 +711,10 @@ export class RequestProxy {
     const socketDir = path.dirname(agentSocketPath);
     if (!this.fileSystem.existsSync(socketDir)) {
       this.fileSystem.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+    } else {
+      // Enforce 0o700 unconditionally so restarts cannot leave the directory at a
+      // weaker mode from a prior run.
+      this.fileSystem.chmodSync(socketDir, 0o700);
     }
 
     this._socketPath = agentSocketPath;
@@ -787,7 +791,10 @@ export class RequestProxy {
       server.listen(agentSocketPath, () => {
         // Make socket readable/writable by all users
         try {
-          this.fileSystem.chmodSync(agentSocketPath, 0o666);
+          // 0o600: owner-only, matching gpg-agent's own socket mode (srwx------)
+          // GPG clients run as the same user as this process, so world-write is never needed.
+          // The parent directory is also 0o700 for defence-in-depth.
+          this.fileSystem.chmodSync(agentSocketPath, 0o600);
         } catch (err) {
           log(this.config, `Warning: could not chmod socket: ${err}`);
         }
