@@ -8,7 +8,7 @@ import {
 } from '@gpg-bridge/shared';
 import type { KeyFilter } from '@gpg-bridge/shared';
 
-// Global agent proxy service instance
+// Global GPG Bridge Agent service instance
 let agentProxyService: AgentProxy | null = null;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
@@ -78,7 +78,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   updateStatusBar();
   statusBarItem.show();
 
-  // Start agent proxy (detects GnuPG bin dir, resolves socket path, and runs the
+  // Start GPG Bridge Agent (detects GnuPG bin dir, resolves socket path, and runs the
   // extra-socket probe — all inside start()). Throws on any failure.
   // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
   // tests get full extension initialization (unit tests still skip init).
@@ -110,7 +110,7 @@ export function deactivate() {
  */
 async function exportPublicKeysCommand(filter?: KeyFilter): Promise<string | undefined> {
   if (!agentProxyService) {
-    throw new Error('Agent proxy not initialized. Please start the extension.');
+    throw new Error('GPG Bridge Agent not initialized. Please start the extension.');
   }
 
   // TODO updateStatusBar to indicate export in progress
@@ -135,7 +135,7 @@ async function exportPublicKeysCommand(filter?: KeyFilter): Promise<string | und
  */
 async function connectAgent(sessionId?: string): Promise<{ sessionId: string; greeting: string }> {
   if (!agentProxyService) {
-    throw new Error('Agent proxy not initialized. Please start the extension.');
+    throw new Error('GPG Bridge Agent not initialized. Please start the extension.');
   }
 
   try {
@@ -162,7 +162,7 @@ async function sendCommands(
   commandBlock: string,
 ): Promise<{ response: string }> {
   if (!agentProxyService) {
-    throw new Error('Agent proxy not initialized. Please start the extension.');
+    throw new Error('GPG Bridge Agent not initialized. Please start the extension.');
   }
 
   try {
@@ -184,7 +184,7 @@ async function sendCommands(
  */
 async function disconnectAgent(sessionId: string): Promise<void> {
   if (!agentProxyService) {
-    throw new Error('Agent proxy not initialized.');
+    throw new Error('GPG Bridge Agent not initialized.');
   }
 
   try {
@@ -202,19 +202,19 @@ async function disconnectAgent(sessionId: string): Promise<void> {
 // ==============================================================================
 
 /**
- * Start the agent proxy service
+ * Start the GPG Bridge Agent service
  */
 async function startAgentProxy(): Promise<void> {
   if (isTestEnvironment() && !isIntegrationTestEnvironment()) {
     return;
   }
   if (agentProxyService) {
-    vscode.window.showWarningMessage('Agent proxy already running');
+    vscode.window.showWarningMessage('GPG Bridge Agent already running');
     return;
   }
 
   try {
-    outputChannel.appendLine('Starting agent proxy...');
+    outputChannel.appendLine('Starting GPG Bridge Agent...');
 
     const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
     const gpgBinDir = config.get<string>('gpgBinDir') ?? '';
@@ -231,12 +231,12 @@ async function startAgentProxy(): Promise<void> {
 
     // start() includes the extra-socket probe — reaching here means probe succeeded
     updateStatusBar();
-    outputChannel.appendLine('Agent proxy started. Extra socket verified. Status: READY.');
+    outputChannel.appendLine('GPG Bridge Agent started. Status: READY.');
   } catch (error) {
     const errorMessage = extractErrorMessage(error);
-    outputChannel.appendLine(`Error starting agent proxy: ${errorMessage}`);
+    outputChannel.appendLine(`Error starting GPG Bridge Agent: ${errorMessage}`);
     outputChannel.show(true);
-    vscode.window.showErrorMessage(`Failed to start agent proxy: ${errorMessage}`);
+    vscode.window.showErrorMessage(`Failed to start GPG Bridge Agent: ${errorMessage}`);
     // stop() cleans up any partially-initialized GpgCli resources before we discard the instance
     await agentProxyService?.stop();
     agentProxyService = null;
@@ -245,25 +245,25 @@ async function startAgentProxy(): Promise<void> {
 }
 
 /**
- * Stop the agent proxy service
+ * Stop the GPG Bridge Agent service
  */
 async function stopAgentProxy(): Promise<void> {
   if (!agentProxyService) {
-    vscode.window.showInformationMessage('Agent proxy is not running');
+    vscode.window.showInformationMessage('GPG Bridge Agent is not running');
     return;
   }
 
-  outputChannel.appendLine('Stopping agent proxy...');
+  outputChannel.appendLine('Stopping GPG Bridge Agent...');
   await agentProxyService.stop();
   agentProxyService = null;
 
   updateStatusBar();
-  outputChannel.appendLine('Agent proxy stopped');
-  vscode.window.showInformationMessage('Agent proxy stopped');
+  outputChannel.appendLine('GPG Bridge Agent stopped');
+  vscode.window.showInformationMessage('GPG Bridge Agent stopped');
 }
 
 /**
- * Show agent proxy status
+ * Show GPG Bridge Agent status
  */
 function showStatus(): void {
   const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(not detected)';

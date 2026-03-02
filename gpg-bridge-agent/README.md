@@ -26,8 +26,8 @@ install the pack rather than this extension directly.
 
 | Command                         | Description                                        |
 | ------------------------------- | -------------------------------------------------- |
-| `GPG Bridge Agent: Start`       | Start the agent proxy                              |
-| `GPG Bridge Agent: Stop`        | Stop the agent proxy                               |
+| `GPG Bridge Agent: Start`       | Start the agent bridge                             |
+| `GPG Bridge Agent: Stop`        | Stop the agent bridge                              |
 | `GPG Bridge Agent: Show Status` | Show current proxy status and active session count |
 
 The proxy starts automatically on VS Code launch. Manual commands are available via

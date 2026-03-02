@@ -1,5 +1,5 @@
 /**
- * Agent Proxy Service
+ * GPG Bridge Agent Service
  *
  * Manages connections to gpg-agent Assuan socket.
  * Exposes three commands to the request-proxy extension:
@@ -601,7 +601,7 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
 }
 
 // ============================================================================
-// Agent Proxy (Public API)
+// GPG Bridge Agent (Public API)
 // ============================================================================
 
 /**
@@ -648,7 +648,7 @@ export class AgentProxy {
   }
 
   /**
-   * Start the agent proxy: construct `GpgCli`, resolve the gpg-agent socket path,
+   * Start the GPG Bridge Agent: construct `GpgCli`, resolve the gpg-agent socket path,
    * validate the socket file exists, and probe the socket to confirm it is the
    * extra (restricted) socket.
    *
@@ -663,7 +663,7 @@ export class AgentProxy {
    */
   public async start(): Promise<void> {
     if (this.gpgCli !== null) {
-      throw new Error('Agent proxy already started');
+      throw new Error('GPG Bridge Agent already started');
     }
     // Construct via injected factory or fall back to production default
     this.gpgCli = this.gpgCliFactory?.create() ?? new GpgCli();
@@ -682,7 +682,7 @@ export class AgentProxy {
     if (!this.fileSystem.existsSync(this.gpgAgentSocketPath)) {
       throw new Error(`GPG agent socket not found: ${this.gpgAgentSocketPath}`);
     }
-    log(this.config, `[AgentProxy] Starting — socket: ${this.gpgAgentSocketPath}`);
+    log(this.config, `[GPG Bridge Agent] Starting — socket: ${this.gpgAgentSocketPath}`);
 
     // Security probe: verify the socket is the extra (restricted) socket.
     // GETEVENTCOUNTER has been forbidden on the extra socket since GnuPG 2.1.
@@ -711,7 +711,10 @@ export class AgentProxy {
       await this.disconnectAgent(probeSessionId);
     }
 
-    log(this.config, '[AgentProxy] Extra socket verified via GETEVENTCOUNTER probe — READY');
+    log(
+      this.config,
+      '[GPG Bridge Agent] Restricted socket verified via GETEVENTCOUNTER probe — READY',
+    );
   }
 
   /** Return the resolved gpg bin dir, or null before start() is called. */
@@ -763,7 +766,7 @@ export class AgentProxy {
     log(this.config, `[${sessionId}] Create session to gpg-agent...`);
 
     if (!this.gpgAgentSocketPath) {
-      throw new Error('Agent proxy not started — call start() first');
+      throw new Error('GPG Bridge Agent not started — call start() first');
     }
 
     // P4-1: Enforce session cap before allocating anything (socket, AgentSessionManager).
@@ -1009,7 +1012,7 @@ export class AgentProxy {
     deps?: Partial<PublicKeyExportDeps>,
   ): Promise<string | undefined> {
     if (!this.gpgCli) {
-      throw new Error('Agent proxy not started — call start() first');
+      throw new Error('GPG Bridge Agent not started — call start() first');
     }
     return exportPublicKeys(this.gpgCli, filter, deps);
   }
@@ -1023,7 +1026,7 @@ export class AgentProxy {
   }
 
   /**
-   * Stop the agent proxy and await deterministic cleanup of all active sessions.
+   * Stop the GPG Bridge Agent and await deterministic cleanup of all active sessions.
    *
    * Called by stopAgentProxy() before the AgentProxy instance is dropped.
    * Resolves only after every session has finished cleanup, ensuring no TCP
@@ -1042,8 +1045,8 @@ export class AgentProxy {
    */
   public async stop(): Promise<void> {
     if (this.sessions.size > 0) {
-      log(this.config, `[AgentProxy] Stopping ${this.sessions.size} active session(s)`);
-      const stopError = new Error('AgentProxy stopped');
+      log(this.config, `[GPG Bridge Agent] Stopping ${this.sessions.size} active session(s)`);
+      const stopError = new Error('GPG Bridge Agent stopped');
       const cleanupPromises: Promise<void>[] = [];
 
       for (const [sessionId, session] of this.sessions) {
@@ -1060,7 +1063,7 @@ export class AgentProxy {
       }
 
       await Promise.all(cleanupPromises);
-      log(this.config, '[AgentProxy] All sessions cleaned up');
+      log(this.config, '[GPG Bridge Agent] All sessions cleaned up');
     }
 
     // Tear down GpgCli after sessions — order ensures no further socket reads are needed

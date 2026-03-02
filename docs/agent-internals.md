@@ -14,7 +14,7 @@ See also:
 
 ## Architecture
 
-The agent proxy uses an **EventEmitter-based state machine** with 9 states and 10 events
+GPG Bridge Agent uses an **EventEmitter-based state machine** with 9 states and 10 events
 to manage GPG agent connections. Each session is tracked independently in a `Map`,
 allowing concurrent sessions from multiple remotes.
 
@@ -128,7 +128,7 @@ handles BYE race conditions naturally.
 
 ## Timeout Strategy
 
-The agent proxy uses **selective timeouts**:
+GPG Bridge Agent uses **selective timeouts**:
 
 - ✅ **Connection timeout (5s)** — network operation, should complete quickly
 - ✅ **Greeting timeout (5s)** — nonce authentication, non-interactive

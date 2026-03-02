@@ -174,7 +174,7 @@ describe('AgentProxy', () => {
     it('logs confirmation when GETEVENTCOUNTER returns Forbidden', async () => {
       // makeProxy() uses the auto-responses from beforeEach — probe succeeds by default
       await makeProxy({ logCallback: mockLogConfig.logCallback });
-      expect(mockLogConfig.hasLog(/Extra socket verified/)).to.be.true;
+      expect(mockLogConfig.hasLog(/Restricted socket verified via GETEVENTCOUNTER/)).to.be.true;
     });
 
     it('probe session is cleaned up after start() succeeds', async () => {

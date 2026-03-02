@@ -98,8 +98,8 @@ Both proxies start automatically. These commands are available via the Command P
 
 | Command                         | Runs on      | Description                                    |
 | ------------------------------- | ------------ | ---------------------------------------------- |
-| `GPG Bridge Agent: Start`       | Windows host | Start the agent proxy                          |
-| `GPG Bridge Agent: Stop`        | Windows host | Stop the agent proxy                           |
+| `GPG Bridge Agent: Start`       | Windows host | Start the agent bridge                         |
+| `GPG Bridge Agent: Stop`        | Windows host | Stop the agent bridge                          |
 | `GPG Bridge Agent: Show Status` | Windows host | Display current proxy status and session count |
 | `GPG Bridge Request: Start`     | Remote       | Start the request proxy                        |
 | `GPG Bridge Request: Stop`      | Remote       | Stop the request proxy                         |
@@ -122,7 +122,7 @@ git commit -S -m "test"   # signed commit should succeed
 This project uses a three-part monorepo:
 
 ```text
-gpg-bridge-agent/    agent proxy (Windows UI context)
+gpg-bridge-agent/    agent bridge (Windows UI context)
 gpg-bridge-request/  request proxy (remote workspace context)
 pack/                extension pack manifest (no code)
 shared/              shared protocol utilities (@gpg-bridge/shared)
