@@ -6,7 +6,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Extension Tests: Agent Proxy",
+      "name": "Extension Tests: Agent",
       "type": "extensionHost",
       "request": "launch",
       "runtimeExecutable": "${execPath}",
@@ -19,7 +19,7 @@
       "preLaunchTask": "${defaultBuildTask}"
     },
     {
-      "name": "Extension Tests: Request Proxy",
+      "name": "Extension Tests: Request",
       "type": "extensionHost",
       "request": "launch",
       "runtimeExecutable": "${execPath}",

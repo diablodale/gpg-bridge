@@ -55,7 +55,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // without a configured GNUPGHOME (e.g. Phase 2 and Phase 5 runners).
     if (isIntegrationTestEnvironment() && !process.env.GNUPGHOME) {
       context.subscriptions.push(
-        // Returns the socket path that the request proxy is listening on, or null if not running.
+        // Returns the socket path that the GPG Bridge Request is listening on, or null if not running.
         // Tests connect to the proxy socket directly via AssuanSocketClient and need the socket
         // path via this command. Phase 3 sets GNUPGHOME so gpg finds the socket
         // at $GNUPGHOME/S.gpg-agent naturally; this command is not needed and must not be registered there.
@@ -65,7 +65,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     }
 
-    // Start request proxy on remote
+    // Start GPG Bridge Request on remote
     // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
     // tests get full extension initialization (unit tests still skip init).
     if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
@@ -114,12 +114,12 @@ async function startPublicKeySync(): Promise<void> {
 
 async function startRequestProxy(): Promise<void> {
   if (requestProxyService) {
-    outputChannel.appendLine('Request proxy already running');
+    outputChannel.appendLine('GPG Bridge Request already running');
     return;
   }
 
   try {
-    outputChannel.appendLine('Starting request proxy...');
+    outputChannel.appendLine('Starting GPG Bridge Request...');
 
     // Create a log callback that respects the debugLogging setting
     const config = vscode.workspace.getConfiguration('gpgBridgeRequest');
@@ -144,30 +144,30 @@ async function startRequestProxy(): Promise<void> {
     );
     await requestProxyService.start();
 
-    outputChannel.appendLine('Request proxy is READY');
+    outputChannel.appendLine('GPG Bridge Request is READY');
   } catch (error) {
     const message = extractErrorMessage(error);
-    outputChannel.appendLine(`Failed to start request proxy: ${message}`);
+    outputChannel.appendLine(`Failed to start GPG Bridge Request: ${message}`);
     outputChannel.show(true);
-    vscode.window.showErrorMessage(`Failed to start request proxy: ${message}`);
+    vscode.window.showErrorMessage(`Failed to start GPG Bridge Request: ${message}`);
     throw error;
   }
 }
 
 async function stopRequestProxy(): Promise<void> {
   if (!requestProxyService) {
-    outputChannel.appendLine('Request proxy is not running');
+    outputChannel.appendLine('GPG Bridge Request is not running');
     return;
   }
 
   try {
-    outputChannel.appendLine('Stopping request proxy...');
+    outputChannel.appendLine('Stopping GPG Bridge Request...');
     await requestProxyService.stop();
     requestProxyService = null;
-    outputChannel.appendLine('Request proxy stopped');
+    outputChannel.appendLine('GPG Bridge Request stopped');
   } catch (error) {
     const message = extractErrorMessage(error);
-    outputChannel.appendLine(`Error stopping request proxy: ${message}`);
+    outputChannel.appendLine(`Error stopping GPG Bridge Request: ${message}`);
     outputChannel.show(true);
   }
 }

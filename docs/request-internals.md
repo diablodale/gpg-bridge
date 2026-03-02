@@ -14,7 +14,7 @@ See also:
 
 ## Architecture
 
-The request proxy uses an **EventEmitter-based state machine** with 11 states and 12
+GPG Bridge Request uses an **EventEmitter-based state machine** with 11 states and 12
 events to manage GPG protocol forwarding. Each client connection runs an independent
 state machine, allowing concurrent GPG operations from multiple processes.
 

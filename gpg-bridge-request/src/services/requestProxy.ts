@@ -618,7 +618,7 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
 // ============================================================================
 
 /**
- * RequestProxy - VS Code extension service for request proxying
+ * RequestProxy - VS Code extension service for GPG Bridge Requesting
  *
  * Class-based replacement for the startRequestProxy() factory function.
  * Manages a Unix socket server and a Map of active RequestSessionManager instances.
@@ -707,14 +707,14 @@ export class RequestProxy {
   }
 
   /**
-   * Start the request proxy server.
+   * Start the GPG Bridge Request server.
    *
    * Resolves when the server is bound and listening. Rejects if the socket path
    * cannot be determined, the socket is already in use, or permissions fail.
    */
   async start(): Promise<void> {
     if (this.server !== null) {
-      throw new Error('Request proxy already started');
+      throw new Error('GPG Bridge Request already started');
     }
 
     const fullConfig: RequestProxyConfigWithExecutor = {
@@ -848,7 +848,7 @@ export class RequestProxy {
           log(this.config, `Warning: could not chmod socket: ${err}`);
         }
 
-        log(this.config, 'Request proxy listening');
+        log(this.config, 'GPG Bridge Request listening');
         resolve();
       });
 
@@ -857,7 +857,7 @@ export class RequestProxy {
   }
 
   /**
-   * Stop the request proxy server.
+   * Stop the GPG Bridge Request server.
    *
    * Stops accepting new connections, disconnects all active sessions,
    * destroys all client sockets, closes the server, and removes the socket file.
@@ -897,7 +897,7 @@ export class RequestProxy {
             // Ignore
           }
         }
-        log(this.config, 'Request proxy stopped');
+        log(this.config, 'GPG Bridge Request stopped');
         stopResolve();
       });
 

@@ -27,10 +27,10 @@ install the pack rather than this extension directly.
 
 ## Commands
 
-| Command                     | Description             |
-| --------------------------- | ----------------------- |
-| `GPG Bridge Request: Start` | Start the request proxy |
-| `GPG Bridge Request: Stop`  | Stop the request proxy  |
+| Command                     | Description              |
+| --------------------------- | ------------------------ |
+| `GPG Bridge Request: Start` | Start the request bridge |
+| `GPG Bridge Request: Stop`  | Stop the request bridge  |
 
 The proxy starts automatically when VS Code connects to a remote. Manual commands
 are available via the Command Palette (`Ctrl+Shift+P`) if you need to restart it.
