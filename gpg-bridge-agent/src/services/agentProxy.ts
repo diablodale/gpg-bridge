@@ -649,11 +649,17 @@ export class AgentProxy {
 
   /**
    * Start the agent proxy: construct `GpgCli`, resolve the gpg-agent socket path,
-   * and validate the socket file exists.
+   * validate the socket file exists, and probe the socket to confirm it is the
+   * extra (restricted) socket.
+   *
+   * The probe sends GETEVENTCOUNTER and asserts ERR Forbidden. This command has been
+   * forbidden on the extra socket since GnuPG 2.1 (Werner Koch, gnupg-users 2019-08-01).
+   * It is a pure read — no gpg-agent state is modified.
    *
    * Throws if called a second time without an intervening `stop()`.
    * Throws if `gpgconf` cannot be found (binary not installed or wrong path).
    * Throws if the resolved socket path does not exist on disk.
+   * Throws if the probe fails (not the extra socket, or agent unreachable).
    */
   public async start(): Promise<void> {
     if (this.gpgCli !== null) {
@@ -676,7 +682,36 @@ export class AgentProxy {
     if (!this.fileSystem.existsSync(this.gpgAgentSocketPath)) {
       throw new Error(`GPG agent socket not found: ${this.gpgAgentSocketPath}`);
     }
-    log(this.config, `[AgentProxy] Started — socket: ${this.gpgAgentSocketPath}`);
+    log(this.config, `[AgentProxy] Starting — socket: ${this.gpgAgentSocketPath}`);
+
+    // Security probe: verify the socket is the extra (restricted) socket.
+    // GETEVENTCOUNTER has been forbidden on the extra socket since GnuPG 2.1.
+    // It returns event counter data on the standard socket. This probe guards against
+    // a renamed or symlinked socket substituting the standard socket for the extra socket.
+    // Pure read — no gpg-agent state is modified.
+    // Source: Werner Koch, gnupg-users list 2019-08-01; agent/command.c cmd_geteventcounter().
+    const { sessionId: probeSessionId } = await this.connectAgent();
+    try {
+      // Step 1: confirm agent is responsive and speaking Assuan
+      await this.sendCommands(probeSessionId, 'GETINFO version\n');
+
+      // Step 2: confirm this is the extra (restricted) socket.
+      // Extra socket  → ERR <code> Forbidden (ctrl->restricted check fires)
+      // Standard socket → S EVENTCOUNTER ...\nOK
+      const { response } = await this.sendCommands(probeSessionId, 'GETEVENTCOUNTER\n');
+      if (!/^ERR \d+ Forbidden/m.test(response)) {
+        throw new Error(
+          'Security check failed: GETEVENTCOUNTER did not return ERR xxx Forbidden. ' +
+            'The configured socket does not appear to be the extra (restricted) socket. ' +
+            'Check the gpgBridgeAgent.gpgBinDir setting and gpg-agent configuration.',
+        );
+      }
+    } finally {
+      // disconnectAgent() always resolves — safe to call even when the probe threw
+      await this.disconnectAgent(probeSessionId);
+    }
+
+    log(this.config, '[AgentProxy] Extra socket verified via GETEVENTCOUNTER probe — READY');
   }
 
   /** Return the resolved gpg bin dir, or null before start() is called. */

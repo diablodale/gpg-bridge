@@ -70,6 +70,8 @@ export class MockSocket extends EventEmitter {
   private _paused = false;
   private connectTimeout: NodeJS.Timeout | null = null;
   public afterWriteCallback: (() => void) | null = null;
+  /** Queue of responses to auto-emit after each write (used for autonomous probe simulation). */
+  private writeResponseQueue: Array<{ data: string; closeAfter: boolean }> = [];
 
   write(data: Buffer | string, callback?: (err?: Error | null) => void): boolean {
     if (this.destroyed) {
@@ -102,11 +104,45 @@ export class MockSocket extends EventEmitter {
       setImmediate(() => afterWrite());
     }
 
+    // Auto-emit the next queued response after the write callback fires.
+    // Enables autonomous probe simulation: start() can connect, send commands, and
+    // receive responses without any manual socket driving in the test.
+    if (this.writeResponseQueue.length > 0) {
+      const response = this.writeResponseQueue.shift()!;
+      setImmediate(() => {
+        if (!this.destroyed) {
+          this.emit('data', Buffer.from(response.data, 'latin1'));
+          if (response.closeAfter) {
+            // Emit 'close' on the next tick so AGENT_DATA_RECEIVED is fully processed first
+            setImmediate(() => {
+              if (!this.destroyed) {
+                this.emit('close', false);
+              }
+            });
+          }
+        }
+      });
+    }
+
     return true;
   }
 
   setWriteError(error: Error): void {
     this.writeError = error;
+  }
+
+  /**
+   * Configure automatic responses for each successive write.
+   * Each entry is emitted (as 'data') after the corresponding write's callback fires.
+   * If `closeAfter` is true, a 'close' event follows the data emission.
+   * Used by probe tests so start() can run the full connect→probe→disconnect sequence
+   * without manual socket driving.
+   */
+  setWriteResponseQueue(queue: Array<{ data: string; closeAfter?: boolean }>): void {
+    this.writeResponseQueue = queue.map(({ data, closeAfter }) => ({
+      data,
+      closeAfter: closeAfter ?? false,
+    }));
   }
 
   removeAllListeners(event?: string | symbol): this {
@@ -422,6 +458,8 @@ export class MockSocketFactory implements ISocketFactory {
   private connectDelay: number = 0;
   private nextWriteError: Error | null = null;
   private closeAfterFirstWrite: boolean = false;
+  /** Write-response queue to apply to the next created socket (consumed once). */
+  private nextSocketResponseQueue: Array<{ data: string; closeAfter: boolean }> | null = null;
 
   createConnection(
     options: { host: string; port: number } | { path: string },
@@ -443,6 +481,12 @@ export class MockSocketFactory implements ISocketFactory {
         socket.emit('close', false); // Graceful close (hadError=false)
       };
       this.closeAfterFirstWrite = false;
+    }
+
+    // Apply write-response queue if set (enables autonomous probe simulation in start() tests)
+    if (this.nextSocketResponseQueue) {
+      socket.setWriteResponseQueue(this.nextSocketResponseQueue);
+      this.nextSocketResponseQueue = null;
     }
 
     // Simulate connection events with optional delay
@@ -498,6 +542,27 @@ export class MockSocketFactory implements ISocketFactory {
 
   setCloseAfterFirstWrite(): void {
     this.closeAfterFirstWrite = true;
+  }
+
+  /**
+   * Configure a write-response queue for the next socket created by this factory.
+   * The queue is consumed by that socket: each write auto-emits the next response.
+   * One-shot — cleared once applied to a socket.
+   *
+   * Use this in beforeEach (or per-test) to let start()'s internal probe run to
+   * completion without manually driving the socket from test code.
+   *
+   * @param queue Ordered responses matching the probe write sequence:
+   *   [0] nonce write → greeting
+   *   [1] GETINFO version → version response
+   *   [2] GETEVENTCOUNTER → ERR Forbidden (or override for failure tests)
+   *   [3] BYE → OK + closeAfter:true
+   */
+  setNextSocketResponses(queue: Array<{ data: string; closeAfter?: boolean }>): void {
+    this.nextSocketResponseQueue = queue.map(({ data, closeAfter }) => ({
+      data,
+      closeAfter: closeAfter ?? false,
+    }));
   }
 
   getWrites(): Buffer[] {

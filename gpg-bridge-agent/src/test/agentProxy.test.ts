@@ -34,6 +34,18 @@ describe('AgentProxy', () => {
     const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]); // 16 binary bytes
     const socketFileContent = Buffer.concat([Buffer.from('31415\n', 'latin1'), nonce]);
     mockFileSystem.setFile(socketPath, socketFileContent);
+
+    // Configure mock socket factory to auto-respond to start()'s internal probe.
+    // start() connects to gpg-agent and runs GETEVENTCOUNTER to verify the extra socket.
+    // The write sequence is: nonce → greeting, GETINFO version → OK, GETEVENTCOUNTER → ERR Forbidden, BYE → OK+close.
+    // This queue is consumed by the first socket created in start(); subsequent sockets
+    // (created by test-driven connectAgent() calls) are NOT auto-responded — tests drive those manually.
+    mockSocketFactory.setNextSocketResponses([
+      { data: 'OK GPG-Agent 2.2.19\n' }, // nonce write   → greeting
+      { data: 'D 2.2.19\nOK\n' }, // GETINFO version → version response
+      { data: 'ERR 67109115 Forbidden\n' }, // GETEVENTCOUNTER → Forbidden (confirms extra socket)
+      { data: 'OK\n', closeAfter: true }, // BYE → OK then socket closes
+    ]);
   });
 
   /**
@@ -105,7 +117,9 @@ describe('AgentProxy', () => {
 
     it('uses gpgconfListDirs result as the agent socket path', async () => {
       const customPath = '/custom/S.gpg-agent.extra';
-      mockFileSystem.setFile(customPath, Buffer.alloc(0));
+      // Provide valid socket file content (port + nonce) so the probe can connect
+      const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+      mockFileSystem.setFile(customPath, Buffer.concat([Buffer.from('31415\n', 'latin1'), nonce]));
       const factory: IGpgCliFactory = { create: () => new MockGpgCli(customPath) };
       const proxy = await makeProxy({ gpgCliFactory: factory });
       expect(proxy.getAgentSocketPath()).to.equal(customPath);
@@ -153,6 +167,94 @@ describe('AgentProxy', () => {
       } catch (error: unknown) {
         expect((error as Error).message).to.include('gpgconf not found');
       }
+    });
+  });
+
+  describe('start() socket probe', () => {
+    it('logs confirmation when GETEVENTCOUNTER returns Forbidden', async () => {
+      // makeProxy() uses the auto-responses from beforeEach — probe succeeds by default
+      await makeProxy({ logCallback: mockLogConfig.logCallback });
+      expect(mockLogConfig.hasLog(/Extra socket verified/)).to.be.true;
+    });
+
+    it('probe session is cleaned up after start() succeeds', async () => {
+      const proxy = await makeProxy();
+      // The probe session is disconnected before start() returns — session count must be 0
+      expect(proxy.getSessionCount()).to.equal(0);
+    });
+
+    it('throws "Security check failed" when GETEVENTCOUNTER returns success (standard socket)', async () => {
+      // Override beforeEach responses: GETEVENTCOUNTER returns standard-socket data
+      mockSocketFactory.setNextSocketResponses([
+        { data: 'OK GPG-Agent 2.2.19\n' },
+        { data: 'D 2.2.19\nOK\n' },
+        { data: 'S EVENTCOUNTER 5 3 2\nOK\n' }, // not Forbidden → wrong socket
+        { data: 'OK\n', closeAfter: true }, // BYE from finally
+      ]);
+      const proxy = new AgentProxy(
+        { logCallback: mockLogConfig.logCallback },
+        {
+          fileSystem: mockFileSystem,
+          socketFactory: mockSocketFactory,
+          gpgCliFactory: mockGpgCliFactory,
+        },
+      );
+      proxyUnderTest = proxy;
+      try {
+        await proxy.start();
+        expect.fail('Should have thrown');
+      } catch (error: unknown) {
+        expect((error as Error).message).to.include('Security check failed: GETEVENTCOUNTER');
+      }
+    });
+
+    it('throws "Security check failed" when GETEVENTCOUNTER returns ERR with non-Forbidden code', async () => {
+      mockSocketFactory.setNextSocketResponses([
+        { data: 'OK GPG-Agent 2.2.19\n' },
+        { data: 'D 2.2.19\nOK\n' },
+        { data: 'ERR 67109114 Other error\n' }, // ERR but not Forbidden
+        { data: 'OK\n', closeAfter: true }, // BYE from finally
+      ]);
+      const proxy = new AgentProxy(
+        { logCallback: mockLogConfig.logCallback },
+        {
+          fileSystem: mockFileSystem,
+          socketFactory: mockSocketFactory,
+          gpgCliFactory: mockGpgCliFactory,
+        },
+      );
+      proxyUnderTest = proxy;
+      try {
+        await proxy.start();
+        expect.fail('Should have thrown');
+      } catch (error: unknown) {
+        expect((error as Error).message).to.include('Security check failed: GETEVENTCOUNTER');
+      }
+    });
+
+    it('probe session is cleaned up when probe fails', async () => {
+      mockSocketFactory.setNextSocketResponses([
+        { data: 'OK GPG-Agent 2.2.19\n' },
+        { data: 'D 2.2.19\nOK\n' },
+        { data: 'S EVENTCOUNTER 5 3 2\nOK\n' },
+        { data: 'OK\n', closeAfter: true },
+      ]);
+      const proxy = new AgentProxy(
+        { logCallback: mockLogConfig.logCallback },
+        {
+          fileSystem: mockFileSystem,
+          socketFactory: mockSocketFactory,
+          gpgCliFactory: mockGpgCliFactory,
+        },
+      );
+      proxyUnderTest = proxy;
+      try {
+        await proxy.start();
+      } catch {
+        // expected — probe failure
+      }
+      // Even after failure, the probe session should be disconnected — session count must be 0
+      expect(proxy.getSessionCount()).to.equal(0);
     });
   });
 
@@ -282,7 +384,8 @@ describe('AgentProxy', () => {
     it('should read socket file and parse port/nonce', async () => {
       const agentProxy = await makeProxy();
 
-      expect(mockFileSystem.getCallCount('readFileSync')).to.equal(0);
+      // The probe inside start() calls readFileSync once; this connectAgent() call will add another
+      expect(mockFileSystem.getCallCount('readFileSync')).to.equal(1);
 
       // Mock socket will emit connect event
       const socketPromise = agentProxy.connectAgent();
@@ -330,10 +433,11 @@ describe('AgentProxy', () => {
     });
 
     it('should handle socket connection errors', async () => {
+      const agentProxy = await makeProxy();
+
+      // Set connect error after the probe succeeds; affects the test's connectAgent() call
       const connectionError = new Error('Connection refused');
       mockSocketFactory.setConnectError(connectionError);
-
-      const agentProxy = await makeProxy();
 
       try {
         await agentProxy.connectAgent();
@@ -900,9 +1004,10 @@ describe('AgentProxy', () => {
     });
 
     it('should trigger cleanup on nonce write failure', async () => {
-      mockSocketFactory.setWriteError(new Error('Write failed'));
-
       const agentProxy = await makeProxy();
+
+      // Set write error after the probe succeeds; affects the nonce write of the test's connectAgent()
+      mockSocketFactory.setWriteError(new Error('Write failed'));
 
       try {
         await agentProxy.connectAgent();
@@ -932,9 +1037,10 @@ describe('AgentProxy', () => {
     it('should handle socket close after bad nonce (GPG agent behavior)', async () => {
       // Simulates GPG agent receiving invalid nonce and immediately closing socket
       // Per gpg-agent source: check_nonce() calls assuan_sock_close() on bad nonce
-      mockSocketFactory.setCloseAfterFirstWrite();
-
       const agentProxy = await makeProxy();
+
+      // Set close-after-first-write after the probe succeeds; affects the test's connectAgent() nonce write
+      mockSocketFactory.setCloseAfterFirstWrite();
 
       try {
         await agentProxy.connectAgent();
@@ -1140,6 +1246,8 @@ describe('AgentProxy', () => {
     it('should use .once() for close - prevents duplicate state transitions', async () => {
       const logs: string[] = [];
       const agentProxy = await makeProxy({ logCallback: (msg) => logs.push(msg) });
+      // Clear probe logs so cleanup counts only reflect the test session below
+      logs.length = 0;
 
       const connectPromise = agentProxy.connectAgent();
       await new Promise((resolve) => setTimeout(resolve, 10));

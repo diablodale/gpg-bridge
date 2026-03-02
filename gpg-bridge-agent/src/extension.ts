@@ -12,7 +12,6 @@ import type { KeyFilter } from '@gpg-bridge/shared';
 let agentProxyService: AgentProxy | null = null;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
-let probeSuccessful = false;
 
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -49,7 +48,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     //   2. The bridge connects only to agent-extra-socket, where gpg-agent itself
     //      enforces command restrictions — returning ERR 67109115 Forbidden for
     //      sensitive operations (PRESET_PASSPHRASE, CLEAR_PASSPHRASE, etc.).
-    //   3. All operations require a caller-provided sessionId that maps to an
+    //   3. On startup, AgentProxy.start() actively verifies the socket IS the extra
+    //      socket by sending GETEVENTCOUNTER and asserting ERR Forbidden. This
+    //      command has been forbidden on the extra socket since GnuPG 2.1.
+    //      If it succeeds (standard socket or renamed/linked substitute), startup
+    //      is aborted. This is a pure read — no gpg-agent state is modified.
+    //   4. All operations require a caller-provided sessionId that maps to an
     //      active session; unknown sessionIds are silently ignored or rejected.
     // ────────────────────────────────────────────────────────────────────────
 
@@ -74,17 +78,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   updateStatusBar();
   statusBarItem.show();
 
-  // Start agent proxy (detects GnuPG bin dir and socket path internally).
+  // Start agent proxy (detects GnuPG bin dir, resolves socket path, and runs the
+  // extra-socket probe — all inside start()). Throws on any failure.
   // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
   // tests get full extension initialization (unit tests still skip init).
   if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
     try {
       await startAgentProxy();
-
-      // Run sanity probe in background (fire-and-forget)
-      // It will update status bar to Ready after successful probe
-      void probeGpgAgent();
     } catch (error: unknown) {
+      // startAgentProxy() logs, shows its own error dialog, and cleans up agentProxyService
       outputChannel.appendLine(`Start failed: ${extractErrorMessage(error)}`);
     }
   }
@@ -227,9 +229,9 @@ async function startAgentProxy(): Promise<void> {
     );
     await agentProxyService.start();
 
-    outputChannel.appendLine(
-      'Agent proxy initialized. Probe of gpg-agent in process. Status will be READY when complete.',
-    );
+    // start() includes the extra-socket probe — reaching here means probe succeeded
+    updateStatusBar();
+    outputChannel.appendLine('Agent proxy started. Extra socket verified. Status: READY.');
   } catch (error) {
     const errorMessage = extractErrorMessage(error);
     outputChannel.appendLine(`Error starting agent proxy: ${errorMessage}`);
@@ -254,7 +256,6 @@ async function stopAgentProxy(): Promise<void> {
   outputChannel.appendLine('Stopping agent proxy...');
   await agentProxyService.stop();
   agentProxyService = null;
-  probeSuccessful = false;
 
   updateStatusBar();
   outputChannel.appendLine('Agent proxy stopped');
@@ -294,7 +295,7 @@ function updateStatusBar(): void {
   let icon = '$(circle-slash)';
   let tooltip = 'GPG Bridge Agent is not ready';
 
-  if (agentProxyService && probeSuccessful) {
+  if (agentProxyService) {
     const sessionCount = agentProxyService.getSessionCount();
     if (sessionCount > 0) {
       icon = '$(sync~spin)';
@@ -310,27 +311,4 @@ function updateStatusBar(): void {
   statusBarItem.accessibilityInformation = {
     label: tooltip,
   };
-}
-
-/**
- * Sanity probe: Send GETINFO version to verify agent is responsive
- * Runs async after activation, doesn't block startup
- * Sets probeSuccessful flag and updates status bar
- */
-async function probeGpgAgent(): Promise<void> {
-  if (!agentProxyService) {
-    return;
-  }
-
-  try {
-    const result = await agentProxyService.connectAgent();
-    await agentProxyService.sendCommands(result.sessionId, 'GETINFO version\n');
-    await agentProxyService.disconnectAgent(result.sessionId);
-    outputChannel.appendLine('Probe of gpg-agent succeeded. Agent proxy is READY.');
-    probeSuccessful = true;
-    updateStatusBar();
-  } catch (error) {
-    const msg = extractErrorMessage(error);
-    outputChannel.appendLine(`Probe of gpg-agent failed. Agent proxy is NOT READY: ${msg}`);
-  }
 }
