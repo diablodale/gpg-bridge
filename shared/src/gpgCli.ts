@@ -508,7 +508,9 @@ export class GpgCli {
       }
     }
 
-    throw new Error('GnuPG bin not found. Please install Gpg4win or set gpgBridgeAgent.gpgBinDir.');
+    throw new Error(
+      'GnuPG not found. Install GnuPG or set gpgBridgeAgent.gpgBinDir to its bin directory.',
+    );
   }
 
   // -------------------------------------------------------------------------

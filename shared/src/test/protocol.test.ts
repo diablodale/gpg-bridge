@@ -10,7 +10,7 @@ import {
   decodeProtocolData,
   sanitizeForLog,
   extractErrorMessage,
-  parseSocketFile,
+  parseWindowsAssuanSocketFile,
   detectResponseCompletion,
   cleanupSocket,
   extractCommand,
@@ -105,7 +105,7 @@ describe('Protocol Utilities', () => {
   });
 
   describe('Socket File Parsing', () => {
-    it('parseSocketFile extracts port and nonce from socket data', () => {
+    it('parseWindowsAssuanSocketFile extracts port and nonce from socket data', () => {
       const portStr = '12345';
       const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
       const socketData = Buffer.concat([
@@ -114,52 +114,52 @@ describe('Protocol Utilities', () => {
         nonce,
       ]);
 
-      const result = parseSocketFile(socketData);
+      const result = parseWindowsAssuanSocketFile(socketData);
       assert.strictEqual(result.port, 12345, 'Port should be parsed correctly');
       assert.deepStrictEqual(result.nonce, nonce, 'Nonce should match');
     });
 
-    it('parseSocketFile throws on invalid format (no newline)', () => {
+    it('parseWindowsAssuanSocketFile throws on invalid format (no newline)', () => {
       const invalidData = Buffer.from('12345_no_newline_here', 'utf-8');
-      assert.throws(() => parseSocketFile(invalidData), /no newline found/);
+      assert.throws(() => parseWindowsAssuanSocketFile(invalidData), /no newline found/);
     });
 
-    it('parseSocketFile throws on invalid port', () => {
+    it('parseWindowsAssuanSocketFile throws on invalid port', () => {
       const invalidData = Buffer.concat([Buffer.from('not_a_number\n', 'utf-8'), Buffer.alloc(16)]);
-      assert.throws(() => parseSocketFile(invalidData), /Invalid port/);
+      assert.throws(() => parseWindowsAssuanSocketFile(invalidData), /Invalid port/);
     });
 
-    it('parseSocketFile throws on invalid nonce length', () => {
+    it('parseWindowsAssuanSocketFile throws on invalid nonce length', () => {
       const invalidData = Buffer.concat([
         Buffer.from('12345\n', 'utf-8'),
         Buffer.alloc(8), // Wrong length
       ]);
-      assert.throws(() => parseSocketFile(invalidData), /Invalid nonce length/);
+      assert.throws(() => parseWindowsAssuanSocketFile(invalidData), /Invalid nonce length/);
     });
 
-    it('parseSocketFile throws on port 0', () => {
+    it('parseWindowsAssuanSocketFile throws on port 0', () => {
       const data = Buffer.concat([Buffer.from('0\n', 'utf-8'), Buffer.alloc(16)]);
-      assert.throws(() => parseSocketFile(data), /Port out of range/);
+      assert.throws(() => parseWindowsAssuanSocketFile(data), /Port out of range/);
     });
 
-    it('parseSocketFile throws on negative port', () => {
+    it('parseWindowsAssuanSocketFile throws on negative port', () => {
       const data = Buffer.concat([Buffer.from('-1\n', 'utf-8'), Buffer.alloc(16)]);
-      assert.throws(() => parseSocketFile(data), /Port out of range/);
+      assert.throws(() => parseWindowsAssuanSocketFile(data), /Port out of range/);
     });
 
-    it('parseSocketFile accepts port 65535 (maximum valid)', () => {
+    it('parseWindowsAssuanSocketFile accepts port 65535 (maximum valid)', () => {
       const nonce = Buffer.alloc(16, 0x01);
       const data = Buffer.concat([Buffer.from('65535\n', 'utf-8'), nonce]);
-      const result = parseSocketFile(data);
+      const result = parseWindowsAssuanSocketFile(data);
       assert.strictEqual(result.port, 65535);
     });
 
-    it('parseSocketFile throws on port 65536 (one above maximum)', () => {
+    it('parseWindowsAssuanSocketFile throws on port 65536 (one above maximum)', () => {
       const data = Buffer.concat([Buffer.from('65536\n', 'utf-8'), Buffer.alloc(16)]);
-      assert.throws(() => parseSocketFile(data), /Port out of range/);
+      assert.throws(() => parseWindowsAssuanSocketFile(data), /Port out of range/);
     });
 
-    it('parseSocketFile ignores extra data after nonce', () => {
+    it('parseWindowsAssuanSocketFile ignores extra data after nonce', () => {
       const portStr = '31415';
       const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
       const extraData = Buffer.from('this is extra data that should be ignored', 'utf-8');
@@ -170,7 +170,7 @@ describe('Protocol Utilities', () => {
         extraData, // Extra data after valid nonce
       ]);
 
-      const result = parseSocketFile(socketData);
+      const result = parseWindowsAssuanSocketFile(socketData);
       assert.strictEqual(result.port, 31415, 'Port should be parsed correctly');
       assert.deepStrictEqual(result.nonce, nonce, 'Nonce should match (extra data ignored)');
     });

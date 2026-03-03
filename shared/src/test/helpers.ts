@@ -16,11 +16,12 @@ import { GpgCli } from '../gpgCli';
 export class MockFileSystem implements IFileSystem {
   private files: Map<string, Buffer> = new Map();
   private directories: Set<string> = new Set();
+  private socketNodes: Set<string> = new Set();
   public callLog: Array<{ method: string; args: unknown[] }> = [];
 
   existsSync(path: string): boolean {
     this.callLog.push({ method: 'existsSync', args: [path] });
-    return this.files.has(path) || this.directories.has(path);
+    return this.files.has(path) || this.directories.has(path) || this.socketNodes.has(path);
   }
 
   readFileSync(path: string): Buffer {
@@ -41,11 +42,35 @@ export class MockFileSystem implements IFileSystem {
     this.callLog.push({ method: 'unlinkSync', args: [path] });
     this.files.delete(path);
     this.directories.delete(path);
+    this.socketNodes.delete(path);
+  }
+
+  statSync(path: string): { isFile(): boolean; isSocket(): boolean } {
+    this.callLog.push({ method: 'statSync', args: [path] });
+    const isFile = this.files.has(path);
+    const isSocket = this.socketNodes.has(path);
+    if (!isFile && !isSocket) {
+      const err = Object.assign(new Error(`ENOENT: no such file or directory, stat '${path}'`), {
+        code: 'ENOENT',
+      });
+      throw err;
+    }
+    return { isFile: () => isFile, isSocket: () => isSocket };
   }
 
   // Test helper methods
   setFile(path: string, content: Buffer): void {
     this.files.set(path, content);
+  }
+
+  /**
+   * Register a path as a Unix domain socket node.
+   * Causes `statSync(path).isSocket()` to return true and `isFile()` to return false.
+   * Also removes the path from the regular-file map if previously registered there.
+   */
+  setSocket(path: string): void {
+    this.socketNodes.add(path);
+    this.files.delete(path);
   }
 
   getCallCount(method: string): number {
@@ -460,6 +485,14 @@ export class MockSocketFactory implements ISocketFactory {
   private closeAfterFirstWrite: boolean = false;
   /** Write-response queue to apply to the next created socket (consumed once). */
   private nextSocketResponseQueue: Array<{ data: string; closeAfter: boolean }> | null = null;
+  /**
+   * When true, emit a greeting `'data'` event immediately after `'connect'`.
+   * Simulates the Unix-socket transport where the GPG agent sends its greeting
+   * spontaneously on connection (before the client writes anything).
+   */
+  public emitGreetingOnConnect: boolean = false;
+  /** Greeting message emitted when `emitGreetingOnConnect` is true. */
+  public greetingMessage: string = 'OK GPG-Agent 2.2.19\n';
 
   createConnection(
     options: { host: string; port: number } | { path: string },
@@ -513,6 +546,14 @@ export class MockSocketFactory implements ISocketFactory {
           if (connectListener) {
             connectListener();
           }
+          // Unix mode: emit greeting spontaneously after connect, before any write
+          if (this.emitGreetingOnConnect) {
+            setImmediate(() => {
+              if (!socket.destroyed) {
+                socket.emit('data', Buffer.from(this.greetingMessage, 'latin1'));
+              }
+            });
+          }
         }
       });
     }
@@ -552,11 +593,18 @@ export class MockSocketFactory implements ISocketFactory {
    * Use this in beforeEach (or per-test) to let start()'s internal probe run to
    * completion without manually driving the socket from test code.
    *
-   * @param queue Ordered responses matching the probe write sequence:
+   * @param queue Ordered responses matching the probe write sequence.
+   *
+   *   TCP/Windows Assuan (4 entries):
    *   [0] nonce write → greeting
    *   [1] GETINFO version → version response
    *   [2] GETEVENTCOUNTER → ERR Forbidden (or override for failure tests)
    *   [3] BYE → OK + closeAfter:true
+   *
+   *   Unix socket (3 entries — greeting is emitted at connect via `emitGreetingOnConnect`):
+   *   [0] GETINFO version → version response
+   *   [1] GETEVENTCOUNTER → ERR Forbidden (or override for failure tests)
+   *   [2] BYE → OK + closeAfter:true
    */
   setNextSocketResponses(queue: Array<{ data: string; closeAfter?: boolean }>): void {
     this.nextSocketResponseQueue = queue.map(({ data, closeAfter }) => ({

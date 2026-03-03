@@ -16,7 +16,7 @@ import {
   log,
   encodeProtocolData,
   decodeProtocolData,
-  parseSocketFile,
+  parseWindowsAssuanSocketFile,
   extractErrorMessage,
   sanitizeForLog,
   detectResponseCompletion,
@@ -42,8 +42,8 @@ import { exportPublicKeys, type PublicKeyExportDeps } from './publicKeyExport';
  */
 export type SessionState =
   | 'DISCONNECTED' // No active connection, session can be created
-  | 'CONNECTING_TO_AGENT' // TCP socket connection in progress
-  | 'SOCKET_CONNECTED' // Socket connected, ready to send nonce
+  | 'CONNECTING_TO_AGENT' // socket connection in progress
+  | 'SOCKET_CONNECTED' // Socket connected, nonce pending (TCP) or greeting expected (Unix)
   | 'READY' // Connected and authenticated, can accept commands
   | 'SENDING_TO_AGENT' // Command write in progress to agent
   | 'WAITING_FOR_AGENT' // Accumulating response chunks from agent
@@ -92,7 +92,8 @@ const STATE_TRANSITIONS: StateTransitionTable = {
     CLEANUP_REQUESTED: 'CLOSING', // Socket close hadError=false
   },
   SOCKET_CONNECTED: {
-    CLIENT_DATA_RECEIVED: 'SENDING_TO_AGENT', // Nonce send begins
+    CLIENT_DATA_RECEIVED: 'SENDING_TO_AGENT', // TCP: nonce send begins
+    AGENT_WRITE_OK: 'WAITING_FOR_AGENT', // Unix: skip nonce write, proceed to greeting wait
     ERROR_OCCURRED: 'ERROR',
     CLEANUP_REQUESTED: 'CLOSING', // Socket close hadError=false
   },
@@ -128,10 +129,10 @@ const STATE_TRANSITIONS: StateTransitionTable = {
  * Event payload types
  */
 export interface EventPayloads {
-  CLIENT_CONNECT_REQUESTED: { port: number; nonce: Buffer };
+  CLIENT_CONNECT_REQUESTED: { host: string; port: number; nonce: Buffer } | { path: string };
   CLIENT_DATA_RECEIVED: { commandBlock: string | Buffer };
-  AGENT_SOCKET_CONNECTED: undefined;
-  AGENT_WRITE_OK: { requiresTimeout: boolean }; // Context: nonce (true) vs command (false)
+  AGENT_SOCKET_CONNECTED: { nonce: Buffer | null };
+  AGENT_WRITE_OK: { requiresTimeout: boolean }; // Context: nonce/Unix greeting (true) vs command (false)
   AGENT_DATA_CHUNK: { chunk: string };
   AGENT_DATA_RECEIVED: { response: string };
   ERROR_OCCURRED: { error: Error; message?: string };
@@ -153,7 +154,7 @@ export interface AgentProxyConfig extends LogConfig {
  */
 export interface AgentSessionManagerConfig extends LogConfig {
   connectionTimeoutMs: number; // Default: 5000 - network operation timeout
-  greetingTimeoutMs: number; // Default: 5000 - nonce authentication timeout
+  greetingTimeoutMs: number; // Default: 5000 - greeting response timeout
   // No response timeout - commands can be interactive (password prompts, INQUIRE)
   // Network failures detected via socket 'close' event
 }
@@ -187,7 +188,6 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
   private agentDataTimeout: NodeJS.Timeout | null = null; // timeout for agent to respond, usually used for greeting response
   // No responseTimeout - commands can be interactive (password prompts via pinentry)
   private lastError: Error | null = null; // Stores error for Promise bridges to retrieve
-  private pendingNonce: Buffer | null = null; // Temporary nonce storage between connect request and socket connect
 
   constructor(
     sessionId: string,
@@ -202,7 +202,7 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
 
     // Single-fire initialization events
     this.once('CLIENT_CONNECT_REQUESTED', (payload) => this.handleClientConnectRequested(payload));
-    this.once('AGENT_SOCKET_CONNECTED', () => this.handleAgentSocketConnected());
+    this.once('AGENT_SOCKET_CONNECTED', (payload) => this.handleAgentSocketConnected(payload));
 
     // Multi-fire events (can occur multiple times per session)
     this.on('CLIENT_DATA_RECEIVED', (payload) => this.handleClientDataReceived(payload));
@@ -228,9 +228,6 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
   private handleClientConnectRequested(payload: EventPayloads['CLIENT_CONNECT_REQUESTED']): void {
     this.transition('CLIENT_CONNECT_REQUESTED');
 
-    const { port, nonce } = payload;
-    log(this.config, `[${this.sessionId}] Connecting to localhost:${port}...`);
-
     // Set connection timeout
     this.connectionTimeout = setTimeout(() => {
       log(
@@ -242,25 +239,26 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
       });
     }, this.config.connectionTimeoutMs);
 
-    // Create socket connection
-    const socket = this.socketFactory.createConnection({
-      host: 'localhost',
-      port: port,
-    });
-
-    // Store nonce for sending after socket async connection
-    this.pendingNonce = nonce;
-
-    // Set socket and wire events
-    this.setSocket(socket);
+    // Payload structurally matches createConnection's parameter type — pass directly.
+    // TCP payload carries an extra `nonce` field; TypeScript allows it because
+    // excess-property checks apply only to fresh object literals, not variable assignments.
+    const nonce = 'nonce' in payload ? payload.nonce : null;
+    const target = 'path' in payload ? payload.path : `localhost:${payload.port}`;
+    log(this.config, `[${this.sessionId}] Connecting to ${target}...`);
+    const socket = this.socketFactory.createConnection(payload);
+    this.socket = socket;
+    this.wireSocketEvents(socket, nonce);
   }
 
   /**
    * Handle AGENT_SOCKET_CONNECTED: socket connection established
    * Transition: CONNECTING_TO_AGENT → SOCKET_CONNECTED
-   * Clears connection timeout and emits CLIENT_DATA_RECEIVED with nonce
+   * Clears connection timeout, then branches on nonce:
+   *   TCP  (nonce !== null) → emits CLIENT_DATA_RECEIVED with nonce to begin nonce send
+   *   Unix (nonce === null) → emits AGENT_WRITE_OK(requiresTimeout=true) to skip directly
+   *                           to WAITING_FOR_AGENT with greeting timeout armed
    */
-  private handleAgentSocketConnected(): void {
+  private handleAgentSocketConnected(payload: EventPayloads['AGENT_SOCKET_CONNECTED']): void {
     this.transition('AGENT_SOCKET_CONNECTED');
 
     // Clear connection timeout
@@ -269,29 +267,21 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
       this.connectionTimeout = null;
     }
 
-    const nonce = this.pendingNonce;
-    if (!nonce) {
-      this.emit('ERROR_OCCURRED', { error: new Error('Missing nonce after connection') });
-      return;
+    const { nonce } = payload;
+    if (nonce !== null) {
+      // TCP transport: send nonce as first data; greeting follows nonce write
+      log(this.config, `[${this.sessionId}] Socket connected, sending nonce`);
+      this.emit('CLIENT_DATA_RECEIVED', { commandBlock: nonce });
+    } else {
+      // Unix transport: no nonce exchange; greeting arrives immediately after connect
+      log(this.config, `[${this.sessionId}] Socket connected, waiting for greeting`);
+      this.emit('AGENT_WRITE_OK', { requiresTimeout: true });
     }
-
-    log(this.config, `[${this.sessionId}] Socket connected, ready to send nonce`);
-
-    // Clear pendingNonce as a hygiene measure — not because it is a unique per-session
-    // secret. The nonce is a same-user capability token written by gpg-agent at startup
-    // and readable by any process running as the same Windows user from the Gpg4win socket
-    // file in GNUPGHOME. It persists unchanged until gpg-agent restarts. All gpg clients
-    // running as that user share and read the same nonce. Clearing it here simply avoids
-    // holding a reference we no longer need after it has been sent.
-    this.pendingNonce = null;
-
-    // Send nonce as first data
-    this.emit('CLIENT_DATA_RECEIVED', { commandBlock: nonce });
   }
 
   /**
    * Handle AGENT_WRITE_OK: data written to agent successfully
-   * Transition: SOCKET_CONNECTED → WAITING_FOR_AGENT (after nonce)
+   * Transition: SOCKET_CONNECTED → WAITING_FOR_AGENT (after nonce write, or directly on Unix)
    * Transition: SENDING_TO_AGENT → WAITING_FOR_AGENT (after command)
    */
   private handleAgentWriteOk(payload: EventPayloads['AGENT_WRITE_OK']): void {
@@ -533,28 +523,14 @@ export class AgentSessionManager extends EventEmitter implements ISessionManager
   }
 
   /**
-   * Get socket (for operations that need direct access)
+   * Wire socket event handlers with .once() for single-fire events.
+   * @param nonce Buffer for TCP transport (sent after connect), or null for Unix (no nonce).
    */
-  public getSocket(): net.Socket | null {
-    return this.socket;
-  }
-
-  /**
-   * Set socket and wire event handlers
-   */
-  public setSocket(socket: net.Socket): void {
-    this.socket = socket;
-    this.wireSocketEvents(socket);
-  }
-
-  /**
-   * Wire socket event handlers with .once() for single-fire events
-   */
-  private wireSocketEvents(socket: net.Socket): void {
+  private wireSocketEvents(socket: net.Socket, nonce: Buffer | null): void {
     // Connect event - fires once when connection established
     socket.once('connect', () => {
       log(this.config, `[${this.sessionId}] Socket connected`);
-      this.emit('AGENT_SOCKET_CONNECTED');
+      this.emit('AGENT_SOCKET_CONNECTED', { nonce });
     });
 
     // Data event - fires multiple times as chunks arrive
@@ -638,18 +614,20 @@ export class AgentProxy {
     this.socketFactory = deps?.socketFactory ?? {
       createConnection: (options) => net.createConnection(options),
     };
-    this.fileSystem =
-      deps?.fileSystem ??
-      ({
-        existsSync: fs.existsSync,
-        readFileSync: fs.readFileSync,
-      } as unknown as IFileSystem);
+    this.fileSystem = deps?.fileSystem ?? {
+      existsSync: fs.existsSync,
+      readFileSync: fs.readFileSync,
+      statSync: (p) => fs.statSync(p),
+      mkdirSync: fs.mkdirSync,
+      chmodSync: fs.chmodSync,
+      unlinkSync: fs.unlinkSync,
+    };
     this.gpgCliFactory = deps?.gpgCliFactory;
   }
 
   /**
    * Start the GPG Bridge Agent: construct `GpgCli`, resolve the gpg-agent socket path,
-   * validate the socket file exists, and probe the socket to confirm it is the
+   * validate the socket path exists, and probe the socket to confirm it is the
    * extra (restricted) socket.
    *
    * The probe sends GETEVENTCOUNTER and asserts ERR Forbidden. This command has been
@@ -741,9 +719,15 @@ export class AgentProxy {
   /**
    * Connect to GPG agent and return a sessionId and greeting.
    *
-   * Creates a new session and connects to the GPG agent via TCP socket with nonce authentication.
-   * The session flows through states: DISCONNECTED → CONNECTING_TO_AGENT → SOCKET_CONNECTED →
-   * SENDING_TO_AGENT (nonce) → WAITING_FOR_AGENT (greeting) → READY.
+   * Creates a new session and connects to the GPG agent. Transport is detected from the
+   * filesystem at call time:
+   *   - Regular file  → Windows Assuan TCP: read port+nonce, connect, send nonce, await greeting
+   *   - Unix socket   → Unix domain socket:  connect directly, await greeting (no nonce)
+   *
+   * State flow (TCP):  DISCONNECTED → CONNECTING_TO_AGENT → SOCKET_CONNECTED →
+   *                    SENDING_TO_AGENT (nonce) → WAITING_FOR_AGENT (greeting) → READY
+   * State flow (Unix): DISCONNECTED → CONNECTING_TO_AGENT → SOCKET_CONNECTED →
+   *                    WAITING_FOR_AGENT (greeting) → READY
    *
    * Uses event-driven state machine with promise bridge pattern:
    * - Registers listeners for AGENT_DATA_RECEIVED (success) and CLEANUP_REQUESTED (error)
@@ -775,19 +759,37 @@ export class AgentProxy {
     }
 
     try {
-      // Read and parse the socket file to get port and nonce.
-      //
-      // P5-2 TOCTOU accepted race: between this readFileSync and the TCP connect below,
-      // a process running as the same Windows user with write access to GNUPGHOME could
-      // replace the socket file, redirecting us to a different port+nonce. This is an
-      // inherent race shared by every Assuan client including the gpg CLI itself.
-      // Exploiting it requires write access to GNUPGHOME, which already grants full
-      // gpg-agent control for that user — a more direct attack path than intercepting
-      // this bridge. No mitigation is appropriate at the bridge layer.
-      const socketData = this.fileSystem.readFileSync(this.gpgAgentSocketPath);
-      const { port, nonce } = parseSocketFile(socketData);
+      // Detect transport type from the socket path on disk.
+      const stats = this.fileSystem.statSync(this.gpgAgentSocketPath);
 
-      log(this.config, `[${sessionId}] Found config: localhost:${port} with nonce`);
+      let connectPayload: EventPayloads['CLIENT_CONNECT_REQUESTED'];
+      if (stats.isSocket()) {
+        // Unix domain socket: connect directly, no nonce exchange.
+        //
+        // TOCTOU: between this statSync and the connect below, the socket node could be
+        // replaced. This race is inherent in any Unix socket client. No mitigation is
+        // appropriate at the bridge layer.
+        log(this.config, `[${sessionId}] Unix socket detected`);
+        connectPayload = { path: this.gpgAgentSocketPath };
+      } else if (stats.isFile()) {
+        // Windows Assuan: read port + nonce from the socket file, then TCP connect.
+        //
+        // P5-2 TOCTOU accepted race: between this readFileSync and the TCP connect below,
+        // a process running as the same Windows user with write access to GNUPGHOME could
+        // replace the socket file, redirecting us to a different port+nonce. This is an
+        // inherent race shared by every Assuan client including the gpg CLI itself.
+        // Exploiting it requires write access to GNUPGHOME, which already grants full
+        // gpg-agent control for that user — a more direct attack path than intercepting
+        // this bridge. No mitigation is appropriate at the bridge layer.
+        const socketData = this.fileSystem.readFileSync(this.gpgAgentSocketPath);
+        const { port, nonce } = parseWindowsAssuanSocketFile(socketData);
+        log(this.config, `[${sessionId}] Found config: localhost:${port} with nonce`);
+        connectPayload = { host: 'localhost', port, nonce };
+      } else {
+        throw new Error(
+          `GPG agent socket path is not a socket or file: ${this.gpgAgentSocketPath}`,
+        );
+      }
 
       // Create session manager
       const sessionConfig = this.createSessionConfig();
@@ -839,7 +841,7 @@ export class AgentProxy {
         session.once('AGENT_DATA_RECEIVED', handleResponse); // Greeting is first response
 
         // Initiate connection
-        session.emit('CLIENT_CONNECT_REQUESTED', { port, nonce });
+        session.emit('CLIENT_CONNECT_REQUESTED', connectPayload);
       });
     } catch (error) {
       const msg = extractErrorMessage(error, 'Unknown error during connection');

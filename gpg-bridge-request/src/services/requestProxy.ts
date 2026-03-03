@@ -683,6 +683,7 @@ export class RequestProxy {
     this.fileSystem = deps?.fileSystem ?? {
       existsSync: fs.existsSync,
       readFileSync: fs.readFileSync,
+      statSync: (p) => fs.statSync(p), // forced overload resolution
       mkdirSync: fs.mkdirSync,
       chmodSync: fs.chmodSync,
       unlinkSync: fs.unlinkSync,

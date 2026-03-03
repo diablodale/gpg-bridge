@@ -149,7 +149,7 @@ describe('GpgCli', () => {
 
     it('throws when both PATH probe and explicit path fail', () => {
       expect(() => new GpgCli({}, { existsSync: () => false, whichSync: () => null })).to.throw(
-        /GnuPG bin not found/,
+        /GnuPG not found/,
       );
     });
 

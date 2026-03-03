@@ -19,6 +19,17 @@ export interface LogConfig {
 }
 
 /**
+ * Minimal stat result returned by IFileSystem.statSync.
+ * Covers only the predicates needed for transport detection.
+ */
+export interface IFileStats {
+  /** True when the path is a regular file (e.g. Windows Assuan socket file). */
+  isFile(): boolean;
+  /** True when the path is a Unix domain socket node. */
+  isSocket(): boolean;
+}
+
+/**
  * Abstraction for file system operations.
  * Allows injection of mock implementations for testing.
  */
@@ -32,6 +43,11 @@ export interface IFileSystem {
    * Read file contents as a Buffer.
    */
   readFileSync(path: string): Buffer;
+
+  /**
+   * Return stat info for the path. Throws ENOENT if the path does not exist.
+   */
+  statSync(path: string): IFileStats;
 
   /**
    * Create a directory, optionally recursively.
@@ -50,15 +66,16 @@ export interface IFileSystem {
 }
 
 /**
- * Abstraction for creating TCP sockets.
+ * Abstraction for creating TCP or Unix domain sockets.
  * Allows injection of mock implementations for testing.
  */
 export interface ISocketFactory {
   /**
-   * Create a TCP connection to a remote host.
+   * Create a TCP or Unix domain socket connection.
+   * Pass `{ host, port }` for TCP (Windows Assuan) or `{ path }` for Unix domain socket.
    */
   createConnection(
-    options: { host: string; port: number },
+    options: { host: string; port: number } | { path: string },
     connectionListener?: () => void,
   ): net.Socket;
 }

@@ -94,7 +94,7 @@ export interface ParsedSocketFile {
   nonce: Buffer;
 }
 
-export function parseSocketFile(data: Buffer): ParsedSocketFile {
+export function parseWindowsAssuanSocketFile(data: Buffer): ParsedSocketFile {
   // Find the newline that separates port from nonce
   const newlineIndex = data.indexOf('\n');
   if (newlineIndex === -1) {

@@ -30,7 +30,7 @@ describe('AgentProxy', () => {
     mockGpgCliFactory = { create: () => new MockGpgCli(socketPath) };
 
     // Set up mock socket file content: "<port>\n<16-byte-nonce>"
-    // Per parseSocketFile() in shared/protocol.ts
+    // Per parseWindowsAssuanSocketFile() in shared/protocol.ts
     const nonce = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]); // 16 binary bytes
     const socketFileContent = Buffer.concat([Buffer.from('31415\n', 'latin1'), nonce]);
     mockFileSystem.setFile(socketPath, socketFileContent);
@@ -2317,6 +2317,89 @@ describe('AgentProxy', () => {
       expect(agentProxy.getSessionCount()).to.equal(0);
 
       await agentProxy.stop();
+    });
+  });
+
+  // ─── Unix socket transport ────────────────────────────────────────────────
+  //
+  // These tests exercise the Unix-domain-socket path introduced in Change 5.
+  // The outer beforeEach sets up a TCP/Windows socket file at `socketPath`.
+  // This nested `beforeEach` *overrides* those settings for `unixSocketPath`:
+  //   - mockFileSystem.setSocket() registers the path as a socket node so that
+  //     statSync().isSocket() returns true (triggering the Unix branch in connectAgent).
+  //   - mockSocketFactory.emitGreetingOnConnect = true causes the factory to emit a
+  //     greeting 'data' event spontaneously after 'connect' (no write required).
+  //   - The response queue has 3 entries (no nonce slot): GETINFO → ok,
+  //     GETEVENTCOUNTER → ERR Forbidden, BYE → OK+close.
+
+  describe('Unix socket transport', () => {
+    const unixSocketPath = '/run/user/1000/gnupg/S.gpg-agent.extra';
+
+    beforeEach(() => {
+      mockFileSystem.setSocket(unixSocketPath);
+      mockSocketFactory.emitGreetingOnConnect = true;
+      // Overwrite the TCP queue set by the outer beforeEach with the 3-entry Unix queue
+      mockSocketFactory.setNextSocketResponses([
+        { data: 'D 2.2.19\nOK\n' }, // GETINFO version → OK
+        { data: 'ERR 67109115 Forbidden\n' }, // GETEVENTCOUNTER → Forbidden (confirms extra socket)
+        { data: 'OK\n', closeAfter: true }, // BYE → OK then socket closes
+      ]);
+    });
+
+    afterEach(() => {
+      // Reset flag so it does not leak into sibling describe blocks
+      mockSocketFactory.emitGreetingOnConnect = false;
+    });
+
+    function makeUnixGpgCliFactory(): IGpgCliFactory {
+      return { create: () => new MockGpgCli(unixSocketPath) };
+    }
+
+    it('start() connects via { path }, not { host, port }', async () => {
+      await makeProxy({ gpgCliFactory: makeUnixGpgCliFactory() });
+      const connOpts = mockSocketFactory.lastConnectionOptions;
+      expect(connOpts).to.have.property('path', unixSocketPath);
+      expect(connOpts).to.not.have.property('host');
+      expect(connOpts).to.not.have.property('port');
+    });
+
+    it('probe writes no nonce — only GETINFO + GETEVENTCOUNTER + BYE (3 writes)', async () => {
+      await makeProxy({ gpgCliFactory: makeUnixGpgCliFactory() });
+      const probeSocket = mockSocketFactory.getSockets()[0];
+      // Exactly 3 writes: GETINFO version, GETEVENTCOUNTER, BYE — no leading 16-byte nonce
+      expect(probeSocket.data).to.have.length(3);
+      // First write starts with "GETINFO" (not a binary nonce byte)
+      expect(probeSocket.data[0].toString('latin1')).to.match(/^GETINFO/);
+    });
+
+    it('logs "Restricted socket verified" after successful probe', async () => {
+      await makeProxy({
+        gpgCliFactory: makeUnixGpgCliFactory(),
+        logCallback: mockLogConfig.logCallback,
+      });
+      expect(mockLogConfig.hasLog(/Restricted socket verified via GETEVENTCOUNTER/)).to.be.true;
+    });
+
+    it('probe session is cleaned up after start() succeeds', async () => {
+      const proxy = await makeProxy({ gpgCliFactory: makeUnixGpgCliFactory() });
+      expect(proxy.getSessionCount()).to.equal(0);
+    });
+
+    it('connectAgent() resolves without writing a nonce', async () => {
+      const proxy = await makeProxy({ gpgCliFactory: makeUnixGpgCliFactory() });
+
+      // emitGreetingOnConnect is still true, so greeting arrives automatically after connect.
+      // No manual socket driving needed — the promise should resolve on its own.
+      const connectPromise = proxy.connectAgent();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const socket = mockSocketFactory.getLastSocket();
+      const result = await connectPromise;
+
+      expect(result.sessionId).to.be.a('string');
+      expect(result.greeting).to.include('OK');
+      // No writes before greeting — socket.data must be empty (nonce was never sent)
+      expect(socket!.data).to.have.length(0);
     });
   });
 
