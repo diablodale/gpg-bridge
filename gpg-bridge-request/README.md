@@ -8,29 +8,31 @@
 Creates a GPG agent Unix socket on remote environments (WSL, Dev Containers, SSH)
 and forwards all GPG protocol operations to
 [GPG Bridge Agent](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge-agent)
-running on the Windows host.
+running on the local host.
 Part of the [GPG Bridge](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge) pack —
 install the pack rather than this extension directly.
 
 ## Requirements
 
 - **Remote environments only** — this extension activates only in workspace (remote) context
-- [GPG Bridge Agent](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge-agent) must be installed and running on the Windows host
-- `gpgconf` available on the remote (standard with any GnuPG installation)
+- [GnuPG](https://gnupg.org/) 2.1+ installed on the remote (e.g. `gnupg` package on Linux/macOS)
+- [GPG Bridge Agent](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge-agent) must be installed and running on the local host
 
 ## Configuration
 
-| Setting                         | Default  | Description                                                                            |
-| ------------------------------- | -------- | -------------------------------------------------------------------------------------- |
-| `gpgBridgeRequest.gpgBinDir`    | _(auto)_ | Path to the GnuPG `bin` directory (e.g. `/usr/local/bin`). Leave empty to auto-detect. |
-| `gpgBridgeRequest.debugLogging` | `false`  | Enable verbose logging in the **GPG Bridge Request** output channel                    |
+| Setting                               | Default   | Description                                                                                                                                                                                  |
+| ------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gpgBridgeRequest.gpgBinDir`          | _(auto)_  | Path to the GnuPG `bin` directory on the remote (e.g. `/usr/local/bin`). Leave empty to auto-detect via PATH.                                                                                |
+| `gpgBridgeRequest.autoSyncPublicKeys` | _(empty)_ | Automatically sync public keys from the local keyring on activation. `"all"` exports all keys, `"pairs"` exports keys with matching private keys, or an array of specific fingerprints/UIDs. |
+| `gpgBridgeRequest.debugLogging`       | `false`   | Enable verbose logging in the **GPG Bridge Request** output channel                                                                                                                          |
 
 ## Commands
 
-| Command                     | Description              |
-| --------------------------- | ------------------------ |
-| `GPG Bridge Request: Start` | Start the request bridge |
-| `GPG Bridge Request: Stop`  | Stop the request bridge  |
+| Command                                | Description                                                    |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `GPG Bridge Request: Start`            | Start the request bridge                                       |
+| `GPG Bridge Request: Stop`             | Stop the request bridge                                        |
+| `GPG Bridge Request: Sync public keys` | Manually sync public keys from the local keyring to the remote |
 
 The proxy starts automatically when VS Code connects to a remote. Manual commands
 are available via the Command Palette (`Ctrl+Shift+P`) if you need to restart it.
@@ -40,7 +42,7 @@ are available via the Command Palette (`Ctrl+Shift+P`) if you need to restart it
 1. Runs `gpgconf --list-dirs agent-socket` on the remote to locate the standard GPG agent socket path
 2. Creates a Unix socket server at that path (replacing the normal gpg-agent socket)
 3. Each connecting GPG client gets an independent session — calls `_gpg-bridge-agent.connectAgent`
-   over VS Code's built-in tunnel to establish a connection through to Gpg4win on Windows
+   over VS Code's built-in tunnel to establish a connection through to gpg-agent on the local host
 4. Buffers and forwards Assuan commands to the agent; forwards responses back to the client
 5. Handles the full Assuan INQUIRE D-block pattern for operations that require client-supplied data
 
@@ -56,22 +58,22 @@ The Unix socket and its parent directory are created with restrictive permission
 - Socket file: `0o600` — readable and writable only by the owning user
 
 This prevents other users on the remote from connecting to the socket and forwarding
-requests to your Gpg4win installation.
+requests to your local gpg-agent.
 
 ### Transport
 
 This extension does not open any network ports. All communication with GPG Bridge Agent
-on the Windows host travels through VS Code's authenticated extension-host tunnel —
+on the local host travels through VS Code's authenticated extension-host tunnel —
 the same channel used for all remote extension communication. No credentials, private keys,
 or passphrases are transmitted by the bridge; only Assuan protocol messages for public-key
 operations (signing, decryption, key listing) flow through.
 
 ### Trust model
 
-Gpg4win's `S.gpg-agent.extra` socket (used by GPG Bridge Agent) enforces command-level
+The `S.gpg-agent.extra` restricted socket (used by GPG Bridge Agent) enforces command-level
 access control: operations that could expose or preset passphrases are rejected by
 gpg-agent before they execute. The bridge does not implement its own allowlist or
-denylist — Gpg4win is the trust anchor for what remote clients may request.
+denylist — gpg-agent is the trust anchor for what remote clients may request.
 
 ### Custom GPG or hardened installation
 

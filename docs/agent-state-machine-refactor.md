@@ -2198,7 +2198,7 @@ GPG operations frequently require human interaction with no predictable timeout:
 3. **Smartcard operations:** PIN entry, confirmations, physical device interaction
 4. **Passphrase caching:** First operation prompts (slow), subsequent cached (fast) → unpredictable timing
 
-As passthrough proxies, we cannot distinguish between:
+As passthrough extensions, we cannot distinguish between:
 
 - Network timeout (connection lost) vs Human processing delay (user thinking/typing)
 - Fast cached operation vs slow interactive operation
@@ -2572,7 +2572,7 @@ Extract duplicate code discovered during refactor to shared package:
   1. **Signing:** gpg-agent spawns pinentry → waits for password → indefinite time
   2. **INQUIRE responses:** Client may prompt human → indefinite time
   3. **Passphrase caching:** First operation prompts, subsequent cached → unpredictable timing
-- As passthrough proxies, we cannot distinguish network timeouts from human processing delays
+- As passthrough extensions, we cannot distinguish network timeouts from human processing delays
 - TCP layer handles network failures (connection loss detected via socket 'close')
 - Socket 'close' event provides network failure detection without arbitrary timeouts
 

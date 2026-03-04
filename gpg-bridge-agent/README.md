@@ -5,22 +5,21 @@
 <!-- Badges — update URLs after Phase 5 marketplace publish -->
 <!-- ![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/hidale.gpg-bridge-agent) -->
 
-Manages authenticated connections to the Gpg4win agent on your Windows host.
+Manages authenticated connections to the local GPG agent (`gpg-agent`).
 Part of the [GPG Bridge](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge) pack —
 install the pack rather than this extension directly.
 
 ## Requirements
 
-- **Windows host only** — this extension activates only on `win32`
-- [Gpg4win](https://www.gpg4win.org/) v4.4.1+ installed
+- [GnuPG](https://gnupg.org/) 2.1+ installed (e.g. [Gpg4win](https://www.gpg4win.org/) on Windows, `gnupg` package on Linux/macOS)
 - VS Code v1.91.0+
 
 ## Configuration
 
-| Setting                       | Default         | Description                                                                                                                       |
-| ----------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `gpgBridgeAgent.gpgBinDir`    | _(auto-detect)_ | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. Gpg4win's `C:\Program Files\GnuPG\bin`). Leave empty to auto-detect. |
-| `gpgBridgeAgent.debugLogging` | `false`         | Enable verbose logging in the **GPG Bridge Agent** output channel                                                                 |
+| Setting                       | Default         | Description                                                                                                                                             |
+| ----------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gpgBridgeAgent.gpgBinDir`    | _(auto-detect)_ | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. `C:\Program Files\GnuPG\bin` on Windows, `/usr/bin` on Linux). Leave empty to auto-detect. |
+| `gpgBridgeAgent.debugLogging` | `false`         | Enable verbose logging in the **GPG Bridge Agent** output channel                                                                                       |
 
 ## Commands
 
@@ -35,7 +34,7 @@ the Command Palette (`Ctrl+Shift+P`) if you need to restart it.
 
 ## How It Works
 
-1. Reads Gpg4win's `S.gpg-agent.extra` socket file to extract the TCP port and 16-byte nonce
+1. Reads gpg-agent's `S.gpg-agent.extra` restricted socket file to extract the TCP port and 16-byte nonce
 2. Connects to `localhost:<port>` and authenticates by sending the nonce
 3. Exposes three internal VS Code commands (`_gpg-bridge-agent.*`) that
    [GPG Bridge Request](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge-request)
@@ -46,24 +45,24 @@ the Command Palette (`Ctrl+Shift+P`) if you need to restart it.
 
 ### Trust model
 
-All bridge traffic uses Gpg4win's `S.gpg-agent.extra` socket, not the main `S.gpg-agent` socket.
-Gpg-agent enforces command-level access control on the extra socket at the protocol layer: sensitive
+All bridge traffic uses gpg-agent's `S.gpg-agent.extra` restricted socket, not the typical `S.gpg-agent` unrestricted socket.
+Gpg-agent enforces command-level access control on the extra restricted socket at the protocol layer: sensitive
 operations such as `PRESET_PASSPHRASE`, `CLEAR_PASSPHRASE`, and `GET_PASSPHRASE` are rejected with
 `ERR 67109115 Forbidden` before they execute. No bridge-side allowlist or denylist is needed —
-Gpg4win is the trust anchor.
+gpg-agent is the trust anchor.
 
-Nonce authentication (the 16-byte token in the socket file) restricts connections to processes
-running as the same Windows user that owns the Gpg4win installation. Remote clients never gain
-more privilege than a local GPG client running as that user.
+Remote clients never gain more privilege than a local GPG client running as that user.
+On Windows, nonce authentication (the 16-byte token in the socket file) restricts connections
+to processes running as the same user that owns the GnuPG installation.
 
 ### Hardened installation
 
-By default the extension auto-detects `gpgconf` by searching your system `PATH`. On Windows,
-a directory placed early in `PATH` could shadow `gpgconf.exe` with a malicious substitute
+By default the extension auto-detects `gpgconf` by searching your system `PATH`. On some systems,
+a directory placed early in `PATH` could shadow `gpgconf` with a malicious substitute
 (a general PATH-injection risk, not specific to this extension).
 
 To eliminate this risk, set `gpgBridgeAgent.gpgBinDir` to the absolute path of your
-Gpg4win `bin` directory:
+GnuPG `bin` directory:
 
 ```json
 "gpgBridgeAgent.gpgBinDir": "C:\\Program Files (x86)\\GnuPG\\bin"
