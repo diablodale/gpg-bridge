@@ -39,6 +39,7 @@
     "package:agent": "npm --prefix gpg-bridge-agent run vsix",
     "package:request": "npm --prefix gpg-bridge-request run vsix",
     "package:pack": "npm --prefix pack run vsix",
+    "package:dev": "node scripts/package-dev.js",
     "test": "npm run test:shared && npm run test:agent && npm run test:request",
     "test:shared": "npm --prefix shared test",
     "test:agent": "npm --prefix gpg-bridge-agent test",
