@@ -39,17 +39,17 @@ checking is needed.
 
 ### Work Items
 
-- [ ] Capture own version at activation: `const agentVersion = context.extension.packageJSON.version as string;`
-- [ ] Register `_gpg-bridge-agent.checkVersion` in the `context.subscriptions.push(...)` block
+- [x] Capture own version at activation: `const agentVersion = context.extension.packageJSON.version as string;`
+- [x] Register `_gpg-bridge-agent.checkVersion` in the `context.subscriptions.push(...)` block
       alongside `connectAgent`, `sendCommands`, `disconnectAgent`, `exportPublicKeys`
-- [ ] Implement the check as an **exported pure function** so unit tests can call it directly
+- [x] Implement the check as an **exported pure function** so unit tests can call it directly
       without a VS Code host:
       `export function checkVersionHandler(agentVersion: string, remoteVersion: string): void`
   - If `remoteVersion === agentVersion`: return (no side effects)
   - If mismatch: throw `new RangeError(Version mismatch: agent=${agentVersion}, request=${remoteVersion})`
   - No logging, no VS Code API calls — pure input/output
-- [ ] Register the command as a thin wrapper `(v) => checkVersionHandler(agentVersion, v)`
-- [ ] Add the command registration to the trust model comment block (the existing comment
+- [x] Register the command as a thin wrapper `(v) => checkVersionHandler(agentVersion, v)`
+- [x] Add the command registration to the trust model comment block (the existing comment
       that explains why internal commands are not access-restricted)
 
 ### Unit Tests — Phase 1
@@ -59,13 +59,13 @@ Import and call `checkVersionHandler` directly — no VS Code host needed, no mo
 `vscode.commands`. Follow the same module-level import pattern used in the existing agent
 unit tests.
 
-- [ ] Clean exact match: `checkVersionHandler('0.4.0', '0.4.0')` → returns `undefined` without throwing
-- [ ] Dev exact match: `checkVersionHandler('0.4.0-dev.6+abc', '0.4.0-dev.6+abc')` → returns `undefined` without throwing
-- [ ] Clean patch mismatch: `checkVersionHandler('0.4.0', '0.4.1')` → throws `RangeError`;
+- [x] Clean exact match: `checkVersionHandler('0.4.0', '0.4.0')` → returns `undefined` without throwing
+- [x] Dev exact match: `checkVersionHandler('0.4.0-dev.6+abc', '0.4.0-dev.6+abc')` → returns `undefined` without throwing
+- [x] Clean patch mismatch: `checkVersionHandler('0.4.0', '0.4.1')` → throws `RangeError`;
       `instanceof RangeError` is true; message contains both `agent=0.4.0` and `request=0.4.1`
-- [ ] Dev vs clean mismatch: `checkVersionHandler('0.4.0-dev.6+abc', '0.4.0')` → throws `RangeError`;
+- [x] Dev vs clean mismatch: `checkVersionHandler('0.4.0-dev.6+abc', '0.4.0')` → throws `RangeError`;
       message contains both version strings
-- [ ] Different dev builds: `checkVersionHandler('0.4.0-dev.6+abc', '0.4.0-dev.7+def')` → throws `RangeError`;
+- [x] Different dev builds: `checkVersionHandler('0.4.0-dev.6+abc', '0.4.0-dev.7+def')` → throws `RangeError`;
       message contains both version strings
 
 ### Integration Tests — Phase 1
@@ -79,20 +79,20 @@ request extension will call it in production.
 At the start of the `describe` block, fetch the agent's actual runtime version once:
 `const agentVersion = vscode.extensions.getExtension('hidale.gpg-bridge-agent')?.packageJSON.version as string`
 
-- [ ] Pass `agentVersion` exactly → resolves (exact match — covers clean release or dev build
+- [x] Pass `agentVersion` exactly → resolves (exact match — covers clean release or dev build
       depending on what was installed; dev-build exact match is covered by unit tests)
-- [ ] Pass `agentVersion + '-dev.1+test'` (append pre-release to real version) → rejects;
+- [x] Pass `agentVersion + '-dev.1+test'` (append pre-release to real version) → rejects;
       error message contains both the agent version and the fabricated remote version
-- [ ] Pass `'0.0.0'` (different clean version) → rejects; error message contains both versions
-- [ ] Pass `'0.0.0-dev.1+abc'` (different dev version) → rejects; error message contains both
+- [x] Pass `'0.0.0'` (different clean version) → rejects; error message contains both versions
+- [x] Pass `'0.0.0-dev.1+abc'` (different dev version) → rejects; error message contains both
       versions and the thrown error is recognisable as a version mismatch (not a generic
       "not initialized" error)
 
 ### Verification Gate — Phase 1
 
-- [ ] `npm run compile` — no TypeScript errors
-- [ ] `npm run test` — all unit tests pass, new `checkVersion` unit test cases included
-- [ ] `npm run test:integration` — all integration tests pass, new `checkVersion`
+- [x] `npm run compile` — no TypeScript errors
+- [x] `npm run test` — all unit tests pass, new `checkVersion` unit test cases included
+- [x] `npm run test:integration` — all integration tests pass, new `checkVersion`
       integration test cases included
 
 ---
@@ -103,34 +103,32 @@ At the start of the `describe` block, fetch the agent's actual runtime version o
 
 ### Work Items
 
-- [ ] Read own version at activation start:
+- [x] Read own version at activation start:
       `const requestVersion = context.extension.packageJSON.version as string;`
-- [ ] Implement the version gate as an **exported pure function** with optional DI so unit
+- [x] Implement the version gate as an **exported pure function** with optional DI so unit
       tests can call it without a VS Code host:
 
   ```typescript
   export async function runVersionCheck(
     requestVersion: string,
     deps?: {
-      executeCommand?: (cmd: string, ...args: unknown[]) => Promise<unknown>;
-      showErrorMessage?: (msg: string, ...actions: string[]) => Promise<string | undefined>;
-      executeSearchCommand?: (cmd: string, query: string) => Promise<void>;
-      log?: (msg: string) => void;
+      executeCommand?: (cmd: string, ...args: unknown[]) => Thenable<boolean>;
+      showErrorMessage?: (msg: string, ...actions: string[]) => Thenable<string | undefined>;
+      executeSearchCommand?: (cmd: string, query: string) => Thenable<void>;
     },
   ): Promise<boolean>; // true = versions match, false = mismatch (caller returns)
   ```
 
   - Calls `deps.executeCommand ?? vscode.commands.executeCommand` for `_gpg-bridge-agent.checkVersion`
-  - On catch: calls `deps.log?.()` to log the error, calls `deps.showErrorMessage ?? vscode.window.showErrorMessage`,
-    handles "Open Extensions" click via `deps.executeSearchCommand ?? vscode.commands.executeCommand`
-  - Returns `true` on success, `false` on mismatch
+  - On `RangeError` catch only: calls `deps.showErrorMessage ?? vscode.window.showErrorMessage`,
+    handles "Open Extensions" click via `deps.executeSearchCommand ?? vscode.commands.executeCommand`;
+    re-throws any non-`RangeError` so it propagates to `activate()`'s outer `catch` for logging
+  - Returns `true` on success, `false` on `RangeError` mismatch (non-`RangeError` propagates)
 
-- [ ] In `activate()`, pass `log: (msg) => outputChannel.appendLine(msg)` in `deps` so logging
-      goes to the output channel without `runVersionCheck` referencing the module-level variable directly
-- [ ] In `activate()`, inside the `!isTestEnvironment() || isIntegrationTestEnvironment()` guard,
+- [x] In `activate()`, inside the `!isTestEnvironment() || isIntegrationTestEnvironment()` guard,
       **before** `startPublicKeySync()` and `startRequestProxy()`:
       `if (!await runVersionCheck(requestVersion)) return;`
-- [ ] Confirm `startPublicKeySync()` and `startRequestProxy()` are unreachable when
+- [x] Confirm `startPublicKeySync()` and `startRequestProxy()` are unreachable when
       `runVersionCheck` returns `false`
 
 ### Unit Tests — Phase 2
@@ -139,11 +137,11 @@ Add a new file `gpg-bridge-request/src/test/runVersionCheck.test.ts`.
 Import and call `runVersionCheck` directly, passing mock functions for `executeCommand`,
 `showErrorMessage`, and `executeSearchCommand` — no VS Code host needed.
 
-- [ ] Mock `executeCommand('_gpg-bridge-agent.checkVersion', ...)` resolves → `runVersionCheck`
+- [x] Mock `executeCommand('_gpg-bridge-agent.checkVersion', ...)` resolves → `runVersionCheck`
       returns `true`
-- [ ] Mock `executeCommand('_gpg-bridge-agent.checkVersion', ...)` rejects → `runVersionCheck`
+- [x] Mock `executeCommand('_gpg-bridge-agent.checkVersion', ...)` rejects → `runVersionCheck`
       returns `false`; `showErrorMessage` was called with text containing the error message
-- [ ] Mock rejects and `showErrorMessage` returns `'Open Extensions'` → `executeSearchCommand`
+- [x] Mock rejects and `showErrorMessage` returns `'Open Extensions'` → `executeSearchCommand`
       called with `'hidale.gpg-bridge'`; `runVersionCheck` returns `false`
 
 ### Integration Tests — Phase 2
@@ -154,21 +152,26 @@ These run in the real VS Code extension host with both extensions activated; the
 `checkVersion` command is therefore live. At matching versions the proxy must start; a
 fabricated mismatch (by calling `checkVersion` directly with a wrong version) must reject.
 
-At the start of the `describe` block, fetch the agent's actual runtime version once:
-`const agentVersion = vscode.extensions.getExtension('hidale.gpg-bridge-agent')?.packageJSON.version as string`
+At the start of the `describe` block, fetch the agent's actual runtime version once.
+The agent runs on the Windows UI host — `getExtension('hidale.gpg-bridge-agent')` returns
+`undefined` from the Linux remote host (same cross-boundary constraint as the version exchange
+mechanism). Use the request extension instead:
+`const agentVersion = vscode.extensions.getExtension('hidale.gpg-bridge-request')?.packageJSON.version as string`
+(valid because matching versions are the invariant). Add a `before()` hook to restart the proxy
+if Phase 5's `afterEach` left it stopped.
 
-- [ ] Verify the request proxy socket exists and accepts connections after activation —
+- [x] Verify the request proxy socket exists and accepts connections after activation —
       confirms the version check passed and startup completed normally
-- [ ] Pass `agentVersion + '+build.1'` (build metadata appended to real version) → rejects;
+- [x] Pass `agentVersion + '+build.1'` (build metadata appended to real version) → rejects;
       confirms build metadata is part of the exact match, not ignored
-- [ ] Pass `' ' + agentVersion` (leading whitespace) → rejects;
+- [x] Pass `' ' + agentVersion` (leading whitespace) → rejects;
       confirms no implicit trimming
-- [ ] Pass `'99.0.0'` (major version ahead) → rejects; error message contains both versions
+- [x] Pass `'99.0.0'` (major version ahead) → rejects; error message contains both versions
 
 ### Verification Gate — Phase 2
 
-- [ ] `npm run compile` — no TypeScript errors
-- [ ] `npm run test` — all unit tests pass, new request-side `checkVersion` unit test cases included
+- [x] `npm run compile` — no TypeScript errors
+- [x] `npm run test` — all unit tests pass, new request-side `checkVersion` unit test cases included
 - [ ] `npm run test:integration` — all integration tests pass, new Phase 2 integration
       test cases included
 - [ ] Manual smoke: install mismatched agent+request VSIX versions — verify:

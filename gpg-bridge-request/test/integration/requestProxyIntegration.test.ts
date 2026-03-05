@@ -628,6 +628,86 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 7 — checkVersion end-to-end: request activation gate + edge cases
+// ---------------------------------------------------------------------------
+
+describe('Phase 7 — checkVersion end-to-end', function () {
+  this.timeout(10000);
+
+  // The request extension IS a remote extension — getExtension() works from this host.
+  // The agent is a UI extension on Windows; getExtension('hidale.gpg-bridge-agent') returns
+  // undefined here. Since matching versions is the invariant, request version === agent version.
+  const agentVersion = vscode.extensions.getExtension('hidale.gpg-bridge-request')?.packageJSON
+    .version as string;
+
+  before(async function () {
+    // Phase 5 afterEach stops the proxy; restart it so test 1 can verify the socket exists.
+    const socketPath = await vscode.commands.executeCommand<string | null>(
+      '_gpg-bridge-request.test.getSocketPath',
+    );
+    if (!socketPath) {
+      await vscode.commands.executeCommand('gpg-bridge-request.start');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  });
+
+  it('1. request proxy socket exists after activation (version check passed)', async function () {
+    const socketPath = await vscode.commands.executeCommand<string | null>(
+      '_gpg-bridge-request.test.getSocketPath',
+    );
+    expect(socketPath, 'socket path should be a non-empty string')
+      .to.be.a('string')
+      .and.have.length.greaterThan(0);
+    expect(fs.existsSync(socketPath as string), 'proxy socket file must exist').to.be.true;
+  });
+
+  it('2. version with build metadata appended rejects (exact match required)', async function () {
+    const fabricated = agentVersion + '+build.1';
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'version with build metadata should reject').to.be.true;
+    expect(errorMsg).to.include(agentVersion);
+    expect(errorMsg).to.include(fabricated);
+  });
+
+  it('3. version with leading whitespace rejects (no implicit trimming)', async function () {
+    const fabricated = ' ' + agentVersion;
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'version with leading whitespace should reject').to.be.true;
+    expect(errorMsg).to.include(agentVersion);
+    expect(errorMsg).to.include(fabricated.trim()); // message includes the trimmed agent version
+  });
+
+  it('4. major version ahead rejects with message containing both versions', async function () {
+    const fabricated = '99.0.0';
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'major version ahead should reject').to.be.true;
+    expect(errorMsg).to.include(agentVersion);
+    expect(errorMsg).to.include(fabricated);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

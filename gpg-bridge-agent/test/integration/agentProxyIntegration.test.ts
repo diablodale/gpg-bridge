@@ -530,6 +530,71 @@ describe('Phase 4 — exportPublicKeys command', function () {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 5 — checkVersion command
+// ---------------------------------------------------------------------------
+
+describe('Phase 5 — checkVersion command', function () {
+  this.timeout(10000);
+
+  // Fetch the agent's runtime version once for the entire suite.
+  // extensionDependencies guarantees the agent is activated before any caller.
+  const agentVersion = vscode.extensions.getExtension('hidale.gpg-bridge-agent')?.packageJSON
+    .version as string;
+
+  it('1. exact match resolves without error', async function () {
+    // Should resolve (not throw/reject) when versions match exactly
+    await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', agentVersion);
+  });
+
+  it('2. version with appended pre-release rejects with message containing both versions', async function () {
+    const fabricated = agentVersion + '-dev.1+test';
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'version with appended pre-release should reject').to.be.true;
+    expect(errorMsg).to.include(agentVersion);
+    expect(errorMsg).to.include(fabricated);
+  });
+
+  it('3. completely different clean version rejects with message containing both versions', async function () {
+    const fabricated = '0.0.0';
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'different clean version should reject').to.be.true;
+    expect(errorMsg).to.include(agentVersion);
+    expect(errorMsg).to.include(fabricated);
+  });
+
+  it('4. different dev version rejects with recognisable version mismatch (not a generic error)', async function () {
+    const fabricated = '0.0.0-dev.1+abc';
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'different dev version should reject').to.be.true;
+    // Error must be a version mismatch — not a generic "not initialized" error
+    expect(errorMsg).to.match(/extension versions do not match/i);
+    expect(errorMsg).to.include(agentVersion);
+    expect(errorMsg).to.include(fabricated);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

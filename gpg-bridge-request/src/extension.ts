@@ -12,7 +12,7 @@
 import * as vscode from 'vscode';
 import { RequestProxy } from './services/requestProxy';
 import { PublicKeySync } from './services/publicKeySync';
-import { GpgCli, extractErrorMessage } from '@gpg-bridge/shared';
+import { GpgCli, extractErrorMessage, VersionError } from '@gpg-bridge/shared';
 import type { KeyFilter } from '@gpg-bridge/shared';
 import { VSCodeCommandExecutor } from './services/commandExecutor';
 import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-bridge/shared';
@@ -21,8 +21,52 @@ let requestProxyService: RequestProxy | null = null;
 let publicKeySyncService: PublicKeySync | null = null;
 let outputChannel: vscode.OutputChannel;
 
+/**
+ * Calls `_gpg-bridge-agent.checkVersion` with the request extension's own version.
+ * Returns `true` if the versions match exactly, throws on any error (including
+ * `VersionError` on mismatch).
+ *
+ * On mismatch an error notification is shown with an "Open Extensions" button;
+ * clicking it opens the VS Code Extensions search panel filtered to the bridge.
+ * The notification is fire-and-forget so the throw is not delayed.
+ * All VS Code API calls are injectable via `deps` for unit testing.
+ */
+export async function runVersionCheck(
+  requestVersion: string,
+  deps?: {
+    executeCommand?: (cmd: string, ...args: unknown[]) => Thenable<boolean>;
+    showErrorMessage?: (message: string, ...items: string[]) => Thenable<string | undefined>;
+    executeSearchCommand?: (command: string, query: string) => Thenable<void>;
+  },
+): Promise<boolean> {
+  const execCmd = deps?.executeCommand ?? vscode.commands.executeCommand<boolean>;
+  const showErr =
+    deps?.showErrorMessage ??
+    ((message: string, ...items: string[]) => vscode.window.showErrorMessage(message, ...items));
+  const execSearch =
+    deps?.executeSearchCommand ??
+    ((cmd: string, query: string) => vscode.commands.executeCommand(cmd, query) as Promise<void>);
+
+  try {
+    return await execCmd('_gpg-bridge-agent.checkVersion', requestVersion);
+  } catch (error: unknown) {
+    if (error instanceof VersionError) {
+      showErr(
+        `GPG Bridge extension version mismatch. Install matching versions. Details: ${extractErrorMessage(error)}`,
+        'Open Extensions',
+      ).then(async (action) => {
+        if (action === 'Open Extensions') {
+          await execSearch('workbench.extensions.search', 'hidale.gpg-bridge');
+        }
+      });
+    }
+    throw error;
+  }
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   outputChannel = vscode.window.createOutputChannel('GPG Bridge Request');
+  const requestVersion = context.extension.packageJSON.version as string;
 
   // This extension is the remote (Linux/macOS) half of the bridge.
   // The os field in package.json prevents marketplace installs on win32, but
@@ -69,13 +113,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
     // tests get full extension initialization (unit tests still skip init).
     if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
-      try {
-        void startPublicKeySync(); // fire and forget
-        await startRequestProxy();
-      } catch (err) {
-        // Error already logged by handler, but show output
-        outputChannel.show();
-      }
+      await runVersionCheck(requestVersion);
+      void startPublicKeySync(); // fire and forget
+      await startRequestProxy();
     }
   } catch (error) {
     const message = extractErrorMessage(error);

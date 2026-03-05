@@ -5,6 +5,7 @@ import {
   isTestEnvironment,
   isIntegrationTestEnvironment,
   extractErrorMessage,
+  VersionError,
 } from '@gpg-bridge/shared';
 import type { KeyFilter } from '@gpg-bridge/shared';
 
@@ -13,9 +14,25 @@ let agentProxyService: AgentProxy | null = null;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
 
+/**
+ * Pure version-compatibility check called by the request extension via
+ * `_gpg-bridge-agent.checkVersion`. No VS Code API calls, no logging.
+ *
+ * @throws {VersionError} when versions do not match exactly (including pre-release)
+ */
+export function checkVersionHandler(agentVersion: string, remoteVersion: string): boolean {
+  if (remoteVersion === agentVersion) {
+    return true;
+  }
+  throw new VersionError(
+    `GPG Bridge extension versions do not match agent=${agentVersion} request=${remoteVersion}`,
+  );
+}
+
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   outputChannel = vscode.window.createOutputChannel('GPG Bridge Agent');
+  const agentVersion = context.extension.packageJSON.version as string;
   statusBarItem = vscode.window.createStatusBarItem(
     context.extension.id,
     vscode.StatusBarAlignment.Right,
@@ -45,9 +62,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     //      is aborted. This is a pure read — no gpg-agent state is modified.
     //   4. All operations require a caller-provided sessionId that maps to an
     //      active session; unknown sessionIds are silently ignored or rejected.
+    //   5. `_gpg-bridge-agent.checkVersion` is a pure synchronous check that
+    //      throws VersionError on mismatch. It carries no secrets and cannot
+    //      modify agent state.
     // ────────────────────────────────────────────────────────────────────────
 
     // Internal commands called by request-proxy extension, hidden from user with underscore prefix
+    vscode.commands.registerCommand('_gpg-bridge-agent.checkVersion', (v: string) =>
+      checkVersionHandler(agentVersion, v),
+    ),
     vscode.commands.registerCommand('_gpg-bridge-agent.connectAgent', connectAgent),
     vscode.commands.registerCommand('_gpg-bridge-agent.sendCommands', sendCommands),
     vscode.commands.registerCommand('_gpg-bridge-agent.disconnectAgent', disconnectAgent),

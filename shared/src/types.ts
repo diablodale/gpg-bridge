@@ -4,6 +4,19 @@
  */
 
 import type * as net from 'net';
+
+/**
+ * Thrown by `checkVersionHandler` when the agent and request extension versions
+ * do not match exactly. Caught by `runVersionCheck` to show the mismatch notification.
+ */
+export class VersionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VersionError';
+    // Restore prototype chain (required when targeting ES5/CommonJS transpilation)
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 import type { GpgCli } from './gpgCli';
 
 /**
