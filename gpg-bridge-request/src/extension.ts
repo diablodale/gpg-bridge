@@ -104,20 +104,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
       ),
     );
-
-    // Integration test helper commands — only registered when integration tests are running
-    // without a configured GNUPGHOME (e.g. Phase 2 and Phase 5 runners).
-    if (isIntegrationTestEnvironment() && !process.env.GNUPGHOME) {
-      context.subscriptions.push(
-        // Returns the socket path that the GPG Bridge Request is listening on, or null if not running.
-        // Tests connect to the proxy socket directly via AssuanSocketClient and need the socket
-        // path via this command. Phase 3 sets GNUPGHOME so gpg finds the socket
-        // at $GNUPGHOME/S.gpg-agent naturally; this command is not needed and must not be registered there.
-        vscode.commands.registerCommand('_gpg-bridge-request.test.getSocketPath', () => {
-          return requestProxyService?.getSocketPath() ?? null;
-        }),
-      );
-    }
   } catch (error) {
     const message = extractErrorMessage(error);
     outputChannel.appendLine(`Error: ${message}`);
@@ -129,6 +115,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.registerCommand('gpg-bridge-request.start', noop),
       vscode.commands.registerCommand('gpg-bridge-request.stop', noop),
       vscode.commands.registerCommand('gpg-bridge-request.syncPublicKeys', noop),
+    );
+  }
+
+  // Integration test helper commands — registered outside try/catch so they are
+  // always available even when startup (version check or proxy start) fails.
+  // The handler safely returns null when requestProxyService is not running.
+  // Only registered when integration tests are active without a configured
+  // GNUPGHOME (e.g. Phase 2 and Phase 5 runners).
+  // Phase 3 sets GNUPGHOME so gpg finds the socket at $GNUPGHOME/S.gpg-agent
+  // naturally; this command is not needed and must not be registered there.
+  if (isIntegrationTestEnvironment() && !process.env.GNUPGHOME) {
+    context.subscriptions.push(
+      // Returns the active socket path, or null if the proxy is not running.
+      // Tests connect to the proxy socket directly via AssuanSocketClient.
+      vscode.commands.registerCommand('_gpg-bridge-request.test.getSocketPath', () => {
+        return requestProxyService?.getSocketPath() ?? null;
+      }),
     );
   }
 }
