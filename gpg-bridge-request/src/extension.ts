@@ -12,7 +12,8 @@
 import * as vscode from 'vscode';
 import { RequestProxy } from './services/requestProxy';
 import { PublicKeySync } from './services/publicKeySync';
-import { GpgCli, extractErrorMessage, VersionError } from '@gpg-bridge/shared';
+import { GpgCli, extractErrorMessage } from '@gpg-bridge/shared';
+import type { VersionCheckResult } from '@gpg-bridge/shared';
 import type { KeyFilter } from '@gpg-bridge/shared';
 import { VSCodeCommandExecutor } from './services/commandExecutor';
 import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-bridge/shared';
@@ -23,9 +24,10 @@ let outputChannel: vscode.OutputChannel;
 
 /**
  * Calls `_gpg-bridge-agent.checkVersion` with the request extension's own version.
- * Returns `true` if the versions match exactly, throws on any error (including
- * `VersionError` on mismatch).
+ * Resolves when versions match exactly; throws on any error (including mismatch).
  *
+ * The agent returns a `VersionCheckResult` plain object — never throws — so the
+ * result survives VS Code command tunnel serialization without corruption.
  * On mismatch an error notification is shown with an "Open Extensions" button;
  * clicking it opens the VS Code Extensions search panel filtered to the bridge.
  * The notification is fire-and-forget so the throw is not delayed.
@@ -34,12 +36,12 @@ let outputChannel: vscode.OutputChannel;
 export async function runVersionCheck(
   requestVersion: string,
   deps?: {
-    executeCommand?: (cmd: string, ...args: unknown[]) => Thenable<boolean>;
+    executeCommand?: (cmd: string, ...args: unknown[]) => Thenable<VersionCheckResult>;
     showErrorMessage?: (message: string, ...items: string[]) => Thenable<string | undefined>;
     executeSearchCommand?: (command: string, query: string) => Thenable<void>;
   },
-): Promise<boolean> {
-  const execCmd = deps?.executeCommand ?? vscode.commands.executeCommand<boolean>;
+): Promise<void> {
+  const execCmd = deps?.executeCommand ?? vscode.commands.executeCommand<VersionCheckResult>;
   const showErr =
     deps?.showErrorMessage ??
     ((message: string, ...items: string[]) => vscode.window.showErrorMessage(message, ...items));
@@ -47,26 +49,28 @@ export async function runVersionCheck(
     deps?.executeSearchCommand ??
     ((cmd: string, query: string) => vscode.commands.executeCommand(cmd, query) as Promise<void>);
 
-  try {
-    return await execCmd('_gpg-bridge-agent.checkVersion', requestVersion);
-  } catch (error: unknown) {
-    if (error instanceof VersionError) {
-      showErr(
-        `GPG Bridge extension version mismatch. Install matching versions. Details: ${extractErrorMessage(error)}`,
-        'Open Extensions',
-      ).then(async (action) => {
-        if (action === 'Open Extensions') {
-          await execSearch('workbench.extensions.search', 'hidale.gpg-bridge');
-        }
-      });
-    }
-    throw error;
+  const result = await execCmd('_gpg-bridge-agent.checkVersion', requestVersion);
+  if (result.match === false) {
+    showErr(
+      'Incompatible versions of GPG Bridge Agent and GPG Bridge Request. Install matching versions.',
+      'Open Extensions',
+    ).then(async (action) => {
+      if (action === 'Open Extensions') {
+        await execSearch('workbench.extensions.search', 'hidale.gpg-bridge');
+      }
+    });
+    throw new Error(
+      `GPG Bridge extension versions do not match: agent=${result.agentVersion} request=${result.requestVersion}`,
+    );
   }
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  outputChannel = vscode.window.createOutputChannel('GPG Bridge Request');
   const requestVersion = context.extension.packageJSON.version as string;
+
+  // Create output channel and keep it for the lifetime of the extension
+  outputChannel = vscode.window.createOutputChannel('GPG Bridge Request');
+  context.subscriptions.push(outputChannel);
 
   // This extension is the remote (Linux/macOS) half of the bridge.
   // The os field in package.json prevents marketplace installs on win32, but
@@ -80,7 +84,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   try {
-    outputChannel.appendLine(`Remote context (${vscode.env.remoteName}) activated`);
+    // Start GPG Bridge Request on remote
+    // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
+    // tests get full extension initialization (unit tests still skip init).
+    if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
+      await runVersionCheck(requestVersion);
+      void startPublicKeySync(); // fire and forget
+      await startRequestProxy();
+    }
 
     // Register commands
     context.subscriptions.push(
@@ -92,7 +103,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           await publicKeySyncService?.syncPublicKeys(filter);
         },
       ),
-      outputChannel,
     );
 
     // Integration test helper commands — only registered when integration tests are running
@@ -108,19 +118,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
       );
     }
-
-    // Start GPG Bridge Request on remote
-    // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
-    // tests get full extension initialization (unit tests still skip init).
-    if (!isTestEnvironment() || isIntegrationTestEnvironment()) {
-      await runVersionCheck(requestVersion);
-      void startPublicKeySync(); // fire and forget
-      await startRequestProxy();
-    }
   } catch (error) {
     const message = extractErrorMessage(error);
     outputChannel.appendLine(`Error: ${message}`);
     outputChannel.show(true);
+
+    // Register no-op commands so package.json palette commands don't break
+    const noop = () => {};
+    context.subscriptions.push(
+      vscode.commands.registerCommand('gpg-bridge-request.start', noop),
+      vscode.commands.registerCommand('gpg-bridge-request.stop', noop),
+      vscode.commands.registerCommand('gpg-bridge-request.syncPublicKeys', noop),
+    );
   }
 }
 
@@ -159,7 +168,7 @@ async function startRequestProxy(): Promise<void> {
   }
 
   try {
-    outputChannel.appendLine('Starting GPG Bridge Request...');
+    outputChannel.appendLine(`Starting GPG Bridge Request on ${vscode.env.remoteName}...`);
 
     // Create a log callback that respects the debugLogging setting
     const config = vscode.workspace.getConfiguration('gpgBridgeRequest');

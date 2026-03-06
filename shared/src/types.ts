@@ -6,17 +6,18 @@
 import type * as net from 'net';
 
 /**
- * Thrown by `checkVersionHandler` when the agent and request extension versions
- * do not match exactly. Caught by `runVersionCheck` to show the mismatch notification.
+ * Result returned by `_gpg-bridge-agent.checkVersion` command.
+ *
+ * A plain discriminated union rather than a thrown error so the result survives
+ * VS Code command tunnel serialization as a plain JSON object. VS Code's
+ * `transformErrorFromSerialization` unconditionally converts the `cause` field of
+ * a tunnelled Error back into an Error object, corrupting any plain-object payload
+ * stored there. Return values have no such transformation applied.
  */
-export class VersionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'VersionError';
-    // Restore prototype chain (required when targeting ES5/CommonJS transpilation)
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-}
+export type VersionCheckResult =
+  | { readonly match: true }
+  | { readonly match: false; readonly agentVersion: string; readonly requestVersion: string };
+
 import type { GpgCli } from './gpgCli';
 
 /**

@@ -661,49 +661,40 @@ describe('Phase 7 — checkVersion end-to-end', function () {
     expect(fs.existsSync(socketPath as string), 'proxy socket file must exist').to.be.true;
   });
 
-  it('2. version with build metadata appended rejects (exact match required)', async function () {
+  it('2. version with build metadata appended returns mismatch (exact match required)', async function () {
     const fabricated = agentVersion + '+build.1';
-    let threw = false;
-    let errorMsg = '';
-    try {
-      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
-    } catch (err) {
-      threw = true;
-      errorMsg = err instanceof Error ? err.message : String(err);
-    }
-    expect(threw, 'version with build metadata should reject').to.be.true;
-    expect(errorMsg).to.include(agentVersion);
-    expect(errorMsg).to.include(fabricated);
+    const result = await vscode.commands.executeCommand<{
+      match: boolean;
+      agentVersion?: string;
+      requestVersion?: string;
+    }>('_gpg-bridge-agent.checkVersion', fabricated);
+    expect(result.match, 'version with build metadata should not match').to.be.false;
+    expect(result.agentVersion).to.equal(agentVersion);
+    expect(result.requestVersion).to.equal(fabricated);
   });
 
-  it('3. version with leading whitespace rejects (no implicit trimming)', async function () {
+  it('3. version with leading whitespace returns mismatch (no implicit trimming)', async function () {
     const fabricated = ' ' + agentVersion;
-    let threw = false;
-    let errorMsg = '';
-    try {
-      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
-    } catch (err) {
-      threw = true;
-      errorMsg = err instanceof Error ? err.message : String(err);
-    }
-    expect(threw, 'version with leading whitespace should reject').to.be.true;
-    expect(errorMsg).to.include(agentVersion);
-    expect(errorMsg).to.include(fabricated.trim()); // message includes the trimmed agent version
+    const result = await vscode.commands.executeCommand<{
+      match: boolean;
+      agentVersion?: string;
+      requestVersion?: string;
+    }>('_gpg-bridge-agent.checkVersion', fabricated);
+    expect(result.match, 'version with leading whitespace should not match').to.be.false;
+    expect(result.agentVersion).to.equal(agentVersion);
+    expect(result.requestVersion).to.equal(fabricated);
   });
 
-  it('4. major version ahead rejects with message containing both versions', async function () {
+  it('4. major version ahead returns mismatch with both versions', async function () {
     const fabricated = '99.0.0';
-    let threw = false;
-    let errorMsg = '';
-    try {
-      await vscode.commands.executeCommand('_gpg-bridge-agent.checkVersion', fabricated);
-    } catch (err) {
-      threw = true;
-      errorMsg = err instanceof Error ? err.message : String(err);
-    }
-    expect(threw, 'major version ahead should reject').to.be.true;
-    expect(errorMsg).to.include(agentVersion);
-    expect(errorMsg).to.include(fabricated);
+    const result = await vscode.commands.executeCommand<{
+      match: boolean;
+      agentVersion?: string;
+      requestVersion?: string;
+    }>('_gpg-bridge-agent.checkVersion', fabricated);
+    expect(result.match, 'major version ahead should not match').to.be.false;
+    expect(result.agentVersion).to.equal(agentVersion);
+    expect(result.requestVersion).to.equal(fabricated);
   });
 });
 

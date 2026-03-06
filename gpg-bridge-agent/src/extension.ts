@@ -5,8 +5,8 @@ import {
   isTestEnvironment,
   isIntegrationTestEnvironment,
   extractErrorMessage,
-  VersionError,
 } from '@gpg-bridge/shared';
+import type { VersionCheckResult } from '@gpg-bridge/shared';
 import type { KeyFilter } from '@gpg-bridge/shared';
 
 // Global GPG Bridge Agent service instance
@@ -18,15 +18,18 @@ let statusBarItem: vscode.StatusBarItem;
  * Pure version-compatibility check called by the request extension via
  * `_gpg-bridge-agent.checkVersion`. No VS Code API calls, no logging.
  *
- * @throws {VersionError} when versions do not match exactly (including pre-release)
+ * Returns a `VersionCheckResult` plain object rather than throwing so the result
+ * survives VS Code command tunnel serialization without corruption.
  */
-export function checkVersionHandler(agentVersion: string, remoteVersion: string): boolean {
+export function checkVersionHandler(
+  agentVersion: string,
+  remoteVersion: string,
+): VersionCheckResult {
+  outputChannel.appendLine(`Checking versions agent=${agentVersion} request=${remoteVersion}`);
   if (remoteVersion === agentVersion) {
-    return true;
+    return { match: true };
   }
-  throw new VersionError(
-    `GPG Bridge extension versions do not match agent=${agentVersion} request=${remoteVersion}`,
-  );
+  return { match: false, agentVersion, requestVersion: remoteVersion };
 }
 
 // This method is called when your extension is activated
@@ -63,7 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     //   4. All operations require a caller-provided sessionId that maps to an
     //      active session; unknown sessionIds are silently ignored or rejected.
     //   5. `_gpg-bridge-agent.checkVersion` is a pure synchronous check that
-    //      throws VersionError on mismatch. It carries no secrets and cannot
+    //      throws VersionMismatchError on mismatch. It carries no secrets and cannot
     //      modify agent state.
     // ────────────────────────────────────────────────────────────────────────
 
@@ -244,7 +247,7 @@ async function startAgentProxy(): Promise<void> {
 
     // start() includes the extra-socket probe — reaching here means probe succeeded
     updateStatusBar();
-    outputChannel.appendLine('GPG Bridge Agent started. Status: READY.');
+    outputChannel.appendLine('GPG Bridge Agent is READY');
   } catch (error) {
     const errorMessage = extractErrorMessage(error);
     outputChannel.appendLine(`Error starting GPG Bridge Agent: ${errorMessage}`);

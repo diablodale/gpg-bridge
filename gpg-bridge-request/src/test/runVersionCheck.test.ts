@@ -5,20 +5,20 @@
  */
 
 import { expect } from 'chai';
-import { VersionError } from '@gpg-bridge/shared';
+import type { VersionCheckResult } from '@gpg-bridge/shared';
 import { runVersionCheck } from '../extension';
 
 describe('runVersionCheck', () => {
-  it('executeCommand resolves with true → returns true', async () => {
-    const result = await runVersionCheck('0.4.0', {
-      executeCommand: async () => true,
+  it('executeCommand resolves with { match: true } → returns without error', async () => {
+    await runVersionCheck('0.4.0', {
+      executeCommand: async () => ({ match: true }) satisfies VersionCheckResult,
       showErrorMessage: async () => undefined,
       executeSearchCommand: async () => undefined,
     });
-    expect(result).to.be.true;
+    // reaching here = no throw = success
   });
 
-  it('executeCommand rejects with non-VersionError → error propagates (not caught as mismatch)', async () => {
+  it('executeCommand rejects with non-mismatch error → propagates without calling showErrorMessage', async () => {
     const networkError = new Error('Command not found');
     let threw = false;
     let thrownError: unknown;
@@ -40,38 +40,41 @@ describe('runVersionCheck', () => {
     expect(thrownError).to.equal(networkError);
   });
 
-  it('executeCommand rejects with VersionError → throws and showErrorMessage called with error text', async () => {
+  it('executeCommand resolves with { match: false } → throws and showErrorMessage called with version info', async () => {
     let showErrorCalledWith = '';
     let threw = false;
-    let thrownError: unknown;
     try {
       await runVersionCheck('0.4.0', {
-        executeCommand: async () => {
-          throw new VersionError('Version mismatch: agent=0.5.0, request=0.4.0');
-        },
+        executeCommand: async () =>
+          ({
+            match: false,
+            agentVersion: '0.5.0',
+            requestVersion: '0.4.0',
+          }) satisfies VersionCheckResult,
         showErrorMessage: async (message: string) => {
           showErrorCalledWith = message;
           return undefined;
         },
         executeSearchCommand: async () => undefined,
       });
-    } catch (err) {
+    } catch {
       threw = true;
-      thrownError = err;
     }
     expect(threw).to.be.true;
-    expect(thrownError).to.be.instanceOf(VersionError);
-    expect(showErrorCalledWith).to.include('Version mismatch: agent=0.5.0, request=0.4.0');
+    expect(showErrorCalledWith).to.include('Incompatible versions of GPG Bridge');
   });
 
-  it('executeCommand rejects with VersionError and showErrorMessage returns "Open Extensions" → executeSearchCommand called with "hidale.gpg-bridge"', async () => {
+  it('executeCommand resolves with { match: false } and showErrorMessage returns "Open Extensions" → executeSearchCommand called with "hidale.gpg-bridge"', async () => {
     let searchQuery = '';
     let threw = false;
     try {
       await runVersionCheck('0.4.0', {
-        executeCommand: async () => {
-          throw new VersionError('Version mismatch: agent=0.5.0, request=0.4.0');
-        },
+        executeCommand: async () =>
+          ({
+            match: false,
+            agentVersion: '0.5.0',
+            requestVersion: '0.4.0',
+          }) satisfies VersionCheckResult,
         showErrorMessage: async () => 'Open Extensions',
         executeSearchCommand: async (_cmd: string, query: string) => {
           searchQuery = query;

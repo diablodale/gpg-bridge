@@ -849,7 +849,7 @@ export class RequestProxy {
           log(this.config, `Warning: could not chmod socket: ${err}`);
         }
 
-        log(this.config, 'GPG Bridge Request listening');
+        log(this.config, 'Socket server is listening');
         resolve();
       });
 
@@ -898,7 +898,7 @@ export class RequestProxy {
             // Ignore
           }
         }
-        log(this.config, 'GPG Bridge Request stopped');
+        log(this.config, 'Socket server stopped listening');
         stopResolve();
       });
 
