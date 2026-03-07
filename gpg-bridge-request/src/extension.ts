@@ -202,6 +202,8 @@ async function startRequestProxy(): Promise<void> {
     outputChannel.appendLine(`Failed to start GPG Bridge Request: ${message}`);
     outputChannel.show(true);
     vscode.window.showErrorMessage(`Failed to start GPG Bridge Request: ${message}`);
+    await requestProxyService?.stop(); // clean any partially-initialized resources before we discard the instance
+    requestProxyService = null;
     throw error;
   }
 }

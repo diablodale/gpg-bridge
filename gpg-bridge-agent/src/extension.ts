@@ -253,10 +253,9 @@ async function startAgentProxy(): Promise<void> {
     outputChannel.appendLine(`Error starting GPG Bridge Agent: ${errorMessage}`);
     outputChannel.show(true);
     vscode.window.showErrorMessage(`Failed to start GPG Bridge Agent: ${errorMessage}`);
-    // stop() cleans up any partially-initialized GpgCli resources before we discard the instance
-    await agentProxyService?.stop();
+    await agentProxyService?.stop(); // clean any partially-initialized resources before we discard the instance
     agentProxyService = null;
-    throw error; // propagate so callers (commands, tests) can observe failure
+    throw error;
   }
 }
 
