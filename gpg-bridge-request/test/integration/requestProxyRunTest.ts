@@ -76,7 +76,7 @@ import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
 // GpgTestHelper creates and validates its own isolated keyring at construction time.
 // process.env.GNUPGHOME is never mutated.
-const gpg = new GpgTestHelper();
+const gpgLocalHost = new GpgTestHelper();
 
 /**
  * Walk up from `startDir` until we find a directory containing `AGENTS.md`
@@ -142,16 +142,16 @@ const containerWorkspaceFolder = `/workspaces/${path.basename(workspaceRoot)}`;
 
 async function main(): Promise<void> {
   // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
-  gpg.writeAgentConf(['disable-scdaemon']);
+  gpgLocalHost.writeAgentConf(['disable-scdaemon']);
 
   // Generate the test key on Windows before either extension host starts.
-  await gpg.generateKey('Integration Test User', 'integration-test@example.com');
-  const fingerprint = await gpg.getFingerprint('integration-test@example.com');
-  const keygrip = await gpg.getKeygrip('integration-test@example.com');
+  await gpgLocalHost.generateKey('Integration Test User', 'integration-test@example.com');
+  const fingerprint = await gpgLocalHost.getFingerprint('integration-test@example.com');
+  const keygrip = await gpgLocalHost.getKeygrip('integration-test@example.com');
 
   // Launch the gpg-agent BEFORE the extension hosts start so that gpg-bridge-agent's
   // activate() → detectAgentSocket() (calls gpgconf) already sees a live socket.
-  await gpg.launchAgent();
+  await gpgLocalHost.launchAgent();
 
   // Download (or reuse cached) VS Code binary, then pre-install the Dev Containers
   // extension into the test profile. resolveCliArgsFromVSCodeExecutablePath returns
@@ -200,7 +200,7 @@ async function main(): Promise<void> {
         `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}`,
       ],
 
-      // Inject GNUPGHOME and test key metadata into the VS Code process env.
+      // Inject GNUPGHOME and test key metadata into the local host VS Code process env.
       // VSCODE_INTEGRATION_TEST=1 → isIntegrationTestEnvironment() = true in gpg-bridge-agent.
       //   (gpg-bridge-request in the container picks this up via devcontainer.json remoteEnv.)
       // GNUPGHOME → agent-proxy uses the isolated Windows keyring.
@@ -209,14 +209,14 @@ async function main(): Promise<void> {
       //   container's remote extension host (where the Mocha suite reads process.env).
       extensionTestsEnv: {
         VSCODE_INTEGRATION_TEST: '1',
-        GNUPGHOME: gpg.gnupgHome,
+        GNUPGHOME: gpgLocalHost.gnupgHome,
         TEST_KEY_FINGERPRINT: fingerprint,
         TEST_KEY_KEYGRIP: keygrip,
       },
     });
   } finally {
     // Kill agent and remove the isolated keyring whether tests passed or failed.
-    await gpg.cleanup();
+    await gpgLocalHost.cleanup();
   }
 }
 

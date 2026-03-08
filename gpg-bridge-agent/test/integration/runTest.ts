@@ -21,6 +21,7 @@ import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
 // GpgTestHelper creates and validates its own isolated keyring at construction time.
 // process.env.GNUPGHOME is never mutated.
+// this single gpg test helper is shared across all found test.ts files
 const gpg = new GpgTestHelper();
 
 async function main(): Promise<void> {

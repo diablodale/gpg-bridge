@@ -406,22 +406,25 @@ const { PublicKeySync } =
 describe('Phase 6 — PublicKeySync with isolated gpg', function () {
   this.timeout(60000);
 
-  // Target keyring starts empty and receives the imported key.
-  let targetHelper: GpgTestHelper;
-  /** Raw armored key text exported from sourceHelper. */
-  let sourceBytes: string;
-  /** Fingerprint of the key in sourceHelper — used to verify the correct key was imported. */
-  let sourceFpr: string;
+  // Target keyring starts empty and receives the test case imported key.
+  let targetGpg: GpgTestHelper;
+  /** Armored public key for test cases. */
+  let armoredPublicKey: string;
+  /** Fingerprint of armored public key — used to verify the correct key was imported. */
+  let fingerprintPublicKey: string;
 
   before(async function () {
-    // Source keyring owns a freshly-generated key pair to export.
+    // stop remote bridge request
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    // Generate key pair to export.
     let sourceHelper: GpgTestHelper | undefined = undefined;
     try {
       sourceHelper = new GpgTestHelper();
       await sourceHelper.generateKey('Phase6 Sync User', 'phase6sync@example.com');
-      sourceFpr = await sourceHelper.getFingerprint('phase6sync@example.com');
-      sourceBytes = await sourceHelper.exportPublicKeys();
-      expect(sourceBytes.length, 'exported key bytes must be non-empty').to.be.greaterThan(0);
+      fingerprintPublicKey = await sourceHelper.getFingerprint('phase6sync@example.com');
+      armoredPublicKey = await sourceHelper.exportPublicKeys();
+      expect(armoredPublicKey.length, 'exported key bytes must be non-empty').to.be.greaterThan(0);
     } finally {
       await sourceHelper?.cleanup();
     }
@@ -430,13 +433,14 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
   after(async function () {});
 
   beforeEach(function () {
-    targetHelper = new GpgTestHelper();
+    targetGpg = new GpgTestHelper();
   });
 
   afterEach(async function () {
-    await targetHelper?.cleanup();
+    await targetGpg?.cleanup();
   });
 
+  /** Factory to create a PublicKeySync instance with the given GpgTestHelper and armored key bytes. */
   function makeSvc(
     gpg: GpgTestHelper,
     keyBytes: string,
@@ -459,7 +463,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
   // 1. Import round-trip: imported: 1
   // -----------------------------------------------------------------------
   it('1. import round-trip: gpg imports the key; result has imported: 1', async function () {
-    const { svc, infoMessages, errorMessages } = makeSvc(targetHelper, sourceBytes);
+    const { svc, infoMessages, errorMessages } = makeSvc(targetGpg, armoredPublicKey);
     await svc.syncPublicKeys('all');
 
     expect(errorMessages, 'no error messages on clean import').to.have.length(0);
@@ -468,9 +472,9 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
     expect(infoMessages[0]).to.include('0 unchanged');
 
     // Verify the correct key landed in the target keyring — fingerprint must match source.
-    const targetFpr = await targetHelper.getFingerprint('phase6sync@example.com');
+    const targetFpr = await targetGpg.getFingerprint('phase6sync@example.com');
     expect(targetFpr, 'imported key fingerprint must match source key fingerprint').to.equal(
-      sourceFpr,
+      fingerprintPublicKey,
     );
   });
 
@@ -479,11 +483,11 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
   // -----------------------------------------------------------------------
   it('2. re-import same key: result has unchanged: 1, imported: 0', async function () {
     // First import — establishes the key in this keyring.
-    const { svc: svc1 } = makeSvc(targetHelper, sourceBytes);
+    const { svc: svc1 } = makeSvc(targetGpg, armoredPublicKey);
     await svc1.syncPublicKeys('all');
 
     // Second import — same key, same keyring; gpg must report unchanged: 1.
-    const { svc: svc2, infoMessages, errorMessages } = makeSvc(targetHelper, sourceBytes);
+    const { svc: svc2, infoMessages, errorMessages } = makeSvc(targetGpg, armoredPublicKey);
     await svc2.syncPublicKeys('all');
 
     expect(errorMessages, 'no error messages on re-import').to.have.length(0);
@@ -496,7 +500,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
   // 3. Info message format: contains prefix and correct count summary
   // -----------------------------------------------------------------------
   it('3. info message contains the GPG Bridge prefix and correct count summary', async function () {
-    const { svc, infoMessages, errorMessages } = makeSvc(targetHelper, sourceBytes);
+    const { svc, infoMessages, errorMessages } = makeSvc(targetGpg, armoredPublicKey);
     await svc.syncPublicKeys('all');
 
     expect(infoMessages).to.have.length(1);
@@ -528,7 +532,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
         svc: svc1,
         infoMessages: info1,
         errorMessages: error1,
-      } = makeSvc(targetHelper, multiBytes);
+      } = makeSvc(targetGpg, multiBytes);
       await svc1.syncPublicKeys('all');
       expect(error1).to.have.length(0);
       expect(info1).to.have.length(1);
@@ -545,7 +549,7 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
         svc: svc2,
         infoMessages: info2,
         errorMessages: error2,
-      } = makeSvc(targetHelper, multiBytes);
+      } = makeSvc(targetGpg, multiBytes);
       await svc2.syncPublicKeys('all');
       expect(error2).to.have.length(0);
       expect(info2).to.have.length(1);
@@ -616,13 +620,8 @@ describe('Phase 6 — PublicKeySync with isolated gpg', function () {
         `Windows test key ${fprNormalized} must be present in Linux keyring after sync`,
       ).to.be.true;
     } finally {
-      // Remove the imported public-only key so the test does not pollute
-      // the container's default keyring for subsequent test runs.
-      spawnSync('gpg', ['--batch', '--yes', '--delete-key', fprNormalized], {
-        encoding: 'latin1',
-        timeout: 10000,
-        shell: false,
-      });
+      // dev container postStartCommand removes entire gpg homedir when container starts
+      // therefore no key delete needed here
     }
   });
 });
@@ -641,14 +640,8 @@ describe('Phase 7 — checkVersion end-to-end', function () {
     .version as string;
 
   before(async function () {
-    // Phase 5 afterEach stops the proxy; restart it so test 1 can verify the socket exists.
-    const socketPath = await vscode.commands.executeCommand<string | null>(
-      '_gpg-bridge-request.test.getSocketPath',
-    );
-    if (!socketPath) {
-      await vscode.commands.executeCommand('gpg-bridge-request.start');
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+    await vscode.commands.executeCommand('gpg-bridge-request.start');
+    await new Promise((resolve) => setTimeout(resolve, 500));
   });
 
   it('1. request proxy socket exists after activation (version check passed)', async function () {

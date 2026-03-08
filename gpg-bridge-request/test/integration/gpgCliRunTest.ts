@@ -40,7 +40,7 @@ import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
 // GpgTestHelper creates and validates its own isolated keyring at construction time.
 // process.env.GNUPGHOME is never mutated.
-const gpg = new GpgTestHelper();
+const gpgLocalHost = new GpgTestHelper();
 
 /**
  * Walk up from `startDir` until we find a directory containing `AGENTS.md`
@@ -87,21 +87,21 @@ const containerWorkspaceFolder = `/workspaces/${path.basename(workspaceRoot)}`;
 
 async function main(): Promise<void> {
   // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
-  gpg.writeAgentConf(['disable-scdaemon']);
+  gpgLocalHost.writeAgentConf(['disable-scdaemon']);
 
   // Generate the test key on Windows before either extension host starts.
-  await gpg.generateKey('Integration Test User', 'integration-test@example.com');
-  const fingerprint = await gpg.getFingerprint('integration-test@example.com');
+  await gpgLocalHost.generateKey('Integration Test User', 'integration-test@example.com');
+  const fingerprint = await gpgLocalHost.getFingerprint('integration-test@example.com');
 
   // Export the public key as an ASCII-armored string and pass it directly via env var.
   // Ed25519 armored public keys are ~350 chars — well within the 32,767-char Win32 limit.
   // The Mocha before() reads PUBKEY_ARMORED_KEY and calls importPublicKey() directly,
   // with no intermediate file or workspace bind mount path required.
-  const pubkeyArmored = await gpg.exportPublicKey(fingerprint);
+  const pubkeyArmored = await gpgLocalHost.exportPublicKey(fingerprint);
 
   // Launch the gpg-agent BEFORE the extension hosts start so that gpg-bridge-agent's
   // activate() → detectAgentSocket() (calls gpgconf) already sees a live socket.
-  await gpg.launchAgent();
+  await gpgLocalHost.launchAgent();
 
   // Download (or reuse cached) VS Code binary, then pre-install the Dev Containers
   // extension into the test profile. resolveCliArgsFromVSCodeExecutablePath returns
@@ -132,7 +132,8 @@ async function main(): Promise<void> {
         `vscode-remote://dev-container+${REMOTE_CONTAINER_URI}${containerWorkspaceFolder}`,
       ],
 
-      // GNUPGHOME → Windows gpg-bridge-agent uses the isolated Windows keyring (same as Phase 2).
+      // Inject GNUPGHOME and test key metadata into the local host VS Code process env.
+      // GNUPGHOME for gpg-bridge-agent uses the isolated Windows keyring (same as Phase 2).
       // The container's GNUPGHOME is the static Linux path set in devcontainer.json remoteEnv;
       // it is NOT forwarded here to keep gpg-bridge-agent pointed at the Windows keyring.
       // PUBKEY_ARMORED_KEY → ASCII-armored public key string passed directly; no file needed.
@@ -140,14 +141,14 @@ async function main(): Promise<void> {
       // TEST_KEY_FINGERPRINT → forwarded to container via devcontainer.json remoteEnv.
       extensionTestsEnv: {
         VSCODE_INTEGRATION_TEST: '1',
-        GNUPGHOME: gpg.gnupgHome,
+        GNUPGHOME: gpgLocalHost.gnupgHome,
         TEST_KEY_FINGERPRINT: fingerprint,
         PUBKEY_ARMORED_KEY: pubkeyArmored,
       },
     });
   } finally {
     // Kill agent and remove the isolated keyring whether tests passed or failed.
-    await gpg.cleanup();
+    await gpgLocalHost.cleanup();
   }
 }
 

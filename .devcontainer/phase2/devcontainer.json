@@ -12,7 +12,7 @@
   // gpg-agent is started: gpgconf --list-dirs is used only for the socket path.
   //
   // See docs/integration-test-plan.md for details.
-  "name": "gpg-bridge phase 2 integration tests",
+  "name": "request-phase-2-integration-tests",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:22-trixie",
   // remoteEnv is evaluated at attach time, not container creation.
   // ${localEnv:VAR} reads from the local VS Code process env — which is the
@@ -62,6 +62,11 @@
   // so mocha and all npm packages are installed before the extension host loads.
   // postCreateCommand runs AFTER the tool connects — wrong place for npm install.
   "updateContentCommand": "sudo chown node:node ${containerWorkspaceFolder}/node_modules ${containerWorkspaceFolder}/shared/node_modules ${containerWorkspaceFolder}/gpg-bridge-request/node_modules ${containerWorkspaceFolder}/gpg-bridge-agent/node_modules && cd ${containerWorkspaceFolder}/shared && npm install && cd ${containerWorkspaceFolder}/gpg-bridge-request && npm install",
+  // VS Code Dev Containers unconditionally probes the Windows host for GPG configuration
+  // at attach time and forwards any found agent socket + public keys into the container.
+  // There is no setting to disable this behavior, so wiping the gpg homedir here
+  // removes the pollution before extensions activate.
+  "postStartCommand": "echo '[postStartCommand] removing gpg homedir' && rm -rf \"$(gpgconf --list-dirs homedir)\"",
   "customizations": {
     "vscode": {
       "extensions": [

@@ -39,7 +39,7 @@ import { GpgTestHelper, assertSafeToDelete } from '@gpg-bridge/shared/test/integ
 // Env vars injected into the container's remote extension host via:
 //   gpgCliRunTest.ts extensionTestsEnv  →  VS Code process env
 //   →  devcontainer.json remoteEnv ${localEnv:...}  →  this process.env
-const LINUX_GNUPGHOME = process.env.GNUPGHOME ?? ''; // '/tmp/gpg-test-phase3'
+const GNUPGHOME = process.env.GNUPGHOME ?? ''; // remote gpg home dir e.g. '/tmp/gpg-test-phase3'
 const FINGERPRINT = process.env.TEST_KEY_FINGERPRINT ?? ''; // 40-char hex fingerprint
 const PUBKEY_ARMORED_KEY = process.env.PUBKEY_ARMORED_KEY ?? ''; // ASCII-armored public key string
 
@@ -60,7 +60,7 @@ describe('Phase 3 — gpg CLI → request-proxy → agent-proxy → gpg-agent', 
     //    Missing any of them is a runner/devcontainer misconfiguration, not
     //    a test failure, so we throw rather than this.skip().
     // ----------------------------------------------------------------
-    if (!LINUX_GNUPGHOME) {
+    if (!GNUPGHOME) {
       throw new Error('GNUPGHOME is not set. Check devcontainer.json remoteEnv.');
     }
     if (!FINGERPRINT) {
@@ -83,7 +83,7 @@ describe('Phase 3 — gpg CLI → request-proxy → agent-proxy → gpg-agent', 
     //    (Phase 3 doesn't register _gpg-bridge-request.test.getSocketPath because
     //    gpg locates the socket via GNUPGHOME automatically — no helper needed.)
     // ----------------------------------------------------------------
-    const socketFile = path.join(LINUX_GNUPGHOME, 'S.gpg-agent');
+    const socketFile = path.join(GNUPGHOME, 'S.gpg-agent');
     const deadline = Date.now() + 30000;
     let ready = false;
     while (Date.now() < deadline) {
@@ -107,18 +107,18 @@ describe('Phase 3 — gpg CLI → request-proxy → agent-proxy → gpg-agent', 
     //    startRequestProxy calls mkdirSync for the socket dir), so
     //    { recursive: true } is safe whether it exists or not.
     // ----------------------------------------------------------------
-    fs.mkdirSync(LINUX_GNUPGHOME, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(GNUPGHOME, { recursive: true, mode: 0o700 });
 
     // trust-model always: accept imported public keys without explicit ownertrust import.
     // Written before GpgCli construction so the option is in effect for all gpg calls.
-    fs.writeFileSync(path.join(LINUX_GNUPGHOME, 'gpg.conf'), 'trust-model always\n', 'latin1');
+    fs.writeFileSync(path.join(GNUPGHOME, 'gpg.conf'), 'trust-model always\n', 'latin1');
 
     // ----------------------------------------------------------------
     // 4. Construct GpgTestHelper wrapping the injected GNUPGHOME.
     //    gnupgHome is provided so cleanup() is a no-op — the runner manages agent/dir lifecycle.
     //    gpg and gpgconf are on PATH in the container so no gpgBinDir needed.
     // ----------------------------------------------------------------
-    cli = new GpgTestHelper({ gnupgHome: LINUX_GNUPGHOME });
+    cli = new GpgTestHelper({ gnupgHome: GNUPGHOME });
 
     // ----------------------------------------------------------------
     // 5. Import the Windows test key's public component.
@@ -143,12 +143,15 @@ describe('Phase 3 — gpg CLI → request-proxy → agent-proxy → gpg-agent', 
       /* ignore */
     }
 
-    // assertSafeToDelete guards against accidentally wiping a non-temp path.
+    // manually remove the fixed GNUPGHOME path
     try {
-      assertSafeToDelete(LINUX_GNUPGHOME);
-      fs.rmSync(LINUX_GNUPGHOME, { recursive: true, force: true });
+      // assertSafeToDelete guards against accidentally wiping a non-temp path.
+      assertSafeToDelete(GNUPGHOME);
+      fs.rmSync(GNUPGHOME, { recursive: true, force: true });
     } catch {
       /* ignore */
+    } finally {
+      cli.cleanup(); // noop as it doesn't own the temp gpg dir
     }
 
     // Reset extension state so subsequent test runs start clean.

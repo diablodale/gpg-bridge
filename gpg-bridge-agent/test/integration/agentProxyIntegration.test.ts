@@ -69,6 +69,7 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
         /* ignore if already deleted */
       }
     }
+    await gpg.cleanup(); // noop as it doesn't own the temp gpg dir
   });
 
   beforeEach(async function () {
@@ -453,6 +454,7 @@ describe('Phase 4 — exportPublicKeys command', function () {
     await gpg.deleteKey(fp1);
     await gpg.deleteKey(fp2);
     await gpg.deleteKey(fpPubOnly);
+    await gpg.cleanup(); // noop as it doesn't own the temp gpg dir
   });
 
   beforeEach(async function () {

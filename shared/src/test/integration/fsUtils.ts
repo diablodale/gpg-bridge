@@ -105,13 +105,15 @@ export function assertSafeToDelete(dir: string): void {
   }
 
   // 5. Must exist and be a plain directory (not a file or symlink root)
-  let stat: fs.Stats;
+  let stat: fs.Stats | undefined;
   try {
-    stat = fs.statSync(resolvedDir);
-  } catch {
-    throw new Error(`assertSafeToDelete: path does not exist or is inaccessible: ${resolvedDir}`);
-  }
-  if (!stat.isDirectory()) {
-    throw new Error(`assertSafeToDelete: path is not a directory: ${resolvedDir}`);
+    // statSync usually throws NOENT if directory is empty, likely docker overlayfs merging issue
+    // therefore workaround with throwIfNoEntry: false and manual check
+    stat = fs.statSync(resolvedDir, { throwIfNoEntry: false });
+    if (stat && !stat.isDirectory()) {
+      throw new Error(`path is not a directory: ${resolvedDir}`);
+    }
+  } catch (e: unknown) {
+    throw new Error(`assertSafeToDelete: ${(e as Error).message}`);
   }
 }
