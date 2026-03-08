@@ -64,7 +64,27 @@ export class GpgTestHelper extends GpgCli {
    */
   async cleanup(): Promise<void> {
     if (this._ownsTempDir) {
+      // get socketdir before killing agent, which may delete it
+      const socketdir = await this.gpgconfListDirs('socketdir');
+
+      // kill the agent
       await this.killAgent();
+
+      // remove socketdir
+      const socketFiles = fs.globSync(path.join(socketdir, 'S.*'));
+      for (const file of socketFiles) {
+        try {
+          fs.rmSync(file, { force: true });
+        } catch {
+          // ignore
+        }
+      }
+      try {
+        fs.rmdirSync(socketdir);
+      } catch {
+        // ignore
+      }
+
       assertSafeToDelete(this.gnupgHome);
       fs.rmSync(this.gnupgHome, { recursive: true, force: true });
     }
