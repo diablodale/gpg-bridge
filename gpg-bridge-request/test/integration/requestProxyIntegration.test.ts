@@ -29,6 +29,7 @@ import * as crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import { expect } from 'chai';
 import { AssuanSocketClient, GpgTestHelper } from '@gpg-bridge/shared/test/integration';
+import { MockCommandExecutor } from '@gpg-bridge/shared/test';
 
 // ---------------------------------------------------------------------------
 // Suite
@@ -688,6 +689,242 @@ describe('Phase 7 — checkVersion end-to-end', function () {
     expect(result.match, 'major version ahead should not match').to.be.false;
     expect(result.agentVersion).to.equal(agentVersion);
     expect(result.requestVersion).to.equal(fabricated);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 — Liveness probe — socket conflict detection
+//
+// Directly instantiates RequestProxy (like Phase 6 does with PublicKeySync) so
+// each test gets an isolated GNUPGHOME via GpgTestHelper. Real gpg-agent socket
+// paths are resolved via gpgconfListDirs() rather than spawnSync.
+// ---------------------------------------------------------------------------
+const { RequestProxy } =
+  require('../../services/requestProxy') as typeof import('../../out/services/requestProxy');
+
+describe('Phase 8 — Liveness probe — socket conflict detection', function () {
+  this.timeout(30000);
+
+  let gpg: GpgTestHelper;
+
+  beforeEach(function () {
+    // Fresh isolated GNUPGHOME for every test; no ambient env mutation.
+    gpg = new GpgTestHelper();
+  });
+
+  afterEach(async function () {
+    await gpg.cleanup();
+  });
+
+  /** Build a RequestProxy pointed at the isolated GpgTestHelper keyring. */
+  function makeProxy(): InstanceType<typeof RequestProxy> {
+    return new RequestProxy(
+      { logCallback: undefined },
+      {
+        commandExecutor: new MockCommandExecutor(),
+        gpgCliFactory: { create: () => gpg },
+      },
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // 1. start() rejects when a live gpg-agent is already listening
+  // -----------------------------------------------------------------------
+  it('1. start() rejects when a live gpg-agent is listening on agent-socket', async function () {
+    // Launch a real gpg-agent in the isolated GNUPGHOME; it binds to agent-socket.
+    await gpg.launchAgent();
+    const agentSocket = await gpg.gpgconfListDirs('agent-socket');
+    expect(fs.existsSync(agentSocket), 'agent-socket must exist after launchAgent').to.be.true;
+
+    const proxy = makeProxy();
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await proxy.start();
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+
+    expect(threw, 'start() must reject when a live gpg-agent is listening').to.be.true;
+    expect(errorMsg).to.include('gpg-agent is already listening');
+  });
+
+  // -----------------------------------------------------------------------
+  // 2. start() removes stale socket files (file exists, nothing listening)
+  //    and binds a new socket successfully
+  // -----------------------------------------------------------------------
+  it('2. start() removes stale socket files and starts when nothing is listening', async function () {
+    const agentSocket = await gpg.gpgconfListDirs('agent-socket');
+    const extraSocket = await gpg.gpgconfListDirs('agent-extra-socket');
+
+    // Plant regular files (not sockets) at both paths.
+    // A connect attempt to a regular file returns ENOTSOCK ≠ ENOENT → 'stale'.
+    fs.mkdirSync(path.dirname(agentSocket), { recursive: true });
+    fs.mkdirSync(path.dirname(extraSocket), { recursive: true });
+    fs.writeFileSync(agentSocket, 'stale-marker');
+    fs.writeFileSync(extraSocket, 'stale-marker');
+
+    const proxy = makeProxy();
+    // Must not throw: stale files are removed and the proxy binds a new socket.
+    await proxy.start();
+
+    expect(proxy.getSocketPath()).to.equal(agentSocket);
+
+    const client = new AssuanSocketClient();
+    try {
+      const greeting = await client.connect(agentSocket);
+      expect(greeting, 'proxy must accept connections after removing stale files').to.match(/^OK/);
+    } finally {
+      client.close();
+    }
+
+    await proxy.stop();
+  });
+
+  // -----------------------------------------------------------------------
+  // 3. start() starts cleanly when no socket files exist at all
+  // -----------------------------------------------------------------------
+  it('3. start() starts cleanly when socket paths are absent (fresh GNUPGHOME)', async function () {
+    const agentSocket = await gpg.gpgconfListDirs('agent-socket');
+    expect(fs.existsSync(agentSocket), 'socket must not exist in fresh GNUPGHOME').to.be.false;
+
+    const proxy = makeProxy();
+    // Must not throw: ENOENT on both paths → 'absent' → nothing to remove.
+    await proxy.start();
+
+    expect(proxy.getSocketPath()).to.equal(agentSocket);
+
+    const client = new AssuanSocketClient();
+    try {
+      const greeting = await client.connect(agentSocket);
+      expect(greeting, 'proxy must accept connections on a freshly created socket').to.match(/^OK/);
+    } finally {
+      client.close();
+    }
+
+    await proxy.stop();
+  });
+
+  // -----------------------------------------------------------------------
+  // 4. start() removes real stale Unix socket files (ECONNREFUSED) and starts
+  //
+  // A real Unix socket file left after an agent dies unexpectedly produces
+  // ECONNREFUSED on connect — unlike a regular file (ENOTSOCK) or an absent
+  // path (ENOENT). This is the exact stale-socket scenario after a crash.
+  // -----------------------------------------------------------------------
+  it('4. start() removes real stale Unix socket files after agent crash (ECONNREFUSED)', async function () {
+    const agentSocket = await gpg.gpgconfListDirs('agent-socket');
+    const extraSocket = await gpg.gpgconfListDirs('agent-extra-socket');
+
+    // Manufacture the exact filesystem state left after a process crash (SIGKILL):
+    // a real Unix domain socket file exists at both paths but nothing is listening —
+    // connecting returns ECONNREFUSED (not ENOTSOCK or ENOENT).
+    //
+    // 1. launchAgent() starts a real gpg-agent which creates genuine socket files.
+    // 2. Connect to agent-socket, send GETINFO pid to obtain the agent's PID.
+    // 3. process.kill(pid, SIGKILL) — bypasses libuv, no socket file cleanup.
+    //    The socket files persist on disk; connect returns ECONNREFUSED.
+    await gpg.launchAgent();
+
+    // Read the agent PID via the Assuan protocol before killing it.
+    const agentPid = await (async () => {
+      const client = new AssuanSocketClient();
+      try {
+        await client.connect(agentSocket);
+        const response = await client.sendCommand('GETINFO pid');
+        // Response format: 'D <pid>\nOK\n'
+        const match = response.match(/^D\s+(\d+)/m);
+        if (!match) {
+          throw new Error(`Unexpected GETINFO pid response: ${response}`);
+        }
+        return parseInt(match[1], 10);
+      } finally {
+        client.close();
+      }
+    })();
+
+    // SIGKILL: instant termination, no libuv uv__pipe_close, socket files remain.
+    process.kill(agentPid, 'SIGKILL');
+    // Brief yield so the OS marks the socket as closed before we probe it.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(fs.existsSync(agentSocket), 'stale agent-socket must exist before start()').to.be.true;
+    expect(fs.existsSync(extraSocket), 'stale agent-extra-socket must exist before start()').to.be
+      .true;
+
+    const proxy = makeProxy();
+    // Must not throw: probe returns ECONNREFUSED ('stale') → files unlinked → proxy binds.
+    await proxy.start();
+
+    expect(proxy.getSocketPath()).to.equal(agentSocket);
+    expect(fs.existsSync(extraSocket), 'stale agent-extra-socket must be removed by start()').to.be
+      .false;
+
+    const client = new AssuanSocketClient();
+    try {
+      const greeting = await client.connect(agentSocket);
+      expect(greeting, 'proxy must accept connections after removing stale socket').to.match(/^OK/);
+    } finally {
+      client.close();
+    }
+
+    await proxy.stop();
+  });
+
+  // -----------------------------------------------------------------------
+  // 5. VS Code command gpg-bridge-request.start rejects when a live
+  //    gpg-agent occupies the system agent-socket
+  //
+  // Exercises the full extension command path rather than a directly-
+  // instantiated RequestProxy. GpgTestHelper wraps the real system GNUPGHOME
+  // so the agent binds to exactly the socket path the extension's GpgCli probes.
+  // -----------------------------------------------------------------------
+  it('5. gpg-bridge-request.start rejects when live gpg-agent occupies system agent-socket', async function () {
+    // Stop any running proxy before we occupy its socket path.
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    // Resolve gpg homedir within remote container which is therefore used by remote extension host
+    const gnupgHome = spawnSync('gpgconf', ['--list-dirs', 'homedir'], {
+      encoding: 'latin1',
+      timeout: 5000,
+      shell: false,
+    }).stdout.trim();
+    expect(
+      gnupgHome,
+      'gpgconf --list-dirs homedir must return a non-empty path',
+    ).to.have.length.greaterThan(0);
+
+    // Wrap the real system GNUPGHOME without taking ownership — cleanup() is a no-op,
+    // we manage the agent lifecycle manually below.
+    const systemGpg = new GpgTestHelper({ gnupgHome });
+    const agentSocketPath = await systemGpg.gpgconfListDirs('agent-socket');
+    try {
+      await systemGpg.launchAgent();
+      expect(fs.existsSync(agentSocketPath), 'agent-socket must exist after launchAgent').to.be
+        .true;
+
+      // Extension command path: startRequestProxy() → RequestProxy.start() → probeSocket()
+      // → 'live' → throws → catch block re-throws → executeCommand rejects.
+      let threw = false;
+      try {
+        await vscode.commands.executeCommand('gpg-bridge-request.start');
+      } catch {
+        threw = true;
+      }
+
+      expect(threw, 'gpg-bridge-request.start must reject when a live gpg-agent is listening').to.be
+        .true;
+
+      const proxySocket = await vscode.commands.executeCommand<string | null>(
+        '_gpg-bridge-request.test.getSocketPath',
+      );
+      expect(proxySocket, 'proxy must not have started — getSocketPath must return null').to.be
+        .null;
+    } finally {
+      // Graceful kill removes socket files, leaving the system GNUPGHOME clean.
+      await systemGpg.killAgent();
+    }
   });
 });
 

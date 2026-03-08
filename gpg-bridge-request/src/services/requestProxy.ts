@@ -33,6 +33,7 @@ import type {
   ICommandExecutor,
   IFileSystem,
   IServerFactory,
+  ISocketFactory,
   ISessionManager,
   IGpgCliFactory,
 } from '@gpg-bridge/shared';
@@ -175,6 +176,11 @@ export interface RequestProxyDeps {
   gpgCliFactory?: IGpgCliFactory;
   /** Override idle timeout (ms) — inject a short value in tests to avoid real 30 s waits. */
   clientIdleTimeoutMs?: number;
+  /**
+   * Factory used to probe whether a socket path already has a live listener.
+   * Defaults to the real `net.createConnection`. Inject a mock in tests.
+   */
+  socketConnectFactory?: ISocketFactory;
 }
 
 // Internal config type used by handlers - always has commandExecutor after DI
@@ -669,6 +675,7 @@ export class RequestProxy {
   private readonly commandExecutor: ICommandExecutor;
   private readonly serverFactory: IServerFactory;
   private readonly fileSystem: IFileSystem;
+  private readonly socketConnectFactory: ISocketFactory;
   private gpgCli: GpgCli | null = null;
   private readonly gpgCliFactory?: IGpgCliFactory;
   private readonly clientIdleTimeoutMs: number;
@@ -688,6 +695,9 @@ export class RequestProxy {
       chmodSync: fs.chmodSync,
       unlinkSync: fs.unlinkSync,
     };
+    this.socketConnectFactory = deps?.socketConnectFactory ?? {
+      createConnection: net.createConnection,
+    };
     this.gpgCliFactory = deps?.gpgCliFactory;
     this.clientIdleTimeoutMs = deps?.clientIdleTimeoutMs ?? CLIENT_IDLE_TIMEOUT_MS;
   }
@@ -705,6 +715,28 @@ export class RequestProxy {
   /** Number of active client sessions */
   getSessionCount(): number {
     return this.sessions.size;
+  }
+
+  /**
+   * Probe a Unix domain socket path to determine whether a live process is
+   * listening on it.
+   *
+   * - `'live'`   — connection accepted; a process is already listening
+   * - `'stale'`  — file exists but nothing is listening (ECONNREFUSED or similar)
+   * - `'absent'` — no socket file at this path (ENOENT)
+   */
+  private probeSocket(socketPath: string): Promise<'live' | 'stale' | 'absent'> {
+    return new Promise((resolve) => {
+      const socket = this.socketConnectFactory.createConnection({ path: socketPath });
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve('live');
+      });
+      socket.once('error', (err: NodeJS.ErrnoException) => {
+        socket.destroy();
+        resolve(err.code === 'ENOENT' ? 'absent' : 'stale');
+      });
+    });
   }
 
   /**
@@ -737,15 +769,25 @@ export class RequestProxy {
       );
     }
 
-    // Remove stale socket files if they exist
-    for (const sp of [agentSocketPath, agentExtraSocketPath]) {
-      if (sp && this.fileSystem.existsSync(sp)) {
+    // Probe each candidate socket path before touching any files.
+    // Connecting without sending data is sufficient: a live gpg-agent accepts the
+    // connection immediately, a stale socket file returns ECONNREFUSED.
+    const socketPaths = [agentSocketPath, agentExtraSocketPath].filter(Boolean) as string[];
+    for (const sp of socketPaths) {
+      const status = await this.probeSocket(sp);
+      if (status === 'live') {
+        throw new Error(
+          `Aborting start of GPG Bridge Request because a gpg-agent is already listening on socket ${sp}`,
+        );
+      }
+      if (status === 'stale') {
         try {
           this.fileSystem.unlinkSync(sp);
         } catch {
-          // Ignore — socket may be in use, or may not have permission to delete it
+          // Ignore — may lack permission to remove a stale file
         }
       }
+      // 'absent': file does not exist — nothing to do
     }
 
     // Ensure parent directory exists

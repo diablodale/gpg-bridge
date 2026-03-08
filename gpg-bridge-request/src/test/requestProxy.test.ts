@@ -12,6 +12,7 @@ import {
   MockCommandExecutor,
   MockServerFactory,
   MockFileSystem,
+  MockSocketFactory,
   MockLogConfig,
   MockGpgCli,
 } from '@gpg-bridge/shared/test';
@@ -32,12 +33,21 @@ describe('RequestProxy', () => {
   });
 
   // Helper to create deps using MockGpgCli — prevents calling real gpgconf
-  const createMockDeps = () => ({
-    commandExecutor: mockCommandExecutor,
-    serverFactory: mockServerFactory,
-    fileSystem: mockFileSystem,
-    gpgCliFactory: { create: () => new MockGpgCli('/tmp/test-gpg-agent') } as IGpgCliFactory,
-  });
+  const createMockDeps = (socketConnectFactory?: MockSocketFactory) => {
+    // Default probe factory simulates ENOENT (no socket files on the mock path)
+    const defaultProbeFactory = new MockSocketFactory();
+    const enoent = Object.assign(new Error('ENOENT: no such file or directory'), {
+      code: 'ENOENT',
+    });
+    defaultProbeFactory.connectError = enoent;
+    return {
+      commandExecutor: mockCommandExecutor,
+      serverFactory: mockServerFactory,
+      fileSystem: mockFileSystem,
+      gpgCliFactory: { create: () => new MockGpgCli('/tmp/test-gpg-agent') } as IGpgCliFactory,
+      socketConnectFactory: socketConnectFactory ?? defaultProbeFactory,
+    };
+  };
 
   describe('State Machine Validation', () => {
     it('should have transition table entries for all 11 states', async () => {
@@ -4415,8 +4425,14 @@ describe('RequestProxy', () => {
       mockFileSystem.setFile(agentSocket, Buffer.alloc(0));
       mockFileSystem.setFile(agentExtraSocket, Buffer.alloc(0));
 
+      // Probe factory returns ECONNREFUSED — both sockets are stale (file exists, nothing listening)
+      const probeFactory = new MockSocketFactory();
+      probeFactory.connectError = Object.assign(new Error('connect ECONNREFUSED'), {
+        code: 'ECONNREFUSED',
+      });
+
       const deps = {
-        ...createMockDeps(),
+        ...createMockDeps(probeFactory),
         gpgCliFactory: { create: () => new DualPathMockGpgCli() } as IGpgCliFactory,
       };
       const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
@@ -4428,6 +4444,127 @@ describe('RequestProxy', () => {
         .map((c) => c.args[0] as string);
       expect(unlinkCalls).to.include(agentSocket, 'agent-socket should be removed');
       expect(unlinkCalls).to.include(agentExtraSocket, 'agent-extra-socket should be removed');
+
+      await instance.stop();
+    });
+  });
+
+  // ─── Liveness probe ─────────────────────────────────────────────────────────
+
+  describe('liveness probe — start() socket conflict detection', () => {
+    // Helper: builds a DualPath mock GpgCli that returns two distinct socket paths
+    class DualPathMockGpgCli extends MockGpgCli {
+      constructor(
+        private readonly agentSocket: string,
+        private readonly extraSocket: string,
+      ) {
+        super(agentSocket);
+      }
+      override async gpgconfListDirs(dirName: string): Promise<string> {
+        return dirName === 'agent-extra-socket' ? this.extraSocket : this.agentSocket;
+      }
+    }
+
+    it('throws when agent-socket path has a live listener', async () => {
+      // Default MockSocketFactory: connectError = null → emits 'connect' → probe = 'live'
+      const probeFactory = new MockSocketFactory();
+      const deps = {
+        ...createMockDeps(probeFactory),
+        gpgCliFactory: {
+          create: () => new DualPathMockGpgCli('/tmp/S.gpg-agent', '/tmp/S.gpg-agent.extra'),
+        } as IGpgCliFactory,
+      };
+      const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+
+      let threw = false;
+      let errorMsg = '';
+      try {
+        await instance.start();
+      } catch (err) {
+        threw = true;
+        errorMsg = err instanceof Error ? err.message : String(err);
+      }
+
+      expect(threw, 'start() should reject when a live process is listening').to.be.true;
+      expect(errorMsg).to.include('gpg-agent is already listening');
+    });
+
+    it('does not unlink socket files when a live listener is detected', async () => {
+      const agentSocket = '/tmp/S.gpg-agent';
+      const extraSocket = '/tmp/S.gpg-agent.extra';
+
+      mockFileSystem.setFile(agentSocket, Buffer.alloc(0));
+      mockFileSystem.setFile(extraSocket, Buffer.alloc(0));
+
+      // Live probe: connectError = null → 'connect' fires → 'live'
+      const probeFactory = new MockSocketFactory();
+      const deps = {
+        ...createMockDeps(probeFactory),
+        gpgCliFactory: {
+          create: () => new DualPathMockGpgCli(agentSocket, extraSocket),
+        } as IGpgCliFactory,
+      };
+      const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+
+      try {
+        await instance.start();
+      } catch {
+        // Expected to throw
+      }
+
+      const unlinkCalls = mockFileSystem.callLog.filter((c) => c.method === 'unlinkSync');
+      expect(unlinkCalls).to.have.length(0, 'unlinkSync must not be called when socket is live');
+    });
+
+    it('removes stale socket files and proceeds when ECONNREFUSED', async () => {
+      const agentSocket = '/mock/gnupg/S.gpg-agent';
+      const extraSocket = '/mock/gnupg/S.gpg-agent.extra';
+
+      // Seed both paths as existing in the mock filesystem
+      mockFileSystem.setFile(agentSocket, Buffer.alloc(0));
+      mockFileSystem.setFile(extraSocket, Buffer.alloc(0));
+
+      // Probe returns ECONNREFUSED — file exists but nothing is listening (stale)
+      const probeFactory = new MockSocketFactory();
+      probeFactory.connectError = Object.assign(new Error('connect ECONNREFUSED'), {
+        code: 'ECONNREFUSED',
+      });
+
+      const deps = {
+        ...createMockDeps(probeFactory),
+        gpgCliFactory: {
+          create: () => new DualPathMockGpgCli(agentSocket, extraSocket),
+        } as IGpgCliFactory,
+      };
+      const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+
+      // Must not throw — stale files should be removed and start() should succeed
+      await instance.start();
+
+      const unlinked = mockFileSystem.callLog
+        .filter((c) => c.method === 'unlinkSync')
+        .map((c) => c.args[0] as string);
+      expect(unlinked).to.include(agentSocket, 'stale agent-socket must be unlinked');
+      expect(unlinked).to.include(extraSocket, 'stale extra-socket must be unlinked');
+
+      await instance.stop();
+    });
+
+    it('proceeds when both socket paths are absent (ENOENT)', async () => {
+      // Default createMockDeps already injects an ENOENT probe factory
+      const deps = {
+        ...createMockDeps(),
+        gpgCliFactory: {
+          create: () => new DualPathMockGpgCli('/tmp/S.gpg-agent', '/tmp/S.gpg-agent.extra'),
+        } as IGpgCliFactory,
+      };
+      const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+
+      // Should not throw
+      await instance.start();
+
+      const unlinkCalls = mockFileSystem.callLog.filter((c) => c.method === 'unlinkSync');
+      expect(unlinkCalls).to.have.length(0, 'unlinkSync must not be called for absent sockets');
 
       await instance.stop();
     });
