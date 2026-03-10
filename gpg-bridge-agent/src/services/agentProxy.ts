@@ -648,14 +648,19 @@ export class AgentProxy {
 
     // P3-2: Use agent-extra-socket, not agent-socket.
     // The extra socket is gpg-agent's built-in restricted socket. gpg-agent enforces
-    // command-level access control at the protocol layer before executing any operation:
+    // command-level access control at the protocol layer, e.g.:
     //   - PRESET_PASSPHRASE  → ERR 67109115 Forbidden
-    //   - CLEAR_PASSPHRASE   → ERR 67109115 Forbidden
-    //   - GET_PASSPHRASE     → ERR 67109115 Forbidden
+    //   - EXPORT_KEY         → ERR 67109115 Forbidden
+    //   - GET_PASSPHRASE     → permitted (returns hex-encoded passphrase — see P3-5)
     // No bridge-side allowlist or denylist is needed — gpg-agent is the correct trust
     // anchor. Commands permitted on the extra socket (GETINFO, KEYINFO, HAVEKEY,
-    // PKDECRYPT, PKSIGN, GENKEY, …) are the normal public-key operations that remote
-    // GPG clients need. See docs/gpg-agent-protocol.md §9 for the full security model.
+    // PKDECRYPT, PKSIGN, GENKEY, GET_PASSPHRASE, …) are the normal public-key
+    // operations that remote GPG clients need. See docs/gpg-agent-protocol.md §9.
+    //
+    // P3-5: Certain Assuan responses transit this socket path carrying secrets in cleartext:
+    //   - PKDECRYPT returns the plaintext session key (ESK) — ephemeral, one file only.
+    //   - GET_PASSPHRASE returns the raw passphrase — permitted on extra socket (confirmed).
+    // Both are accepted per the Unix trust model; see docs/security-review-plan.md §P3-5.
     this.gpgAgentSocketPath = await this.gpgCli.gpgconfListDirs('agent-extra-socket');
     if (!this.fileSystem.existsSync(this.gpgAgentSocketPath)) {
       throw new Error(`GPG agent socket not found: ${this.gpgAgentSocketPath}`);

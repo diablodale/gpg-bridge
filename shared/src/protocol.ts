@@ -172,7 +172,7 @@ export function detectResponseCompletion(response: string): ResponseCompletion {
       return { complete: true, type: 'INQUIRE' };
     }
 
-    // Found a non-empty line that's not a completion marker
+    // Found a non-empty line that's not a completion marker, e.g. "D (sig-val rsa (s 454..."
     return { complete: false, type: null };
   }
 

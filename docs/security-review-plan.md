@@ -262,9 +262,11 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
   > PRESET_PASSPHRASE  → ERR 67109115 Forbidden
   ```
 
-  The commands previously flagged as high-risk (`PRESET_PASSPHRASE`, `CLEAR_PASSPHRASE`,
-  `GET_PASSPHRASE`) are therefore already blocked by gpg-agent before they could have any
-  effect. No bridge-side denylist or allowlist is needed or appropriate — gpg-agent is the
+  Of the commands previously flagged as high-risk, `PRESET_PASSPHRASE` and
+  `CLEAR_PASSPHRASE` are blocked by gpg-agent. `GET_PASSPHRASE` is **permitted** on the
+  extra socket — it invokes pinentry and returns the hex-encoded passphrase to the caller
+  and often used with symmetric encryption; this is a confirmed secrets-in-transit path documented
+  in P3-5. No bridge-side denylist or allowlist is needed or appropriate — gpg-agent is the
   correct trust anchor for command authorization.
 
   Remaining nuances to investigate and document:
@@ -340,13 +342,86 @@ Replaced unrealistic `'should handle very large D-block (multiple MB)'` (2 MB) w
       Both methods accept an arbitrary `sessionId: string` from the VS Code command caller.
       A non-UUID string misses the Map and is handled gracefully, but pollutes logs.
       Add a UUID format check at the top of each method:
+
   ```typescript
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!UUID_RE.test(sessionId)) {
     return Promise.reject(new Error(`Invalid sessionId format: ${sessionId}`));
   }
   ```
+
   **Severity:** 🟢 Low — defensive hardening.
+
+- [x] **P3-5** ✅ Document accepted secrets-in-transit over the Assuan bridge (ESK + symmetric passphrase)
+
+  During GPG operations, certain Assuan responses transit the full bridge path
+  (extra-socket → agentProxy → VS Code IPC → requestProxy → client Unix socket)
+  carrying secrets in cleartext. Two distinct scenarios exist:
+
+  **Scenario A — Encrypted Session Key (ESK) in asymmetric decryption**
+
+  When `gpg -d` decrypts a file encrypted to a public key (`--encrypt`):
+  1. The gpg client sends the ESK (ciphertext of the symmetric file key, extracted
+     from the file's public-key packet) to gpg-agent via `PKDECRYPT`.
+  2. gpg-agent decrypts the ESK using the locally-held private key and returns the
+     plaintext session key in a `D` S-expression block.
+  3. The gpg client uses that session key to decrypt the bulk file data itself.
+
+  The session key is _ephemeral_ — it is specific to one encrypted file and provides
+  no leverage against other files, other keys, or the user's master passphrase.
+
+  **Scenario B — Raw passphrase in symmetric decryption**
+
+  `GET_PASSPHRASE` is permitted on the extra socket (confirmed by direct test:
+  `GET_PASSPHRASE testcache1 errormsg theprompt thedescript` → `OK <hex-passphrase>`).
+  A remote GPG client relayed through the bridge can invoke GET_PASSPHRASE directly.
+  When `gpg -d` decrypts a file encrypted to a symmetric key (`--symmetric`):
+  1. The gpg client sends `GET_PASSPHRASE <cache-id> <error> <prompt> <desc>` via the bridge.
+  2. gpg-agent invokes pinentry on the local machine; the user types the passphrase.
+  3. gpg-agent returns the raw passphrase hex-encoded in a `D` block over the bridge.
+  4. The gpg client runs that passphrase through a Key Derivation Function (like S2K),
+     and uses the resulting key to decrypt the file.
+
+  The raw passphrase — not a derived key — travels over the bridge. If the user
+  reuses that passphrase (e.g. it is also their master key passphrase or an account
+  password), compromise of the bridge channel yields higher-value credentials.
+
+  **Accepted risk — Unix trust model applies to both scenarios**
+
+  Both secrets transit the same local IPC channels:
+  - `agent-extra-socket` (Unix domain socket, 0o700 directory + 0o600 socket — P3-3)
+  - VS Code command IPC (same-process extension host — P3-1)
+  - `S.gpg-agent` request-proxy socket (Unix domain socket, 0o600 — P3-3)
+
+  An attacker capable of intercepting any of these channels already has same-user
+  access. At that privilege level, more direct attacks are available:
+  - `ptrace` the gpg process to read decrypted output or heap memory
+  - Read the decrypted file from disk or page cache after decryption completes
+  - Install a keylogger to capture the passphrase at pinentry input
+  - Read pinentry's own socket or pipe
+
+  If the transport is compromised, the entire user session is already compromised.
+  This is the standard Unix trust model under which all local Assuan IPC operates.
+
+  **Consequence differential**
+
+  | Scenario      | Secret type                      | Ephemeral?             | Consequence if intercepted                |
+  | ------------- | -------------------------------- | ---------------------- | ----------------------------------------- |
+  | A: asymmetric | Session key (symmetric file key) | ✅ Yes — one file only | Decrypts one specific file                |
+  | B: symmetric  | Raw passphrase                   | ❌ No — may be reused  | May unlock other files, keys, or accounts |
+
+  Scenario B carries a higher consequence profile than A even though exploitability
+  is identical (requires same-user socket access in both cases).
+
+  **Work item (documentation only):** No code change is possible — the passphrase and
+  session key handling are inside gpg-agent and the gpg client; the bridge is a
+  transparent relay and cannot intercept or filter `D`-block content without breaking
+  the Assuan protocol. Add a reference comment in `agentProxy.ts` near the P3-2 block
+  and update `docs/security-review-plan.md` with this entry.
+
+  **Severity:** 🟡 Medium — accepted per Unix trust model. Scenario B (symmetric
+  passphrase) carries higher consequence than Scenario A (ESK); no code change is
+  possible or appropriate.
 
 ---
 
@@ -579,25 +654,26 @@ P6-2  (uuid CSPRNG verification)              ✅ done — both packages pin uui
 P6-3  (which PATH injection doc)              ✅ done — comment in gpgCli.ts::detect(); gpgBridgeRequest.gpgBinDir config + code added to request extension; Security sections added to both READMEs
 P6-1  (npm audit)                             ✅ done — 3 high findings in @j178/prek transitive deps (axios, minimatch, brace-expansion); resolved by npm update @j178/prek@0.3.4; 0 vulnerabilities
 Completed Changes (stop() FATAL fix)          ✅ done — test added to agentProxy.test.ts
+P3-5  (ESK + symmetric passphrase data-in-transit)  ✅ done — comment in agentProxy.ts + §P3-5 in security-review-plan.md
 ```
 
-**Security review complete.** All 22 items resolved.
+**Security review complete.** All 23 items resolved.
 
 ### File → phase mapping
 
-| File                                                                  | Phases                                                            |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `gpg-bridge-request/src/extension.ts`                                 | P1-1 (two occurrences: `startPublicKeySync`, `startRequestProxy`) |
-| `gpg-bridge-agent/src/extension.ts`                                   | P1-1 (one occurrence: `startAgentProxy`), P3-1                    |
-| `gpg-bridge-request/src/services/requestProxy.ts`                     | P1-2, P1-3, P2-1, P2-4, P3-3, P4-1, P4-2, P4-3                    |
-| `gpg-bridge-request/src/test/requestProxy.test.ts`                    | P3-3 (update `0o666` → `0o600` assertions)                        |
-| `gpg-bridge-request/test/integration/requestProxyIntegration.test.ts` | P3-3 (update `0o666` → `0o600` assertion)                         |
-| `gpg-bridge-agent/src/services/agentProxy.ts`                         | P1-4, P2-5, P3-2 (comment), P3-4, P4-1, P5-1, P5-2, P5-3          |
-| `gpg-bridge-agent/src/test/agentProxy.test.ts`                        | Completed Changes (add stop() CLEANUP_ERROR test)                 |
-| `docs/gpg-agent-protocol.md`                                          | P3-2 (OPTION argument findings)                                   |
-| `shared/src/protocol.ts`                                              | P2-2                                                              |
-| `shared/src/gpgCli.ts`                                                | P2-3                                                              |
-| `shared/src/test/protocol.test.ts`                                    | P2-2 (tests)                                                      |
+| File                                                                  | Phases                                                                   |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `gpg-bridge-request/src/extension.ts`                                 | P1-1 (two occurrences: `startPublicKeySync`, `startRequestProxy`)        |
+| `gpg-bridge-agent/src/extension.ts`                                   | P1-1 (one occurrence: `startAgentProxy`), P3-1                           |
+| `gpg-bridge-request/src/services/requestProxy.ts`                     | P1-2, P1-3, P2-1, P2-4, P3-3, P4-1, P4-2, P4-3                           |
+| `gpg-bridge-request/src/test/requestProxy.test.ts`                    | P3-3 (update `0o666` → `0o600` assertions)                               |
+| `gpg-bridge-request/test/integration/requestProxyIntegration.test.ts` | P3-3 (update `0o666` → `0o600` assertion)                                |
+| `gpg-bridge-agent/src/services/agentProxy.ts`                         | P1-4, P2-5, P3-2 (comment), P3-4, P3-5 (comment), P4-1, P5-1, P5-2, P5-3 |
+| `gpg-bridge-agent/src/test/agentProxy.test.ts`                        | Completed Changes (add stop() CLEANUP_ERROR test)                        |
+| `docs/gpg-agent-protocol.md`                                          | P3-2 (OPTION argument findings)                                          |
+| `shared/src/protocol.ts`                                              | P2-2                                                                     |
+| `shared/src/gpgCli.ts`                                                | P2-3                                                                     |
+| `shared/src/test/protocol.test.ts`                                    | P2-2 (tests)                                                             |
 
 ### Testing requirements per phase
 
