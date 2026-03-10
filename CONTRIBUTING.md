@@ -2,12 +2,12 @@
 
 ## Prerequisites
 
-| Tool                                      | Version  | Notes                                                    |
-| ----------------------------------------- | -------- | -------------------------------------------------------- |
-| [Node.js](https://nodejs.org/)            | v22.x    | Match VS Code's bundled Node runtime                     |
-| [VS Code](https://code.visualstudio.com/) | v1.91.0+ | Required for extension development and integration tests |
-| [Gpg4win](https://www.gpg4win.org/)       | v4.4.1+  | Required on Windows host for integration tests           |
-| [Git](https://git-scm.com/)               | any      | Commits must be signed (GPG, SSH, or X.509)              |
+| Tool                                      | Version   | Notes                                                    |
+| ----------------------------------------- | --------- | -------------------------------------------------------- |
+| [Node.js](https://nodejs.org/)            | v22.x     | Match VS Code's bundled Node runtime                     |
+| [VS Code](https://code.visualstudio.com/) | v1.108.1+ | Required for extension development and integration tests |
+| [Gpg4win](https://www.gpg4win.org/)       | v4.4.1+   | Required on Windows host for integration tests           |
+| [Git](https://git-scm.com/)               | any       | Commits must be signed (GPG, SSH, or X.509)              |
 
 ## Dev Setup
 

@@ -64,15 +64,18 @@ requests to your local gpg-agent.
 
 This extension does not open any network ports. All communication with GPG Bridge Agent
 on the local host travels through VS Code's authenticated extension-host tunnel —
-the same channel used for all remote extension communication. No credentials, private keys,
-or passphrases are transmitted by the bridge; only Assuan protocol messages for public-key
-operations (signing, decryption, key listing) flow through.
+the same channel used for all remote extension communication. The bridge transparently
+forwards Assuan protocol messages in both directions. Some operations — such as decryption
+or passphrase retrieval — exchange sensitive data (for example, an asymmetric session key
+or a symmetric passphrase) within those messages. The bridge does not inspect, filter, or
+transform this content; what flows is determined entirely by gpg-agent's access controls.
 
 ### Trust model
 
 The `S.gpg-agent.extra` restricted socket (used by GPG Bridge Agent) enforces command-level
-access control: operations that could expose or preset passphrases are rejected by
-gpg-agent before they execute. The bridge does not implement its own allowlist or
+access control: for example, `PRESET_PASSPHRASE` and `EXPORT_KEY` are rejected with
+`ERR 67109115 Forbidden` before they execute, while `GET_PASSPHRASE` is permitted and
+may return a cached passphrase. The bridge does not implement its own allowlist or
 denylist — gpg-agent is the trust anchor for what remote clients may request.
 
 ### Custom GPG or hardened installation

@@ -12,7 +12,7 @@ install the pack rather than this extension directly.
 ## Requirements
 
 - [GnuPG](https://gnupg.org/) 2.1+ installed (e.g. [Gpg4win](https://www.gpg4win.org/) on Windows, `gnupg` package on Linux/macOS)
-- VS Code v1.91.0+
+- VS Code v1.108.1+
 
 ## Configuration
 
@@ -46,10 +46,10 @@ the Command Palette (`Ctrl+Shift+P`) if you need to restart it.
 ### Trust model
 
 All bridge traffic uses gpg-agent's `S.gpg-agent.extra` restricted socket, not the typical `S.gpg-agent` unrestricted socket.
-Gpg-agent enforces command-level access control on the extra restricted socket at the protocol layer: sensitive
-operations such as `PRESET_PASSPHRASE`, `CLEAR_PASSPHRASE`, and `GET_PASSPHRASE` are rejected with
-`ERR 67109115 Forbidden` before they execute. No bridge-side allowlist or denylist is needed —
-gpg-agent is the trust anchor.
+Gpg-agent enforces command-level access control on the extra restricted socket at the protocol layer: for example,
+`PRESET_PASSPHRASE` and `EXPORT_KEY` are rejected with `ERR 67109115 Forbidden` before they execute,
+while `GET_PASSPHRASE` is permitted and may return a hex-encoded cached passphrase.
+No bridge-side allowlist or denylist is needed — gpg-agent is the trust anchor.
 
 Remote clients never gain more privilege than a local GPG client running as that user.
 On Windows, nonce authentication (the 16-byte token in the socket file) restricts connections

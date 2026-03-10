@@ -22,7 +22,7 @@ This is an extension **pack** that installs two cooperating components:
 | Requirement    | Detail                                                                                                                                       |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Local host** | [GnuPG](https://gnupg.org/) 2.1+ installed and working (e.g. [Gpg4win](https://www.gpg4win.org/) on Windows, `gnupg` package on Linux/macOS) |
-| **VS Code**    | v1.91.0+ with remote support (WSL, Dev Containers, or Remote-SSH extension)                                                                  |
+| **VS Code**    | v1.108.1+ with remote support (WSL, Dev Containers, or Remote-SSH extension)                                                                 |
 | **Remote**     | WSL, Dev Container, or SSH — any Linux environment VS Code can connect to                                                                    |
 
 ## Installation
