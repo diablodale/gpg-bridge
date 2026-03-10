@@ -50,7 +50,7 @@ const tag = `v${version}`;
 console.log(`\nPublishing ${tag} to GitHub\n`);
 
 // ── Step 1: Build VSIXs ───────────────────────────────────────────────────────
-run('npm run package');
+run('npm', ['run', 'package']);
 
 // ── Step 2: Extract release notes from CHANGELOG.md ──────────────────────────
 // Grab everything from the first ## [ heading to the line before the second one.
@@ -75,6 +75,12 @@ if (start === -1) {
 const notes = lines.slice(start, end).join('\n').trimEnd();
 const notesFile = join(tmpdir(), `gpg-bridge-${version}-notes.md`);
 writeFileSync(notesFile, notes, 'utf8');
+if (DRY_RUN) {
+  console.log('\n[dry-run] release notes:');
+  console.log('────────────────────────────────────────');
+  console.log(notes);
+  console.log('────────────────────────────────────────');
+}
 // Clean up temp file on any exit, including process.exit() and uncaught throws.
 process.on('exit', () => {
   try {
@@ -86,8 +92,10 @@ process.on('exit', () => {
 
 // ── Step 3: Verify VSIX files exist ───────────────────────────────────────────
 const vsixFiles = [
+  // in dependency order: agent must exist before request (extensionDependencies)
   join(ROOT, 'gpg-bridge-agent', `gpg-bridge-agent-${version}.vsix`),
   join(ROOT, 'gpg-bridge-request', `gpg-bridge-request-${version}.vsix`),
+  join(ROOT, 'pack', `gpg-bridge-${version}.vsix`),
 ];
 for (const p of vsixFiles) {
   if (!existsSync(p)) {
@@ -96,13 +104,14 @@ for (const p of vsixFiles) {
   }
 }
 
-// ── Step 4: Create GitHub release ─────────────────────────────────────────────
-if (DRY_RUN) {
-  console.log('\n[dry-run] release notes:');
-  console.log('────────────────────────────────────────');
-  console.log(notes);
-  console.log('────────────────────────────────────────');
-}
+// ── Step 4: Publish to VS Code Marketplace ────────────────────────────────────
+// All three VSIXs in one call. vsce publishes them in the order given, which is
+// dependency order: agent must exist before request (extensionDependencies).
+// Credentials: vsce reads VSCE_PAT env var (CI) or the stored keychain token (local,
+// after 'vsce login hidale').
+run('npx', ['vsce', 'publish', '--packagePath', ...vsixFiles]);
+
+// ── Step 5: Create GitHub release ─────────────────────────────────────────────
 run('gh', [
   'release',
   'create',

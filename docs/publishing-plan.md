@@ -805,31 +805,30 @@ creates a `chore(release): 1.0.0` commit, and creates the `v1.0.0` tag locally.
 **5c.** Produce final VSIXs:
 
 ```powershell
-npm run package:agent
-npm run package:request
-cd pack && npx vsce package
+npm run package
 ```
 
-**5d.** Authenticate vsce locally before publishing. The `VSCE_PAT` CI secret
-does not exist yet (that is Phase 6), so use a personal access token directly.
-Create a PAT now following the same Azure DevOps steps described in Phase 6 step
-6f — you can reuse this same token when setting up the GitHub secret in Phase 6.
-Then authenticate:
+**5d.** Authenticate vsce locally before publishing. Create a PAT following the
+Azure DevOps steps described in Phase 6 step 6f — you can reuse this same token
+when setting up the GitHub secret in Phase 6. Then store it in the vsce keychain:
 
 ```powershell
-$env:VSCE_PAT = "<your-azure-devops-pat>"
+npx vsce login hidale
 ```
 
-vsce reads this environment variable automatically during `vsce publish`.
+vsce prompts for the PAT and stores it in the OS keychain — no `VSCE_PAT` environment
+variable needed.
 
-**5e.** Publish to marketplace in dependency order (agent must exist before
-request can declare `extensionDependencies`):
+**5e.** Publish to marketplace and create GitHub release:
 
 ```powershell
-cd gpg-bridge-agent      && npx vsce publish
-cd ../gpg-bridge-request && npx vsce publish
-cd ../pack               && npx vsce publish
+npm run publish
 ```
+
+The `publish` script publishes all three VSIXs to the marketplace in dependency order
+(agent first, then request which has its dependency on agent, then pack which depends on both)
+and creates a GitHub release with the VSIX
+artifacts attached. Requires `gh` CLI authenticated and vsce logged in (step 5d).
 
 **5f.** Update README badge URLs now that marketplace IDs are live.
 
