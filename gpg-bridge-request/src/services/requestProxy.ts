@@ -702,6 +702,11 @@ export class RequestProxy {
     this.clientIdleTimeoutMs = deps?.clientIdleTimeoutMs ?? CLIENT_IDLE_TIMEOUT_MS;
   }
 
+  /** Return the resolved gpg bin dir, or null before start() is called. */
+  getGpgBinDir(): string | null {
+    return this.gpgCli?.getBinDir() ?? null;
+  }
+
   /** Socket path this proxy is listening on, or null if not started */
   getSocketPath(): string | null {
     return this._socketPath;

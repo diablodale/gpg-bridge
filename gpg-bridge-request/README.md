@@ -32,6 +32,7 @@ install the pack rather than this extension directly.
 | -------------------------------------- | -------------------------------------------------------------- |
 | `GPG Bridge Request: Start`            | Start the request bridge                                       |
 | `GPG Bridge Request: Stop`             | Stop the request bridge                                        |
+| `GPG Bridge Request: Show Status`      | Display current proxy status and socket path                   |
 | `GPG Bridge Request: Sync public keys` | Manually sync public keys from the local keyring to the remote |
 
 The proxy starts automatically when VS Code connects to a remote. Manual commands

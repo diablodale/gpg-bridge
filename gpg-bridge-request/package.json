@@ -69,6 +69,10 @@
         "title": "GPG Bridge Request: Stop"
       },
       {
+        "command": "gpg-bridge-request.showStatus",
+        "title": "GPG Bridge Request: Show Status"
+      },
+      {
         "command": "gpg-bridge-request.syncPublicKeys",
         "title": "GPG Bridge Request: Sync public keys"
       }

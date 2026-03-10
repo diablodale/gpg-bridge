@@ -268,8 +268,8 @@ async function stopAgentProxy(): Promise<void> {
  * Show GPG Bridge Agent status
  */
 function showStatus(): void {
-  const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(not detected)';
-  const agentSocket = agentProxyService?.getAgentSocketPath() ?? '(not detected)';
+  const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(unknown)';
+  const agentSocket = agentProxyService?.getAgentSocketPath() ?? '(unknown)';
 
   let state = 'Inactive';
   let sessionCount = 0;

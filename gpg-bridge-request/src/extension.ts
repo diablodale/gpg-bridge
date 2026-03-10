@@ -97,6 +97,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
       vscode.commands.registerCommand('gpg-bridge-request.start', startRequestProxy),
       vscode.commands.registerCommand('gpg-bridge-request.stop', stopRequestProxy),
+      vscode.commands.registerCommand('gpg-bridge-request.showStatus', showStatus),
       vscode.commands.registerCommand(
         'gpg-bridge-request.syncPublicKeys',
         async (filter?: KeyFilter) => {
@@ -114,6 +115,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
       vscode.commands.registerCommand('gpg-bridge-request.start', noop),
       vscode.commands.registerCommand('gpg-bridge-request.stop', noop),
+      vscode.commands.registerCommand('gpg-bridge-request.showStatus', showStatus),
       vscode.commands.registerCommand('gpg-bridge-request.syncPublicKeys', noop),
     );
   }
@@ -206,6 +208,29 @@ async function startRequestProxy(): Promise<void> {
     requestProxyService = null;
     throw error;
   }
+}
+
+function showStatus(): void {
+  const socketPath = requestProxyService?.getSocketPath() ?? '(unknown)';
+  const gpgBinDir = requestProxyService?.getGpgBinDir() ?? '(unknown)';
+
+  let state = 'Inactive';
+  let sessionCount = 0;
+  if (requestProxyService) {
+    sessionCount = requestProxyService.getSessionCount();
+    state = sessionCount > 0 ? 'Active' : 'Ready';
+  }
+
+  const status = [
+    'GPG Bridge Request Status',
+    '',
+    `State: ${state}${sessionCount > 0 ? ` (${sessionCount} session${sessionCount > 1 ? 's' : ''})` : ''}`,
+    `GPG bin dir: ${gpgBinDir}`,
+    `GPG socket: ${socketPath}`,
+  ].join('\n');
+
+  vscode.window.showInformationMessage(status, { modal: true });
+  outputChannel.show();
 }
 
 async function stopRequestProxy(): Promise<void> {

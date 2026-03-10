@@ -82,6 +82,7 @@ Both extensions start automatically. These commands are available via the Comman
 | `GPG Bridge Agent: Show Status`        | Local host | Display current proxy status and session count                 |
 | `GPG Bridge Request: Start`            | Remote     | Start the request bridge                                       |
 | `GPG Bridge Request: Stop`             | Remote     | Stop the request bridge                                        |
+| `GPG Bridge Request: Show Status`      | Remote     | Display current proxy status and socket path                   |
 | `GPG Bridge Request: Sync public keys` | Remote     | Manually sync public keys from the local keyring to the remote |
 
 ## Typical Workflow
