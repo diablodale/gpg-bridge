@@ -703,7 +703,7 @@ export class AgentProxy {
   }
 
   /** Return the resolved agent socket path, or null before start() is called. */
-  public getAgentSocketPath(): string | null {
+  public getSocketPath(): string | null {
     return this.gpgAgentSocketPath;
   }
 

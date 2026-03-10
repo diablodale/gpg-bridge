@@ -122,7 +122,7 @@ describe('AgentProxy', () => {
       mockFileSystem.setFile(customPath, Buffer.concat([Buffer.from('31415\n', 'latin1'), nonce]));
       const factory: IGpgCliFactory = { create: () => new MockGpgCli(customPath) };
       const proxy = await makeProxy({ gpgCliFactory: factory });
-      expect(proxy.getAgentSocketPath()).to.equal(customPath);
+      expect(proxy.getSocketPath()).to.equal(customPath);
     });
 
     it('throws when the resolved socket path does not exist', async () => {
@@ -288,7 +288,7 @@ describe('AgentProxy', () => {
       expect(proxy.getGpgBinDir()).to.be.null;
     });
 
-    it('getAgentSocketPath() returns null', () => {
+    it('getSocketPath() returns null', () => {
       const proxy = new AgentProxy(
         { logCallback: mockLogConfig.logCallback },
         {
@@ -297,7 +297,7 @@ describe('AgentProxy', () => {
           gpgCliFactory: mockGpgCliFactory,
         },
       );
-      expect(proxy.getAgentSocketPath()).to.be.null;
+      expect(proxy.getSocketPath()).to.be.null;
     });
   });
 
@@ -321,7 +321,7 @@ describe('AgentProxy', () => {
       await proxy.stop();
       // Second stop() should not throw
       await proxy.stop();
-      expect(proxy.getAgentSocketPath()).to.be.null;
+      expect(proxy.getSocketPath()).to.be.null;
     });
 
     it('resolves when session cleanup reaches FATAL via CLEANUP_ERROR (no hang)', async () => {
@@ -354,7 +354,7 @@ describe('AgentProxy', () => {
       await Promise.race([proxy.stop(), hangDetector]);
 
       // Confirm stop() ran to completion and cleared GpgCli state.
-      expect(proxy.getAgentSocketPath()).to.be.null;
+      expect(proxy.getSocketPath()).to.be.null;
     });
   });
 
@@ -365,16 +365,16 @@ describe('AgentProxy', () => {
       expect(proxy.getGpgBinDir()).to.equal('/fake/gpg/bin');
     });
 
-    it('getAgentSocketPath() returns the path resolved by gpgconfListDirs', async () => {
+    it('getSocketPath() returns the path resolved by gpgconfListDirs', async () => {
       const proxy = await makeProxy();
-      expect(proxy.getAgentSocketPath()).to.equal(socketPath);
+      expect(proxy.getSocketPath()).to.equal(socketPath);
     });
 
     it('getters return null after stop()', async () => {
       const proxy = await makeProxy();
       await proxy.stop();
       expect(proxy.getGpgBinDir()).to.be.null;
-      expect(proxy.getAgentSocketPath()).to.be.null;
+      expect(proxy.getSocketPath()).to.be.null;
     });
   });
 

@@ -269,7 +269,7 @@ async function stopAgentProxy(): Promise<void> {
  */
 function showStatus(): void {
   const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(unknown)';
-  const agentSocket = agentProxyService?.getAgentSocketPath() ?? '(unknown)';
+  const agentSocket = agentProxyService?.getSocketPath() ?? '(unknown)';
 
   let state = 'Inactive';
   let sessionCount = 0;

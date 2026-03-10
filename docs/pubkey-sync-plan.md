@@ -561,7 +561,7 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 - [x] Update `AgentProxy.stop()`: call `await this.gpgCli?.cleanup()` before nulling it out
 - [x] Add `getGpgBinDir(): string | null` instance method to `AgentProxy`
       (returns `this.gpgCli?.getBinDir() ?? null`)
-- [x] Add `getAgentSocketPath(): string | null` instance method to `AgentProxy`
+- [x] Add `getSocketPath(): string | null` instance method to `AgentProxy`
       (returns `this.gpgAgentSocketPath`)
 - [x] Remove `AgentProxyConfig.gpgAgentSocketPath`; update constructor to not validate it
 - [x] Update `extension.ts startAgentProxy()`: read `gpgBinDir` from VS Code config; construct
@@ -569,7 +569,7 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
       call `await agentProxyService.start()`; remove `detectGpgBinDir()`, `resolveAgentSocketPath()`,
       `detectedGpgBinDir`, `resolvedAgentSocketPath`
 - [x] Update `extension.ts showStatus()`: call `agentProxyService.getGpgBinDir() ?? '(not detected)'`
-      and `agentProxyService.getAgentSocketPath() ?? '(not detected)'`
+      and `agentProxyService.getSocketPath() ?? '(not detected)'`
 - [x] Fix `RequestProxy.start()`: add guard at top — throw if `this.server !== null`
       (`'Request proxy already started'`); mirrors the new `AgentProxy.start()` guard
 - [x] Migrate existing `agentProxy.test.ts` constructor tests that exercised the old
@@ -591,8 +591,8 @@ creates an isolated temp dir automatically; `cleanup()` removes it in `afterEach
 - [x] `stop()` after `stop()` is a no-op (already null)
 - [x] `getGpgBinDir()` returns `null` before `start()` is called
 - [x] `getGpgBinDir()` returns `getBinDir()` result after `start()`
-- [x] `getAgentSocketPath()` returns `null` before `start()` is called
-- [x] `getAgentSocketPath()` returns the socket path resolved by `gpgconfListDirs` after `start()`
+- [x] `getSocketPath()` returns `null` before `start()` is called
+- [x] `getSocketPath()` returns the socket path resolved by `gpgconfListDirs` after `start()`
 
 **Integration tests** (added to the existing `agentProxyIntegration.test.ts`;
 `beforeEach`/`afterEach` stop the proxy so each test starts from a known stopped state):

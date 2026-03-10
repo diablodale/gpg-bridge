@@ -32,7 +32,7 @@ classDiagram
             +disconnectAgent(sessionId) Promise
             +exportPublicKeys(filter?) Promise
             +getGpgBinDir() string|null
-            +getAgentSocketPath() string|null
+            +getSocketPath() string|null
             +getSessionCount() number
             +isRunning() bool
         }
@@ -77,6 +77,7 @@ classDiagram
             -_socketPath string|null
             +start() Promise
             +stop() Promise
+            +getGpgBinDir() string|null
             +getSocketPath() string|null
             +getSessionCount() number
             +isRunning() bool
