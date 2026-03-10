@@ -290,7 +290,7 @@ class RequestSessionManager extends EventEmitter implements ISessionManager {
     this.transition('CLIENT_SOCKET_CONNECTED');
     log(
       this.config,
-      `[${this.sessionId}] Client socket connected, connecting to GPG Bridge Agent...`,
+      `[${this.sessionId}] Client connected to socket. Connecting to GPG Bridge Agent...`,
     );
 
     try {
@@ -865,10 +865,6 @@ export class RequestProxy {
       session.once('CLEANUP_ERROR', () => this.sessions.delete(sessionId));
 
       // Start connection sequence - emit initial event and let handlers do the work
-      log(
-        fullConfig,
-        'Client connected to socket. Socket is paused while initiating connection to GPG Bridge Agent',
-      );
       session.emit('CLIENT_SOCKET_CONNECTED');
     });
 

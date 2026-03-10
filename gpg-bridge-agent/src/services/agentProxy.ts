@@ -689,10 +689,7 @@ export class AgentProxy {
       await this.disconnectAgent(probeSessionId);
     }
 
-    log(
-      this.config,
-      '[GPG Bridge Agent] Restricted socket verified via GETEVENTCOUNTER probe — READY',
-    );
+    log(this.config, '[GPG Bridge Agent] Restricted socket verified via GETEVENTCOUNTER probe');
   }
 
   /** Return the resolved gpg bin dir, or null before start() is called. */
@@ -824,6 +821,7 @@ export class AgentProxy {
       return await new Promise<{ sessionId: string; greeting: string }>((resolve, reject) => {
         const handleResponse = (payload: { response: string }) => {
           session.removeListener('CLEANUP_REQUESTED', handleCleanup);
+          log(this.config, `[${sessionId}] Session created`);
           resolve({ sessionId, greeting: payload.response });
         };
 
@@ -1016,7 +1014,10 @@ export class AgentProxy {
     if (!this.gpgCli) {
       throw new Error('GPG Bridge Agent not started — call start() first');
     }
-    return exportPublicKeys(this.gpgCli, filter, deps);
+    log(this.config, `[exportPublicKeys] filter=${filter ?? '(interactive)'}`);
+    const result = await exportPublicKeys(this.gpgCli, filter, deps);
+    log(this.config, `[exportPublicKeys] exporting ${result ? result.length : 0} chars`);
+    return result;
   }
 
   public isRunning(): boolean {

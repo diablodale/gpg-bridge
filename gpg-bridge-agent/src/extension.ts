@@ -25,7 +25,6 @@ export function checkVersionHandler(
   agentVersion: string,
   remoteVersion: string,
 ): VersionCheckResult {
-  outputChannel.appendLine(`Checking versions agent=${agentVersion} request=${remoteVersion}`);
   if (remoteVersion === agentVersion) {
     return { match: true };
   }
@@ -86,8 +85,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBarItem,
   );
 
-  outputChannel.appendLine('Commands registered');
-
   // Update status bar
   statusBarItem.name = 'GPG Bridge Agent';
   statusBarItem.command = 'gpg-bridge-agent.showStatus';
@@ -131,11 +128,7 @@ async function exportPublicKeysCommand(filter?: KeyFilter): Promise<string | und
 
   // TODO updateStatusBar to indicate export in progress
   try {
-    const result = await agentProxyService.exportPublicKeys(filter);
-    outputChannel.appendLine(
-      `[exportPublicKeys] filter=${filter ?? '(interactive)'} → ${result ? result.length : 0} chars`,
-    );
-    return result;
+    return await agentProxyService.exportPublicKeys(filter);
   } catch (error) {
     const msg = extractErrorMessage(error);
     outputChannel.appendLine(`[exportPublicKeys] Error: ${msg}`);
@@ -155,10 +148,7 @@ async function connectAgent(sessionId?: string): Promise<{ sessionId: string; gr
   }
 
   try {
-    const result = await agentProxyService.connectAgent(sessionId);
-    outputChannel.appendLine(`[connectAgent] Session created: ${result.sessionId}`);
-    outputChannel.appendLine(`[connectAgent] Returning: ${JSON.stringify(result)}`);
-    return result;
+    return await agentProxyService.connectAgent(sessionId);
   } catch (error) {
     const msg = extractErrorMessage(error);
     outputChannel.appendLine(`[connectAgent] Error: ${msg}`);
@@ -182,9 +172,7 @@ async function sendCommands(
   }
 
   try {
-    const result = await agentProxyService.sendCommands(sessionId, commandBlock);
-    outputChannel.appendLine(`[sendCommands] Session ${sessionId}: sent and received response`);
-    return result;
+    return await agentProxyService.sendCommands(sessionId, commandBlock);
   } catch (error) {
     const msg = extractErrorMessage(error);
     outputChannel.appendLine(`[sendCommands] Session ${sessionId}: Error: ${msg}`);
@@ -205,7 +193,6 @@ async function disconnectAgent(sessionId: string): Promise<void> {
 
   try {
     await agentProxyService.disconnectAgent(sessionId);
-    outputChannel.appendLine(`[disconnectAgent] Session closed: ${sessionId}`);
   } catch (error) {
     const msg = extractErrorMessage(error);
     outputChannel.appendLine(`[disconnectAgent] Session ${sessionId}: Error: ${msg}`);
