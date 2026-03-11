@@ -14,7 +14,7 @@
 
 const { spawnSync } = require('child_process');
 const { existsSync, readFileSync, writeFileSync, unlinkSync } = require('fs');
-const { join } = require('path');
+const { join, dirname } = require('path');
 const { tmpdir } = require('os');
 
 const ROOT = join(__dirname, '..');
@@ -26,15 +26,15 @@ if (DRY_RUN) {
   console.log('[dry-run] No changes will be published.\n');
 }
 
-/** @param {string} cmd @param {string[]} args */
-function run(cmd, args = []) {
+/** @param {string} cmd @param {string[]} args @param {string} [cwd] */
+function run(cmd, args = [], cwd = ROOT) {
   const label = args.length ? `${cmd} ${args.join(' ')}` : cmd;
   if (DRY_RUN) {
     console.log(`[dry-run] skipping: ${label}`);
     return;
   }
   console.log(`> ${label}`);
-  const result = spawnSync(cmd, args, { stdio: 'inherit', cwd: ROOT, shell: args.length === 0 });
+  const result = spawnSync(cmd, args, { stdio: 'inherit', cwd, shell: args.length === 0 });
   const code = result.status ?? 1;
   if (code !== 0) {
     process.stderr.write(`${RED}ERROR: command exited with code ${code}: ${label}${RESET}\n`);
@@ -50,7 +50,7 @@ const tag = `v${version}`;
 console.log(`\nPublishing ${tag} to GitHub\n`);
 
 // ── Step 1: Build VSIXs ───────────────────────────────────────────────────────
-run('npm', ['run', 'package']);
+run('npm run package');
 
 // ── Step 2: Extract release notes from CHANGELOG.md ──────────────────────────
 // Grab everything from the first ## [ heading to the line before the second one.
@@ -105,11 +105,13 @@ for (const p of vsixFiles) {
 }
 
 // ── Step 4: Publish to VS Code Marketplace ────────────────────────────────────
-// All three VSIXs in one call. vsce publishes them in the order given, which is
-// dependency order: agent must exist before request (extensionDependencies).
+// Publish them in the order given, which is dependency order: agent must exist
+// before request (extensionDependencies).
 // Credentials: vsce reads VSCE_PAT env var (CI) or the stored keychain token (local,
 // after 'vsce login hidale').
-run('npx', ['vsce', 'publish', '--packagePath', ...vsixFiles]);
+for (const p of vsixFiles) {
+  run(`npx vsce publish --packagePath ${p}`, [], dirname(p));
+}
 
 // ── Step 5: Create GitHub release ─────────────────────────────────────────────
 run('gh', [
