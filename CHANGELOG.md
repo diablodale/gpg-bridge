@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for guidelines.
+## [1.0.0](https://github.com/diablodale/gpg-bridge/compare/v0.4.0...v1.0.0) (2026-03-11)
+
+
+### Added
+
+* **agent:** add local host Linux/macOS gpg-agent support ([e2ff25c](https://github.com/diablodale/gpg-bridge/commit/e2ff25cfce1b4e32f50f241521a846804525991d))
+* implement version compatibility check, plus tests ([92aa942](https://github.com/diablodale/gpg-bridge/commit/92aa942a7f8b284d738ffc85010767513660720c))
+* **request:** add 'Show Status' command and update README with status information ([7e6f849](https://github.com/diablodale/gpg-bridge/commit/7e6f849f78171bf76b6f352217065588b174daf0))
+* **request:** add liveness probe to detect gpg-agent socket conflicts ([b06839f](https://github.com/diablodale/gpg-bridge/commit/b06839f4c2d5f9d97b135ca29b2a514c9de1ee01))
+
+
+### Fixed
+
+* clean partially-initialized resources in agent and request proxy startup ([3c81188](https://github.com/diablodale/gpg-bridge/commit/3c811881bfb1d2e97d16e34c5cdcfcb7e62b3ebf))
+* **security:** validate extra socket identity on startup ([9b3dfae](https://github.com/diablodale/gpg-bridge/commit/9b3dfae20f46c9b5720ab356bf1097f4751d8a2f))
+* version compat check with integration tests ([c519d7e](https://github.com/diablodale/gpg-bridge/commit/c519d7e26bf9fc20a08bf713493a90c0ddcfa2ee))
+* version compat check with union instead of throw ([65a6c9d](https://github.com/diablodale/gpg-bridge/commit/65a6c9d34ed1186b7816e7a77d58efe24cc683d8))
+
 ## [0.4.0](https://github.com/diablodale/gpg-bridge/compare/v0.3.0...v0.4.0) (2026-03-01)
 
 

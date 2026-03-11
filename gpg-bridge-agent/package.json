@@ -2,7 +2,7 @@
   "name": "gpg-bridge-agent",
   "displayName": "GPG Bridge Agent",
   "description": "Agent bridge component for GPG Bridge",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "icon": "icon.png",
   "publisher": "hidale",
   "author": {
