@@ -1,5 +1,5 @@
 /**
- * Remote Extension Context
+ * GPG Bridge Request VS Code Extension
  *
  * This code runs on the remote (WSL/container/SSH).
  * It activates automatically when VS Code connects to any remote.
@@ -10,6 +10,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as os from 'os';
 import { RequestProxy } from './services/requestProxy';
 import { PublicKeySync } from './services/publicKeySync';
 import { GpgCli, extractErrorMessage } from '@gpg-bridge/shared';
@@ -21,6 +22,7 @@ import { isTestEnvironment, isIntegrationTestEnvironment } from '@gpg-bridge/sha
 let requestProxyService: RequestProxy | null = null;
 let publicKeySyncService: PublicKeySync | null = null;
 let outputChannel: vscode.OutputChannel;
+let extensionVersion: string | null = null;
 
 /**
  * Calls `_gpg-bridge-agent.checkVersion` with the request extension's own version.
@@ -67,6 +69,7 @@ export async function runVersionCheck(
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const requestVersion = context.extension.packageJSON.version as string;
+  extensionVersion = requestVersion;
 
   // Create output channel and keep it for the lifetime of the extension
   outputChannel = vscode.window.createOutputChannel('GPG Bridge Request');
@@ -210,9 +213,10 @@ async function startRequestProxy(): Promise<void> {
   }
 }
 
-function showStatus(): void {
+async function showStatus(): Promise<void> {
   const socketPath = requestProxyService?.getSocketPath() ?? '(unknown)';
   const gpgBinDir = requestProxyService?.getGpgBinDir() ?? '(unknown)';
+  const gpgVersion = (await requestProxyService?.getGpgVersion().catch(() => null)) ?? '(unknown)';
 
   let state = 'Inactive';
   let sessionCount = 0;
@@ -223,14 +227,26 @@ function showStatus(): void {
 
   const status = [
     'GPG Bridge Request Status',
-    '',
     `State: ${state}${sessionCount > 0 ? ` (${sessionCount} session${sessionCount > 1 ? 's' : ''})` : ''}`,
+    `Version: ${extensionVersion ?? '(unknown)'}`,
+    `OS: ${os.platform()} ${os.arch()} ${os.release()}`,
+    `GPG version: ${gpgVersion}`,
     `GPG bin dir: ${gpgBinDir}`,
     `GPG socket: ${socketPath}`,
+    `Remote type: ${vscode.env.remoteName ?? '(unknown)'}`,
   ].join('\n');
 
-  vscode.window.showInformationMessage(status, { modal: true });
-  outputChannel.show();
+  const copyItem: vscode.MessageItem = { title: 'Copy' };
+  const okItem: vscode.MessageItem = { title: 'OK', isCloseAffordance: true };
+  const result = await vscode.window.showInformationMessage(
+    status,
+    { modal: true },
+    copyItem,
+    okItem,
+  );
+  if (result === copyItem) {
+    await vscode.env.clipboard.writeText(status);
+  }
 }
 
 async function stopRequestProxy(): Promise<void> {

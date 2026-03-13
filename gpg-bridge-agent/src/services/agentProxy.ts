@@ -702,6 +702,11 @@ export class AgentProxy {
     return this.gpgCli?.getBinDir() ?? null;
   }
 
+  /** Return the GnuPG version string, or null before start() is called. */
+  public async getGpgVersion(): Promise<string | null> {
+    return this.gpgCli?.getVersion() ?? null;
+  }
+
   /** Return the resolved agent socket path, or null before start() is called. */
   public getSocketPath(): string | null {
     return this.gpgAgentSocketPath;

@@ -1,3 +1,16 @@
+/**
+ * GPG Bridge Agent VS Code Extension
+ *
+ * This extension implements the local "agent" side of the GPG Bridge architecture:
+ * it connects to the gpg-agent extra socket, proxies commands from the request
+ * extension, and returns responses. It also provides a command to export public
+ * keys for the request extension to sync public keys to the remote side.
+ *
+ * It activates automatically on startup and runs in the background, showing status
+ * in the status bar and output channel.
+ */
+
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { AgentProxy } from './services/agentProxy';
 import {
@@ -13,6 +26,7 @@ import type { KeyFilter } from '@gpg-bridge/shared';
 let agentProxyService: AgentProxy | null = null;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
+let extensionVersion: string | null = null;
 
 /**
  * Pure version-compatibility check called by the request extension via
@@ -35,6 +49,7 @@ export function checkVersionHandler(
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   outputChannel = vscode.window.createOutputChannel('GPG Bridge Agent');
   const agentVersion = context.extension.packageJSON.version as string;
+  extensionVersion = agentVersion;
   statusBarItem = vscode.window.createStatusBarItem(
     context.extension.id,
     vscode.StatusBarAlignment.Right,
@@ -267,9 +282,10 @@ async function stopAgentProxy(): Promise<void> {
 /**
  * Show GPG Bridge Agent status
  */
-function showStatus(): void {
+async function showStatus(): Promise<void> {
   const gpgBinDir = agentProxyService?.getGpgBinDir() ?? '(unknown)';
   const agentSocket = agentProxyService?.getSocketPath() ?? '(unknown)';
+  const gpgVersion = (await agentProxyService?.getGpgVersion().catch(() => null)) ?? '(unknown)';
 
   let state = 'Inactive';
   let sessionCount = 0;
@@ -280,14 +296,25 @@ function showStatus(): void {
 
   const status = [
     'GPG Bridge Agent Status',
-    '',
     `State: ${state}${sessionCount > 0 ? ` (${sessionCount} session${sessionCount > 1 ? 's' : ''})` : ''}`,
+    `Version: ${extensionVersion ?? '(unknown)'}`,
+    `OS: ${os.platform()} ${os.arch()} ${os.release()}`,
+    `GPG version: ${gpgVersion}`,
     `GPG bin dir: ${gpgBinDir}`,
-    `GPG agent: ${agentSocket}`,
+    `GPG socket: ${agentSocket}`,
   ].join('\n');
 
-  vscode.window.showInformationMessage(status, { modal: true });
-  outputChannel.show();
+  const copyItem: vscode.MessageItem = { title: 'Copy' };
+  const okItem: vscode.MessageItem = { title: 'OK', isCloseAffordance: true };
+  const result = await vscode.window.showInformationMessage(
+    status,
+    { modal: true },
+    copyItem,
+    okItem,
+  );
+  if (result === copyItem) {
+    await vscode.env.clipboard.writeText(status);
+  }
 }
 
 /**

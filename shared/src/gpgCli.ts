@@ -423,6 +423,7 @@ export function parseImportResult(output: string): {
 
 export class GpgCli {
   private readonly binDir: string;
+  private _version: string | undefined = undefined;
   // Protected so GpgTestHelper can call gpg/gpgconf directly via run()/runRaw()
   protected readonly gpgBin: string;
   protected readonly gpgconfBin: string;
@@ -520,6 +521,24 @@ export class GpgCli {
   /** Return the resolved bin directory path (useful for status display). */
   getBinDir(): string {
     return this.binDir;
+  }
+
+  /**
+   * Return the GnuPG version string by running `gpgconf --version` and parsing the first line.
+   * Result is cached after the first successful call.
+   * Throws if the subprocess fails or the output cannot be parsed.
+   */
+  async getVersion(): Promise<string> {
+    if (this._version !== undefined) {
+      return this._version;
+    }
+    const { stdout } = await this.run(this.gpgconfBin, ['--version'], 'utf8');
+    const match = stdout.match(/^gpgconf.*\s([\d.]+)$/m);
+    if (!match) {
+      throw new Error('Could not parse GnuPG version from gpgconf --version output');
+    }
+    this._version = match[1];
+    return this._version;
   }
 
   // -------------------------------------------------------------------------

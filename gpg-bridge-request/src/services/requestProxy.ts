@@ -707,6 +707,11 @@ export class RequestProxy {
     return this.gpgCli?.getBinDir() ?? null;
   }
 
+  /** Return the GnuPG version string, or null before start() is called. */
+  async getGpgVersion(): Promise<string | null> {
+    return this.gpgCli?.getVersion() ?? null;
+  }
+
   /** Socket path this proxy is listening on, or null if not started */
   getSocketPath(): string | null {
     return this._socketPath;
@@ -972,5 +977,6 @@ export class RequestProxy {
     });
     await this.gpgCli?.cleanup();
     this.gpgCli = null;
+    this._socketPath = null;
   }
 }

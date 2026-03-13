@@ -4262,6 +4262,93 @@ describe('RequestProxy', () => {
       await instance.stop();
     });
 
+    describe('getters (GpgBinDir / GpgVersion / SocketPath)', () => {
+      it('getGpgBinDir() returns null before start()', () => {
+        const instance = new RequestProxy(
+          { logCallback: mockLogConfig.logCallback },
+          createMockDeps(),
+        );
+        expect(instance.getGpgBinDir()).to.be.null;
+      });
+
+      it('getSocketPath() returns null before start()', () => {
+        const instance = new RequestProxy(
+          { logCallback: mockLogConfig.logCallback },
+          createMockDeps(),
+        );
+        expect(instance.getSocketPath()).to.be.null;
+      });
+
+      it('getGpgVersion() returns null before start()', async () => {
+        const instance = new RequestProxy(
+          { logCallback: mockLogConfig.logCallback },
+          createMockDeps(),
+        );
+        expect(await instance.getGpgVersion()).to.be.null;
+      });
+
+      it('getGpgBinDir() returns the bin dir from the GpgCli instance after start()', async () => {
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: { create: () => new MockGpgCli('/tmp/S.gpg-agent') } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        await instance.start();
+        // MockGpgCli uses mockBinDir = '/fake/gpg/bin' by default
+        expect(instance.getGpgBinDir()).to.equal('/fake/gpg/bin');
+        await instance.stop();
+      });
+
+      it('getSocketPath() returns the path resolved by gpgconfListDirs after start()', async () => {
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: { create: () => new MockGpgCli('/tmp/S.gpg-agent') } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        await instance.start();
+        expect(instance.getSocketPath()).to.equal('/tmp/S.gpg-agent');
+        await instance.stop();
+      });
+
+      it('getGpgVersion() returns the version string from the GpgCli instance after start()', async () => {
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: { create: () => new MockGpgCli('/tmp/S.gpg-agent') } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        await instance.start();
+        // MockGpgCli.mockVersion defaults to '2.4.0'
+        expect(await instance.getGpgVersion()).to.equal('2.4.0');
+        await instance.stop();
+      });
+
+      it('getGpgVersion() returns custom version when MockGpgCli.mockVersion is overridden', async () => {
+        const cli = new MockGpgCli('/tmp/S.gpg-agent');
+        cli.mockVersion = '2.2.41';
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: { create: () => cli } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        await instance.start();
+        expect(await instance.getGpgVersion()).to.equal('2.2.41');
+        await instance.stop();
+      });
+
+      it('getters return null after stop()', async () => {
+        const deps = {
+          ...createMockDeps(),
+          gpgCliFactory: { create: () => new MockGpgCli('/tmp/S.gpg-agent') } as IGpgCliFactory,
+        };
+        const instance = new RequestProxy({ logCallback: mockLogConfig.logCallback }, deps);
+        await instance.start();
+        await instance.stop();
+        expect(instance.getGpgBinDir()).to.be.null;
+        expect(instance.getSocketPath()).to.be.null;
+        expect(await instance.getGpgVersion()).to.be.null;
+      });
+    });
+
     it('propagates errors thrown by gpgconfListDirs', async () => {
       class FailingMockGpgCli extends MockGpgCli {
         constructor() {

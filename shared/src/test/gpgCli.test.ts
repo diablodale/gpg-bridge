@@ -216,8 +216,73 @@ describe('GpgCli', () => {
   });
 
   // ============================================================================
-  // gpgconfListDirs
+  // getVersion
   // ============================================================================
+
+  describe('getVersion()', () => {
+    const WIN_OUTPUT = [
+      'gpgconf (GnuPG) 2.4.8',
+      'Copyright (C) 2025 g10 Code GmbH',
+      'License GNU GPL-3.0-or-later <https://gnu.org/licenses/gpl.html>',
+    ].join('\n');
+    const LINUX_OUTPUT = [
+      'gpgconf (GnuPG) 2.4.4',
+      'Copyright (C) 2024 g10 Code GmbH',
+      'License GNU GPL-3.0-or-later <https://gnu.org/licenses/gpl.html>',
+    ].join('\n');
+
+    it('parses version from Windows gpgconf --version output', async () => {
+      const cli = makeCli(execReturns(WIN_OUTPUT));
+      expect(await cli.getVersion()).to.equal('2.4.8');
+    });
+
+    it('parses version from Linux gpgconf --version output', async () => {
+      const cli = makeCli(execReturns(LINUX_OUTPUT));
+      expect(await cli.getVersion()).to.equal('2.4.4');
+    });
+
+    it('calls gpgconf (not gpg) with ["--version"]', async () => {
+      const capture = execCapture(WIN_OUTPUT);
+      const cli = makeCli(capture.fn);
+      await cli.getVersion();
+      expect(capture.lastArgs!.binary).to.equal(FAKE_GPGCONF_BIN);
+      expect(capture.lastArgs!.args).to.deep.equal(['--version']);
+    });
+
+    it('caches the result and only calls subprocess once', async () => {
+      let callCount = 0;
+      const countingExec: ExecFileFn = () => {
+        callCount++;
+        return Promise.resolve({ stdout: WIN_OUTPUT, stderr: '' });
+      };
+      const cli = makeCli(countingExec);
+      await cli.getVersion();
+      await cli.getVersion();
+      expect(callCount).to.equal(1);
+    });
+
+    it('throws when output does not contain the expected header line', async () => {
+      const cli = makeCli(execReturns('unexpected output\nno version here'));
+      try {
+        await cli.getVersion();
+        expect.fail('Expected getVersion() to throw on unparseable output');
+      } catch (error: unknown) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.match(/Could not parse GnuPG version/);
+      }
+    });
+
+    it('propagates subprocess errors (non-zero exit)', async () => {
+      const cli = makeCli(execFails(1, '', 'gpgconf: command not found'));
+      try {
+        await cli.getVersion();
+        expect.fail('Expected getVersion() to throw on subprocess failure');
+      } catch (error: unknown) {
+        // The error is the ExecFileError thrown by defaultExecFileAsync
+        expect(error).to.exist;
+      }
+    });
+  });
 
   describe('gpgconfListDirs()', () => {
     it('returns trimmed path string on success', async () => {
