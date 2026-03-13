@@ -2,12 +2,13 @@
 
 ## Prerequisites
 
-| Tool                                      | Version   | Notes                                                    |
-| ----------------------------------------- | --------- | -------------------------------------------------------- |
-| [Node.js](https://nodejs.org/)            | v22.x     | Match VS Code's bundled Node runtime                     |
-| [VS Code](https://code.visualstudio.com/) | v1.108.1+ | Required for extension development and integration tests |
-| [Gpg4win](https://www.gpg4win.org/)       | v4.4.1+   | Required on Windows host for integration tests           |
-| [Git](https://git-scm.com/)               | any       | Commits must be signed (GPG, SSH, or X.509)              |
+| Tool                                                                                                     | Version   | Notes                                                                  |
+| -------------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------- |
+| [Node.js](https://nodejs.org/)                                                                           | v22.x     | Match VS Code's bundled Node runtime                                   |
+| [VS Code](https://code.visualstudio.com/)                                                                | v1.108.1+ | Required for extension development and integration tests               |
+| [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) | any       | Required for integration tests                                         |
+| [GnuPG](https://gnupg.org/)                                                                              | v2.1+     | `gnupg` on Linux/macOS, [Gpg4win](https://www.gpg4win.org/) on Windows |
+| [Git](https://git-scm.com/)                                                                              | any       | Commits must be signed (GPG, SSH, or X.509)                            |
 
 ## Dev Setup
 
@@ -67,7 +68,7 @@ No VS Code runtime or real GPG agent required — all I/O is injected via mocks.
 ### Integration tests
 
 Integration tests launch a real VS Code Extension Development Host and require the
-Windows host to have Gpg4win installed and `gpg-agent` running.
+local host to have gpg installed and `gpg-agent` running.
 
 ```powershell
 npm run test:integration

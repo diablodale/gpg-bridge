@@ -9,7 +9,7 @@
  *   - GNUPGHOME is a fresh temp directory passed via extensionTestsEnv
  *   - gpg-agent is already running in GNUPGHOME
  *   - VSCODE_INTEGRATION_TEST=1 causes activate() to run full initialization
- *   - The extension detected Gpg4win and started AgentProxy against the test socket
+ *   - The extension detected gpg and started AgentProxy against the test socket
  *
  * Test key lifecycle is handled by before()/after() in this file.
  */
@@ -296,7 +296,7 @@ describe('Phase 1 — agent-proxy ↔ Real gpg-agent', function () {
   });
 
   // -----------------------------------------------------------------------
-  // 9. Bad Gpg4win path rejects start; restoring config recovers proxy
+  // 9. Bad gpg bin path rejects start; restoring config recovers proxy
   // -----------------------------------------------------------------------
   it('9. bad gpgBinDir rejects start; stop/start with valid config recovers proxy', async function () {
     // --- Part A: bad config ---

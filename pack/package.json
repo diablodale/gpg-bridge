@@ -1,7 +1,7 @@
 {
   "name": "gpg-bridge",
   "displayName": "GPG Bridge",
-  "description": "Use Windows GPG keys via a bridge to Dev Containers, SSH, and WSL remotes. Sign git commits, verify signatures, and encrypt/decrypt files without any remote-side configuration.",
+  "description": "Use local GPG keys via a bridge to Dev Containers, SSH, and WSL remotes. Sign git commits, verify signatures, and encrypt/decrypt files without any remote-side configuration.",
   "version": "1.0.0",
   "icon": "icon.png",
   "publisher": "hidale",
@@ -31,9 +31,25 @@
   "keywords": [
     "gpg",
     "gnupg",
+    "pgp",
+    "openpgp",
     "bridge",
     "assuan",
+    "git",
     "git-signing",
+    "commit-signing",
+    "signing",
+    "encryption",
+    "remote",
+    "wsl",
+    "devcontainer",
+    "dev container",
+    "containers",
+    "docker",
+    "ssh",
+    "yubikey",
+    "gpg-agent",
+    "keyring",
     "gpg4win"
   ],
   "extensionPack": [
@@ -43,11 +59,11 @@
   "capabilities": {
     "virtualWorkspaces": {
       "supported": false,
-      "description": "GPG Bridge requires Gpg4win on a Windows host and Node.js Unix socket APIs in the remote — neither is available in virtual workspaces."
+      "description": "GPG Bridge requires gpg-agent on a local host and Node.js Unix socket APIs in the remote — neither is available in virtual workspaces."
     },
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "GPG Bridge relays cryptographic operations to the Windows GPG agent — installing in an untrusted workspace could expose signing keys to a malicious workspace."
+      "description": "GPG Bridge relays cryptographic operations to the local GPG agent — installing in an untrusted workspace could expose signing keys to a malicious workspace."
     }
   },
   "vsce": {
