@@ -689,6 +689,8 @@ export class MockLogConfig {
 export class MockGpgCli extends GpgCli {
   /** Socket path returned verbatim by `gpgconfListDirs()`. */
   public readonly socketPath: string;
+  /** Version string returned by `getVersion()`. Defaults to `'2.4.0'`. */
+  public mockVersion = '2.4.0';
 
   constructor(socketPath: string, mockBinDir: string = '/fake/gpg/bin') {
     // Pass explicit gpgBinDir + existsSync stub so base-class detect() never throws.
@@ -702,5 +704,10 @@ export class MockGpgCli extends GpgCli {
    */
   override async gpgconfListDirs(_dirName: string): Promise<string> {
     return this.socketPath;
+  }
+
+  /** Return `mockVersion` without spawning a subprocess. */
+  override async getVersion(): Promise<string> {
+    return this.mockVersion;
   }
 }

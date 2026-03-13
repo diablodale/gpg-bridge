@@ -299,6 +299,18 @@ describe('AgentProxy', () => {
       );
       expect(proxy.getSocketPath()).to.be.null;
     });
+
+    it('getGpgVersion() returns null', async () => {
+      const proxy = new AgentProxy(
+        { logCallback: mockLogConfig.logCallback },
+        {
+          fileSystem: mockFileSystem,
+          socketFactory: mockSocketFactory,
+          gpgCliFactory: mockGpgCliFactory,
+        },
+      );
+      expect(await proxy.getGpgVersion()).to.be.null;
+    });
   });
 
   describe('stop()', () => {
@@ -370,11 +382,26 @@ describe('AgentProxy', () => {
       expect(proxy.getSocketPath()).to.equal(socketPath);
     });
 
+    it('getGpgVersion() returns the version string from the GpgCli instance', async () => {
+      const proxy = await makeProxy();
+      // MockGpgCli.mockVersion defaults to '2.4.0'
+      expect(await proxy.getGpgVersion()).to.equal('2.4.0');
+    });
+
+    it('getGpgVersion() returns custom version when MockGpgCli.mockVersion is overridden', async () => {
+      const customCli = new MockGpgCli(socketPath);
+      customCli.mockVersion = '2.2.19';
+      const factory: IGpgCliFactory = { create: () => customCli };
+      const proxy = await makeProxy({ gpgCliFactory: factory });
+      expect(await proxy.getGpgVersion()).to.equal('2.2.19');
+    });
+
     it('getters return null after stop()', async () => {
       const proxy = await makeProxy();
       await proxy.stop();
       expect(proxy.getGpgBinDir()).to.be.null;
       expect(proxy.getSocketPath()).to.be.null;
+      expect(await proxy.getGpgVersion()).to.be.null;
     });
   });
 
