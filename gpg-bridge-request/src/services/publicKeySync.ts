@@ -1,7 +1,7 @@
 /**
  * Public key sync service.
  *
- * Calls `_gpg-bridge-agent.exportPublicKeys` (on Windows via VS Code commands) to
+ * Calls `_gpg-bridge-agent.exportPublicKeys` (on local host via VS Code commands) to
  * retrieve the bytes, then passes them to `gpg --import` on the remote side.
  *
  * All VS Code API calls are injectable so the service can be unit-tested without
@@ -89,8 +89,8 @@ export class PublicKeySync {
   }
 
   /**
-   * Export public keys from the agent extension (running on Windows) and import them
-   * into the local GPG keyring on the remote host.
+   * Export public keys from the agent extension (running locally) and import them
+   * into the GPG keyring on the remote host.
    *
    * @param filter - Key filter forwarded to `_gpg-bridge-agent.exportPublicKeys`:
    *   - `'all'`    — all public keys in the keyring

@@ -21,6 +21,14 @@ install the pack rather than this extension directly.
 | `gpgBridgeAgent.gpgBinDir`    | _(auto-detect)_ | Path to the GnuPG `bin` directory containing `gpgconf` (e.g. `C:\Program Files\GnuPG\bin` on Windows, `/usr/bin` on Linux). Leave empty to auto-detect. |
 | `gpgBridgeAgent.debugLogging` | `false`         | Enable verbose logging in the **GPG Bridge Agent** output channel                                                                                       |
 
+```jsonc
+{
+  // examples
+  "gpgBridgeAgent.gpgBinDir": "C:\\Program Files\\GnuPG\\bin",
+  "gpgBridgeAgent.debugLogging": true,
+}
+```
+
 ## Commands
 
 | Command                         | Description                                        |

@@ -49,9 +49,22 @@
   "keywords": [
     "gpg",
     "gnupg",
+    "pgp",
+    "openpgp",
     "bridge",
     "assuan",
+    "git",
     "git-signing",
+    "commit-signing",
+    "signing",
+    "encryption",
+    "remote",
+    "wsl",
+    "devcontainer",
+    "ssh",
+    "yubikey",
+    "gpg-client",
+    "keyring",
     "gpg4win"
   ],
   "activationEvents": [

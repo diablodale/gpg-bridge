@@ -77,12 +77,13 @@ Both extensions start automatically when VS Code opens — no manual start neede
 
 ```jsonc
 {
-  // example
+  // examples
   "gpgBridgeAgent.gpgBinDir": "C:\\Program Files\\GnuPG\\bin",
-  "gpgBridgeAgent.debugLogging": false,
+  "gpgBridgeAgent.debugLogging": true,
   "gpgBridgeRequest.gpgBinDir": "/usr/bin",
+  "gpgBridgeRequest.debugLogging": true,
   "gpgBridgeRequest.autoSyncPublicKeys": "pairs",
-  "gpgBridgeRequest.debugLogging": false,
+  "gpgBridgeRequest.autoSyncPublicKeys": ["jane@example.com", "51761A86"],
 }
 ```
 

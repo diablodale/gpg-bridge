@@ -46,9 +46,23 @@
   "keywords": [
     "gpg",
     "gnupg",
+    "pgp",
+    "openpgp",
     "bridge",
     "assuan",
-    "git-signing"
+    "git",
+    "git-signing",
+    "commit-signing",
+    "signing",
+    "encryption",
+    "remote",
+    "wsl",
+    "devcontainer",
+    "ssh",
+    "yubikey",
+    "gpg-agent",
+    "keyring",
+    "gpg4win"
   ],
   "activationEvents": [
     "onStartupFinished"

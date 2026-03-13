@@ -1,6 +1,6 @@
 {
   "name": "gpg-bridge-monorepo",
-  "description": "GPG Bridge - Extension pack for bridging GPG to Windows from remotes",
+  "description": "Use local GPG keys via a bridge to Dev Containers, SSH, and WSL remotes. Sign git commits, verify signatures, and encrypt/decrypt files without any remote-side configuration.",
   "version": "1.0.0",
   "license": "MIT",
   "homepage": "https://github.com/diablodale/gpg-bridge",
@@ -12,9 +12,22 @@
   "keywords": [
     "gpg",
     "gnupg",
+    "pgp",
+    "openpgp",
     "bridge",
     "assuan",
+    "git",
     "git-signing",
+    "commit-signing",
+    "signing",
+    "encryption",
+    "remote",
+    "wsl",
+    "devcontainer",
+    "ssh",
+    "yubikey",
+    "gpg-agent",
+    "keyring",
     "gpg4win"
   ],
   "scripts": {

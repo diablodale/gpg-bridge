@@ -20,11 +20,21 @@ install the pack rather than this extension directly.
 
 ## Configuration
 
-| Setting                               | Default   | Description                                                                                                                                                                                  |
-| ------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gpgBridgeRequest.gpgBinDir`          | _(auto)_  | Path to the GnuPG `bin` directory on the remote (e.g. `/usr/local/bin`). Leave empty to auto-detect via PATH.                                                                                |
-| `gpgBridgeRequest.autoSyncPublicKeys` | _(empty)_ | Automatically sync public keys from the local keyring on activation. `"all"` exports all keys, `"pairs"` exports keys with matching private keys, or an array of specific fingerprints/UIDs. |
-| `gpgBridgeRequest.debugLogging`       | `false`   | Enable verbose logging in the **GPG Bridge Request** output channel                                                                                                                          |
+| Setting                               | Default   | Description                                                                                                                                                                                                                                  |
+| ------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gpgBridgeRequest.gpgBinDir`          | _(auto)_  | Path to the GnuPG `bin` directory on the remote (e.g. `/usr/local/bin`). Leave empty to auto-detect via PATH.                                                                                                                                |
+| `gpgBridgeRequest.autoSyncPublicKeys` | _(empty)_ | Automatically sync _public_ keys from the local keyring on activation.<ul><li>`"all"` = all public keys</li><li>`"pairs"` = public keys from matching key pairs</li><li>array of fingerprints/UIDs = public keys matching criteria</li></ul> |
+| `gpgBridgeRequest.debugLogging`       | `false`   | Enable verbose logging in the **GPG Bridge Request** output channel                                                                                                                                                                          |
+
+```jsonc
+{
+  // examples
+  "gpgBridgeRequest.gpgBinDir": "/usr/bin",
+  "gpgBridgeRequest.debugLogging": true,
+  "gpgBridgeRequest.autoSyncPublicKeys": "pairs",
+  "gpgBridgeRequest.autoSyncPublicKeys": ["jane@example.com", "51761A86"],
+}
+```
 
 ## Commands
 
