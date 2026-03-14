@@ -75,18 +75,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   outputChannel = vscode.window.createOutputChannel('GPG Bridge Request');
   context.subscriptions.push(outputChannel);
 
-  // This extension is the remote (Linux/macOS) half of the bridge.
-  // The os field in package.json prevents marketplace installs on win32, but
-  // local VSIX installs bypass that check. Guard at runtime so nothing starts.
-  if (process.platform === 'win32') {
-    const msg =
-      'GPG Bridge Request is inactive. It can only be installed on a Linux/macOS remote (dev container, SSH, WSL).';
-    outputChannel.appendLine(msg);
-    void vscode.window.showErrorMessage(msg);
-    return;
-  }
-
   try {
+    // This extension is the remote (Linux/macOS) half of the bridge.
+    // The os field in package.json prevents marketplace installs on win32, but
+    // local VSIX installs bypass that check. Guard at runtime so nothing starts.
+    if (process.platform === 'win32') {
+      const msg =
+        'GPG Bridge Request is inactive. It can only be installed on a Linux/macOS remote (dev container, SSH, WSL).';
+      void vscode.window.showErrorMessage(msg);
+      throw new Error(msg);
+    }
+
     // Start GPG Bridge Request on remote
     // isIntegrationTestEnvironment() overrides isTestEnvironment() so integration
     // tests get full extension initialization (unit tests still skip init).
@@ -122,6 +121,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.registerCommand('gpg-bridge-request.syncPublicKeys', noop),
     );
   }
+
+  // Handle vscode://hidale.gpg-bridge-request/... URIs
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      handleUri(uri: vscode.Uri): void {
+        const path = uri.path.toLowerCase();
+        if (path === '/showstatus') {
+          void vscode.commands.executeCommand('gpg-bridge-request.showStatus');
+        } else if (path === '/showaboutdialog') {
+          void vscode.commands.executeCommand('workbench.action.showAboutDialog');
+        }
+      },
+    }),
+  );
 
   // Integration test helper commands — registered outside try/catch so they are
   // always available even when startup (version check or proxy start) fails.
