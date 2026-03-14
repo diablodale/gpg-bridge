@@ -98,6 +98,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('gpg-bridge-agent.showStatus', showStatus),
     outputChannel,
     statusBarItem,
+    // Handle vscode://hidale.gpg-bridge-agent/... URIs
+    vscode.window.registerUriHandler({
+      handleUri(uri: vscode.Uri): void {
+        const path = uri.path.toLowerCase();
+        if (path === '/showstatus') {
+          void vscode.commands.executeCommand('gpg-bridge-agent.showStatus');
+        } else if (path === '/showaboutdialog') {
+          void vscode.commands.executeCommand('workbench.action.showAboutDialog');
+        }
+      },
+    }),
   );
 
   // Update status bar
