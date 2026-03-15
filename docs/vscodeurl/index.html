@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Opening VS Code link...</title>
+  <noscript><style>p { display: none; }</style></noscript>
+  <script>
+    // The query string encodes the vscode:// authority+path directly.
+    // Whitelist of allowed suffixes — no open redirect possible.
+    const ALLOWED = new Set([
+      'hidale.gpg-bridge-agent/showaboutdialog',
+      'hidale.gpg-bridge-agent/showstatus',
+      'hidale.gpg-bridge-request/showstatus',
+      'settings/gpgBridgeAgent.debugLogging',
+      'settings/gpgBridgeRequest.debugLogging',
+    ]);
+
+    // location.search is "?hidale.gpg-bridge-agent/showstatus" — strip the "?"
+    // Decode before whitelist check so percent-encoded variants (e.g. %2F) still match.
+    // decodeURIComponent throws on malformed input (e.g. %ZZ), so wrap in try/catch.
+    let key = '';
+    try {
+      key = decodeURIComponent(location.search.slice(1));
+    } catch (_) { /* malformed encoding — key stays '' and fails whitelist */ }
+
+    if (ALLOWED.has(key)) {
+      // Defer redirect until DOM is painted so the user sees the message briefly
+      // before VS Code opens. location.replace in <head> fires before first paint,
+      // leaving the page visually blank.
+      document.addEventListener('DOMContentLoaded', function () {
+        // blur fires when the "Open VS Code?" dialog appears (window loses focus).
+        // focus fires when the user dismisses the dialog (window regains focus).
+        // Only navigate back after focus returns — attempting back() while the
+        // dialog is open would cancel the protocol dispatch.
+        window.addEventListener('blur', function onBlur() {
+          window.removeEventListener('blur', onBlur);
+          window.addEventListener('focus', function onFocus() {
+            window.removeEventListener('focus', onFocus);
+            history.back();
+          });
+        });
+        location.href = 'vscode://' + key;
+      });
+    }
+  </script>
+</head>
+<body>
+  <noscript><p style="display:block">JavaScript must be enabled to open VS Code links.</p></noscript>
+  <p>Opening VS Code&hellip; you can go back or close this tab anytime.
+  <br/>If nothing happens, the link is invalid or VS Code is not installed.</p>
+</body>
+</html>
