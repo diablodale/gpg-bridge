@@ -86,5 +86,22 @@ jobs:
       - name: Compile
         run: npm run compile
 
+      # @vscode/test-cli downloads a full VS Code binary (~167 MB) into each
+      # extension's .vscode-test/ folder before running tests.  Cache only the
+      # versioned binary directories — globs exclude user-data/ and extensions/,
+      # which contain VS Code runtime state that must not persist between runs.
+      # Weekly key rotation picks up new stable releases without manual pinning.
+      - name: Get week number for cache key
+        id: date
+        run: echo "week=$(date +%Y%W)" >> "$GITHUB_OUTPUT"
+      - name: Cache VS Code test binaries
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            gpg-bridge-agent/.vscode-test/vscode-*
+            gpg-bridge-request/.vscode-test/vscode-*
+          key: vscode-test-${{ runner.os }}-${{ steps.date.outputs.week }}
+          restore-keys: vscode-test-${{ runner.os }}-
+
       - name: Unit tests
         run: xvfb-run -a npm test
