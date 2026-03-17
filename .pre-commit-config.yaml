@@ -11,6 +11,20 @@ default_install_hook_types:
 # default_stages doesn't work because repo hooks often define their stages which overrides default_stages
 
 repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        args: ['--redact', '--verbose']
+        stages: [pre-commit]
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.23.1
+    hooks:
+      - id: zizmor
+        args: ['--pedantic']
+        stages: [pre-commit]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -23,13 +37,6 @@ repos:
         stages: [pre-commit]
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
-        stages: [pre-commit]
-
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
-    hooks:
-      - id: gitleaks
-        args: ['--redact', '--verbose']
         stages: [pre-commit]
 
   - repo: local

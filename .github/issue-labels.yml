@@ -1,0 +1,47 @@
+# Labels applied based on issue body content.
+# GitHub issue forms render a dropdown's selected value as:
+#   ### <label>\n\n<selected value>
+# Use delimited /regex/flags form to enable the m flag so ^ matches per line.
+# Both "agent" and "request" labels are applied when "General / Both" is selected.
+
+agent:
+  - >-
+    /^#+ Component\s+(Agent|Both)/im
+
+request:
+  - >-
+    /^#+ Component\s+(Request|Both)/im
+
+# agent os platform
+mac-local:
+  - >-
+    /#+ Agent Extension.*?OS: darwin.*?#+ Request Extension/is
+
+freebsd-local:
+  - >-
+    /#+ Agent Extension.*?OS: freebsd.*?#+ Request Extension/is
+
+linux-local:
+  - >-
+    /#+ Agent Extension.*?OS: linux.*?#+ Request Extension/is
+
+win-local:
+  - >-
+    /#+ Agent Extension.*?OS: win32.*?#+ Request Extension/is
+
+# request remote type/connection
+ssh-remote:
+  - >-
+    /^Remote type: ssh/im
+
+wsl-remote:
+  - >-
+    /^Remote type: wsl/im
+
+container-remote:
+  - >-
+    /^Remote type: (dev-container|attached-container|k8s-container|apple-container)/im
+
+tunnel-remote:
+  - >-
+    /^Remote type: tunnel/im

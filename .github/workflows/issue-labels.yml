@@ -1,0 +1,25 @@
+name: Issue Automation
+on:
+  issues:
+    types: [opened, edited]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  issue-labels:
+    name: Labels
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # add/remote labels on issue, create labels if they don't exist
+      contents: read
+    steps:
+      - uses: github/issue-labeler@c1b0f9f52a63158c4adc09425e858e87b32e9685 #v3.4
+        with:
+          configuration-path: .github/issue-labels.yml
+          enable-versioned-regex: 0
+          sync-labels: 1
+          repo-token: ${{ github.token }}
