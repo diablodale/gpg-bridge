@@ -64,7 +64,6 @@ jobs:
   # xvfb is pre-installed on ubuntu-latest — no apt-get step needed.
   test:
     name: Build and unit test
-    if: false # temporarily disabled — xvfb + vscode-test setup being verified
     needs: [checks]
     runs-on: ubuntu-latest
     permissions:
