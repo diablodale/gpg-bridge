@@ -874,8 +874,8 @@ Each file declares _when_ it runs (triggers) and _what it does_ (steps). Steps c
 run shell commands, call pre-built actions from the GitHub Actions Marketplace, or
 interact with the GitHub API.
 
-`release-please` is a pre-built action (`googleapis/release-please-action`) that
-acts as a bot. After every merge to `main` it:
+[release-please](https://github.com/marketplace/actions/release-please-action)
+is a pre-built GitHub action that acts as a bot. After every merge to `main` it:
 
 1. Reads your git commit messages since the last release tag
 2. Determines the next semver version from Conventional Commit prefixes
@@ -976,12 +976,31 @@ jobs:
 `permissions: contents: write` allows the bot to create tags and update files.
 `permissions: pull-requests: write` allows the bot to open and update the release PR.
 
-**6e.** Create `.github/workflows/ci.yml` — triggers on every push and PR to `main`:
+**6e.** ✅ Create `.github/workflows/ci.yml` — triggers on every push and PR to `main`.
 
-- Runner: `ubuntu-latest`
-- Steps: checkout → Node.js 22 setup → `npm install` → `npm run compile` →
-  `npm test` → integration tests for both extensions
-- Annotates test failures inline in the PR diff
+Two-job design so prek quality gates block the build-and-test job:
+
+- **`checks` job** (`ubuntu-latest`): checkout → Node.js 22 → npm install →
+  prek environment cache (keyed on `.pre-commit-config.yaml`) →
+  `npx prek run --stage pre-commit --all-files` (gitleaks, zizmor, prettier,
+  TypeScript compile, ESLint)
+- **`test` job** (`ubuntu-latest`, `needs: [checks]`): checkout → Node.js 22 →
+  npm install → `npm run compile` → `npm test` (unit suite)
+
+`PREK_HOME: ~/.cache/prek` is set on the `checks` job so the `actions/cache`
+step can persist downloaded hook environments between runs.
+
+All action pins are full commit-SHA references (zizmor enforces this via the
+`checks` job itself).
+
+> **Xvfb required for unit tests**: `gpg-bridge-agent` and `gpg-bridge-request`
+> unit tests run via `@vscode/test-cli`, which launches VS Code (Electron) as
+> the extension host. Electron requires a display server on Linux. The `test`
+> job wraps `npm test` with `xvfb-run -a`; Xvfb is pre-installed on
+> `ubuntu-latest` — no `apt-get` step needed.
+>
+> **Integration tests deferred**: integration tests additionally require a live
+> GPG agent. That setup is tracked separately.
 
 **6f.** Create a Marketplace publish token and store it as a GitHub Actions secret
 (manual, one-time). The VS Code Marketplace runs on Azure DevOps infrastructure,
