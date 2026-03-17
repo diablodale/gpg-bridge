@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Restrict all jobs to read-only contents by default; individual jobs add only what they need.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Job 1: pre-commit checks ──────────────────────────────────────────────────
+  # Runs all prek pre-commit hooks (gitleaks, zizmor, prettier, TypeScript
+  # compile, ESLint) on every file in the repo.  The build-and-test job below
+  # only starts if this job succeeds, so quality gates can't be bypassed.
+  checks:
+    name: Pre-commit checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Tell prek where to store its downloaded hook environments so that the
+      # actions/cache step can persist them across runs.
+      PREK_HOME: ~/.cache/prek
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Cache prek hook environments
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ~/.cache/prek
+          # Invalidate when the hook list or their pinned versions change.
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            prek-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run prek checks
+        run: npx prek run --stage pre-commit --all-files
+
+  # ── Job 2: build and unit test ────────────────────────────────────────────────
+  # Compiles TypeScript and runs the full unit test suite.  Only starts after
+  # the checks job passes — no point testing code that doesn't compile or lint.
+  #
+  # The agent and request unit tests run via @vscode/test-cli, which downloads
+  # and launches VS Code (Electron) as the extension host.  Electron requires a
+  # display server on Linux, so all test commands are wrapped with xvfb-run.
+  # xvfb is pre-installed on ubuntu-latest — no apt-get step needed.
+  test:
+    name: Build and unit test
+    if: false # temporarily disabled — xvfb + vscode-test setup being verified
+    needs: [checks]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Unit tests
+        run: xvfb-run -a npm test
