@@ -1,0 +1,68 @@
+name: Feature request 💡
+description: Suggest an idea for this project
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is for requesting enhancements and new features only. If you have a bug or failure, please [report it here instead](https://github.com/diablodale/gpg-bridge/issues/new?template=bug_report.yml).
+
+        > [!WARNING]
+        > Do not include private keys, passphrases, sensitive data, or personally identifiable information anywhere in this issue.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component does this relate to?
+      options:
+        - General / Both
+        - Agent (local host machine)
+        - Request (remote machine)
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: A clear and concise description of why this feature is needed or what problem it solves.
+      placeholder: |-
+        When I need to do X, I have to do Y, which is inconvenient because Z...
+        I am always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solution
+      description: A clear and concise description of what you want to happen or the solution.
+      placeholder: |-
+        I would like to see a button that...
+        It would be great if X would happen when Y...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: A clear and concise description of alternative solutions or features you have considered.
+      placeholder: |-
+        I have considered doing X, but it has the drawback of Y...
+        Another option could be Z, but it might not be ideal because...
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: >-
+        Add any other context about your feature request here.
+      placeholder: screenshots, links, logs, ...
+    validations:
+      required: false

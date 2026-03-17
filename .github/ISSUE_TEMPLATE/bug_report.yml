@@ -1,0 +1,168 @@
+name: Bug report 🐛
+description: Create a report to help us improve
+labels:
+  - bug
+body:
+  ########## Description ##########
+  - type: markdown
+    attributes:
+      value: |
+        ## Describe the Problem
+
+        This form is for reporting bugs and failures only. If you have an enhancement or feature request, please [request it here instead](https://github.com/diablodale/gpg-bridge/issues/new?template=feature_request.yml).
+
+        > [!WARNING]
+        > Do not include private keys, passphrases, sensitive data, or personally identifiable information anywhere in this issue.
+
+  - type: dropdown
+    id: components
+    attributes:
+      label: Component
+      description: Which component does this relate to?
+      options:
+        - Both
+        - Agent (local host machine)
+        - Request (remote machine)
+        - Other / Not sure
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug or failure.
+      placeholder: >-
+        Example: When the agent extension starts, it fails with a red error "Failed to connect to gpg-agent".
+        It seems to be related to my laptop because I don't see this issue on my desktop machine.
+    validations:
+      required: true
+
+  ########## Setup ##########
+  - type: markdown
+    attributes:
+      value: >
+        ## Setup
+
+        Provide details about your setup. This helps us understand the context of the problem
+        and identify potential causes. Each field provides an easy way to copy-paste the
+        details automatically from your VS Code environment.
+
+  - type: textarea
+    id: vscode
+    attributes:
+      label: VS Code
+      description: >-
+        In VS Code [Help menu ⇒ About ⇒ Copy](https://diablodale.github.io/gpg-bridge/vscodeurl/?hidale.gpg-bridge-agent/showaboutdialog).
+        Paste the output here.
+      render: text
+      placeholder: |-
+        Version: ...
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent
+    attributes:
+      label: Agent Extension
+      description: >-
+        In VS Code [Press F1 ⇒ GPG Bridge Agent: Show Status ⇒ Copy](https://diablodale.github.io/gpg-bridge/vscodeurl/?hidale.gpg-bridge-agent/showstatus).
+        Paste the output here.
+      render: text
+      placeholder: |-
+        GPG Bridge Agent Status
+        State: ...
+        ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: request
+    attributes:
+      label: Request Extension
+      description: >-
+        In VS Code [Press F1 ⇒ GPG Bridge Request: Show Status ⇒ Copy](https://diablodale.github.io/gpg-bridge/vscodeurl/?hidale.gpg-bridge-request/showstatus).
+        Paste the output here.
+      render: text
+      placeholder: |-
+        GPG Bridge Request Status
+        State: ...
+        ...
+    validations:
+      required: false
+
+  ########## Repro ##########
+  - type: markdown
+    attributes:
+      value: >
+        ## Reproduce the Problem
+
+        Provide the steps to reproduce the problem, the actual result, and the expected result.
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: >-
+        Detail every step needed to reproduce the issue. Include menu items to click, which commands to run,
+        and which files to open. If the issue is not easily reproducible, please include as much information
+        as possible about the circumstances under which it occurs.
+      placeholder: |-
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: result
+    attributes:
+      label: Actual Result
+      description: What *actually* happened? What is the problem? Include screenshots or drawings if helpful.
+      placeholder: >-
+        Example: The extension fails to start and shows the error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expect
+    attributes:
+      label: Expected Result
+      description: What did you *expect* to happen? Include screenshots or drawings if helpful.
+      placeholder: >-
+        Example: The extension should start successfully and synchronize...
+    validations:
+      required: true
+
+  ########## Miscellaneous ##########
+  - type: markdown
+    attributes:
+      value: >
+        ## Logs, Workarounds, Related Issues, Links...
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Open the VS Code **`Output`** panel and select the **`GPG Bridge Agent`** and/or **`GPG Bridge Request`** channels.
+        Paste relevant log lines here. It is helpful to enable debug logging in both
+        [Agent](https://diablodale.github.io/gpg-bridge/vscodeurl/?settings/gpgBridgeAgent.debugLogging) and
+        [Request](https://diablodale.github.io/gpg-bridge/vscodeurl/?settings/gpgBridgeRequest.debugLogging)
+        extensions -- then reproduce the problem again to capture more detailed logs.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: misc
+    attributes:
+      label: Miscellaneous
+      description: >-
+        Add other context here: workarounds, related issues, links to documentation, etc.
+      placeholder: |-
+        Example: A workaround is to restart the extension. This issue may be related to #123.
+    validations:
+      required: false
