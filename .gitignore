@@ -1,5 +1,6 @@
 .vscode-test/
 out
+coverage/
 node_modules
 *.vsix
 **/*.map

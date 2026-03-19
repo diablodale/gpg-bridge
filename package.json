@@ -61,7 +61,6 @@
     "test:agent": "npm --prefix gpg-bridge-agent test",
     "test:request": "npm --prefix gpg-bridge-request test",
     "test:integration": "npm --prefix shared run test:integration && npm --prefix gpg-bridge-agent run test:integration && npm --prefix gpg-bridge-request run test:integration",
-    "test:watch": "npm --prefix shared run test:watch",
     "lint": "npm run lint:shared && npm run lint:agent && npm run lint:request",
     "lint:shared": "npm --prefix shared run lint",
     "lint:agent": "npm --prefix gpg-bridge-agent run lint",
@@ -80,6 +79,8 @@
     "publish:dry-run": "node scripts/publish.js --dry-run"
   },
   "devDependencies": {
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "@commitlint/cli": "^19.8.0",
     "@commitlint/config-conventional": "^19.8.0",
     "@j178/prek": "^0.3.3",

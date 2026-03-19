@@ -116,6 +116,6 @@ repos:
         name: Unit tests
         stages: [pre-push]
         language: system
-        entry: npm test
+        entry: npm run test
         pass_filenames: false
         always_run: true

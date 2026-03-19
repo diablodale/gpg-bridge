@@ -6,6 +6,7 @@
     "rootDir": "src",
     "lib": ["ES2022"],
     "sourceMap": true,
+    "inlineSources": true,
     "skipLibCheck": true,
     "strict": true,
     "declaration": true,

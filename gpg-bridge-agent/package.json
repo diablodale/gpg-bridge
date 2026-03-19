@@ -117,7 +117,7 @@
     "pretest:integration": "npm run compile:integration && npm run lint:integration",
     "lint": "eslint src",
     "lint:integration": "eslint src",
-    "test": "vscode-test",
+    "test": "vscode-test --config vscode-test-cli.cjs --coverage",
     "test:integration": "node out/test/integration/runTest.js",
     "vsix": "vsce package"
   },

@@ -59,11 +59,37 @@ TypeScript output goes to each extension's `out/` folder.
 ### Unit tests
 
 ```powershell
-npm test
+npm run test
 ```
 
 Runs unit tests for `shared`, `gpg-bridge-agent`, and `gpg-bridge-request` in sequence.
 No VS Code runtime or real GPG agent required — all I/O is injected via mocks.
+
+Each package compiles before running and lints automatically via `pretest`. Coverage is
+collected on every `npm run test` using V8 and written to each package's `coverage/` folder:
+
+| File                           | Use                                                    |
+| ------------------------------ | ------------------------------------------------------ |
+| `coverage/lcov.info`           | Tooling (Codecov, coverage gutters VS Code extensions) |
+| `coverage/coverage-final.json` | VS Code Test Explorer inline source decorators         |
+
+A per-file coverage table is also printed to stdout at the end of each run.
+
+### VS Code Test Explorer
+
+Open the **Testing** panel (`Ctrl+Shift+P` → "Testing: Focus on Test Explorer View").
+The root `.vscode-test.cjs` registers a single **"All unit tests"** profile that spans
+all three packages in one TestRun. Click ▷ **Run with Coverage** to run all tests and
+see inline coverage decorators appear directly on source lines in the editor.
+
+> **Why a single root profile?** The VS Code Extension Test Runner uses one shared
+> `IstanbulCoverageContext` across all discovered configs. When multiple configs run
+> sequentially, only the last completed TestRun retains working inline-coverage bindings.
+> One combined profile = one TestRun = inline decorators for every package.
+
+Per-package configs (`vscode-test-cli.cjs` in each sub-folder) are named to avoid the
+Extension Test Runner's discovery glob (`**/.vscode-test.*`) and are used only by the
+`npm run test` CLI scripts.
 
 ### Integration tests
 
@@ -79,12 +105,6 @@ Or run per-extension:
 ```powershell
 npm --prefix gpg-bridge-agent run test:integration
 npm --prefix gpg-bridge-request run test:integration
-```
-
-### Watch mode (unit tests only)
-
-```powershell
-npm run test:watch
 ```
 
 ## VSIX Packaging
@@ -118,7 +138,7 @@ before changes reach GitHub.
 | ------------ | --------------------- | -------------------------------------------------- |
 | `pre-commit` | `git commit`          | `npm run compile` then `npm run lint`              |
 | `commit-msg` | after message entered | `commitlint` validates Conventional Commits format |
-| `pre-push`   | `git push`            | `npm test` (unit suite)                            |
+| `pre-push`   | `git push`            | `npm run test` (unit suite)                        |
 
 ### Installing hooks
 
@@ -139,7 +159,7 @@ git push --no-verify
 ```
 
 > ⚠️ Bypass sparingly. The GitHub repository ruleset still enforces commit
-> signing server-side, and the PR flow enforces `npm test` via CI.
+> signing server-side, and the PR flow enforces `npm run test` via CI.
 
 ---
 
@@ -177,7 +197,7 @@ enforces this server-side via a GitHub repository ruleset.
 ## Pull Request Guidelines
 
 1. Fork the repo and create a feature branch from `main`
-2. Run the full test suite before opening a PR: `npm test && npm run test:integration`
+2. Run the full test suite before opening a PR: `npm run test && npm run test:integration`
 3. Keep each PR focused on a single logical change — split unrelated changes into
    separate PRs
 4. PR title must follow the Conventional Commits format above
