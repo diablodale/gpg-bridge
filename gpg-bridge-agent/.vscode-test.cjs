@@ -1,6 +1,7 @@
 const { defineConfig } = require('@vscode/test-cli');
 
 module.exports = defineConfig({
+  label: 'Agent unit tests',
   // Integration tests live in out/test/integration/ and run only via `npm run test:integration`.
   // Use a non-recursive glob so only unit test files at the top of out/test/ are included.
   files: 'out/test/*.test.js',

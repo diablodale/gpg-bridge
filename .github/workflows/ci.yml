@@ -58,10 +58,11 @@ jobs:
   # Compiles TypeScript and runs the full unit test suite.  Only starts after
   # the checks job passes — no point testing code that doesn't compile or lint.
   #
-  # The agent and request unit tests run via @vscode/test-cli, which downloads
-  # and launches VS Code (Electron) as the extension host.  Electron requires a
-  # display server on Linux, so all test commands are wrapped with xvfb-run.
-  # xvfb is pre-installed on ubuntu-latest — no apt-get step needed.
+  # The shared, agent, and request unit tests all run via @vscode/test-cli,
+  # which downloads and launches VS Code (Electron) as the extension host.
+  # Electron requires a display server on Linux, so all test commands are
+  # wrapped with xvfb-run.  xvfb is pre-installed on ubuntu-latest — no
+  # apt-get step needed.
   test:
     name: Build and unit test
     needs: [checks]
@@ -87,7 +88,7 @@ jobs:
         run: npm run compile
 
       # @vscode/test-cli downloads a full VS Code binary (~167 MB) into each
-      # extension's .vscode-test/ folder before running tests.  Cache only the
+      # package's .vscode-test/ folder before running tests.  Cache only the
       # versioned binary directories — globs exclude user-data/ and extensions/,
       # which contain VS Code runtime state that must not persist between runs.
       # Weekly key rotation picks up new stable releases without manual pinning.
@@ -98,6 +99,7 @@ jobs:
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: |
+            shared/.vscode-test/vscode-*
             gpg-bridge-agent/.vscode-test/vscode-*
             gpg-bridge-request/.vscode-test/vscode-*
           key: vscode-test-${{ runner.os }}-${{ steps.date.outputs.week }}

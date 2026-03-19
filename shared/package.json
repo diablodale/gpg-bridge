@@ -3,6 +3,10 @@
   "description": "Shared code for GPG Bridge extensions",
   "version": "1.0.0",
   "license": "MIT",
+  "engines": {
+    "vscode": "^1.108.1",
+    "node": ">=22.21.1"
+  },
   "homepage": "https://github.com/diablodale/gpg-bridge",
   "repository": {
     "type": "git",
@@ -47,17 +51,19 @@
     "pretest": "npm run compile && npm run lint",
     "pretest:integration": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "mocha --ui bdd out/test/*.test.js",
-    "test:integration": "mocha --ui bdd out/test/integration/*.test.js"
+    "test": "vscode-test --label \"Shared 1: unit tests\"",
+    "test:integration": "vscode-test --label \"Shared 2: integration tests\""
   },
   "dependencies": {
     "which": "^5.0.0"
   },
   "devDependencies": {
     "@types/chai": "^4.3.20",
-    "@types/which": "^3.0.4",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.x",
+    "@types/which": "^3.0.4",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "chai": "^4.5.0",
     "eslint": "^10.0.0",
     "eslint-config-prettier": "^10",
