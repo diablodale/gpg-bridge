@@ -107,3 +107,40 @@ jobs:
 
       - name: Unit tests
         run: xvfb-run -a npm test
+
+      # lcov.info files from tsc + c8 use paths relative to each package root
+      # (e.g. SF:src/extension.ts) and cross-package refs use "../" (e.g.
+      # SF:../shared/src/gpgCli.ts).  Normalize to repo-root-relative paths so
+      # Codecov can match them against the git tree.
+      - name: Normalize coverage paths to repo-root-relative
+        run: |
+          # Strip leading ../ from cross-package refs in agent and request
+          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-agent/coverage/lcov.info
+          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-request/coverage/lcov.info
+          # Prefix package-local src/ paths with each package's directory name
+          sed -i 's|^SF:src/|SF:shared/src/|' shared/coverage/lcov.info
+          sed -i 's|^SF:src/|SF:gpg-bridge-agent/src/|' gpg-bridge-agent/coverage/lcov.info
+          sed -i 's|^SF:src/|SF:gpg-bridge-request/src/|' gpg-bridge-request/coverage/lcov.info
+
+      # Upload lcov reports produced by the --coverage flag in each package's
+      # test script.  Token is set for same-repo branches/PRs; fork PRs send
+      # a tokenless upload (works for public repos with the Codecov GitHub App
+      # installed).  Non-fatal so a Codecov outage never blocks a merge.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad #v5.5.3
+        with:
+          name: unittests
+          # CODECOV_TOKEN only authorises coverage uploads; exposure risk does not warrant a dedicated environment.
+          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          # disable_search prevents Codecov from auto-discovering other coverage files
+          # (e.g. coverage-final.json) which would cause double-counting.  Only the
+          # lcov.info files listed below are uploaded.
+          disable_search: true
+          files: shared/coverage/lcov.info,gpg-bridge-agent/coverage/lcov.info,gpg-bridge-request/coverage/lcov.info
+          # Set a flag to filter for unit tests in Codecov reports.  This is helpful
+          # because we also have end-to-end tests that report coverage, and we want to be
+          # able to distinguish between them in Codecov's UI and PR comments.
+          flags: unittests
+          # Don't fail the job if the upload fails — we don't want flaky network
+          # issues or Codecov outages to block merges.
+          fail_ci_if_error: false

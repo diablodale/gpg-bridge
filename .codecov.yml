@@ -1,0 +1,33 @@
+# Codecov configuration — https://docs.codecov.com/docs/codecovyml-reference
+
+coverage:
+  status:
+    project:
+      default:
+        # Must not drop below the base commit's measured coverage.
+        target: auto
+        # Allow up to 2% slip to avoid noise from small test-count variance.
+        threshold: 2%
+    patch:
+      default:
+        # New/changed lines introduced in the PR must be ≥70% covered.
+        target: 70%
+
+component_management:
+  individual_components:
+    - component_id: shared
+      name: Shared library
+      paths:
+        - shared/src/**
+    - component_id: agent
+      name: GPG Bridge Agent
+      paths:
+        - gpg-bridge-agent/src/**
+    - component_id: request
+      name: GPG Bridge Request
+      paths:
+        - gpg-bridge-request/src/**
+
+comment:
+  layout: 'condensed_header, diff, components, files'
+  behavior: default
