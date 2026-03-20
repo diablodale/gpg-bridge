@@ -2,9 +2,6 @@
 
 <img src="../assets/icon.png" alt="GPG Bridge Request icon" width="96" align="right" />
 
-<!-- Badges — update URLs after Phase 5 marketplace publish -->
-<!-- ![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/hidale.gpg-bridge-request) -->
-
 Creates a GPG agent Unix socket on remote environments (WSL, Dev Containers, SSH)
 and forwards all GPG protocol operations to
 [GPG Bridge Agent](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge-agent)

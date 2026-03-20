@@ -2,11 +2,6 @@
 
 <img src="../assets/icon.png" alt="GPG Bridge icon" width="96" align="right" />
 
-<!-- Badges  update URLs after Phase 5 marketplace publish -->
-<!-- ![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/hidale.gpg-bridge) -->
-<!-- ![Installs](https://img.shields.io/visual-studio-marketplace/i/hidale.gpg-bridge) -->
-<!-- ![License](https://img.shields.io/github/license/diablodale/gpg-bridge) -->
-
 Bridge GPG operations from Linux remotes (WSL, Dev Containers, SSH) to the GPG agent
 on your local host running [GnuPG](https://gnupg.org/) 2.1+. Sign commits,
 verify signatures, and encrypt/decrypt files from any remote environment — no extra

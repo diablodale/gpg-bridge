@@ -2,9 +2,6 @@
 
 <img src="../assets/icon.png" alt="GPG Bridge Agent icon" width="96" align="right" />
 
-<!-- Badges — update URLs after Phase 5 marketplace publish -->
-<!-- ![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/hidale.gpg-bridge-agent) -->
-
 Manages authenticated connections to the local GPG agent (`gpg-agent`).
 Part of the [GPG Bridge](https://marketplace.visualstudio.com/items?itemName=hidale.gpg-bridge) pack —
 install the pack rather than this extension directly.

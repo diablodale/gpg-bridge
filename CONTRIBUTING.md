@@ -1,5 +1,7 @@
 # Contributing to GPG Bridge
 
+[![Unit test coverage](https://img.shields.io/codecov/c/gh/diablodale/gpg-bridge?token=61T3LCANGO&flag=unittests&logo=codecov&label=Unit%20test%20coverage)](https://codecov.io/gh/diablodale/gpg-bridge)
+
 ## Prerequisites
 
 | Tool                                                                                                     | Version   | Notes                                                                  |
