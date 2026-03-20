@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: # allows manual runs
 
 # Restrict all jobs to read-only contents by default; individual jobs add only what they need.
 permissions: {}
