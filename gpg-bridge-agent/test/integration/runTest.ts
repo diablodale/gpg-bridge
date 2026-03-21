@@ -16,6 +16,7 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
 import { runTests } from '@vscode/test-electron';
 import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 
@@ -24,7 +25,18 @@ import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
 // this single gpg test helper is shared across all found test.ts files
 const gpg = new GpgTestHelper();
 
+// Directory for raw V8 coverage JSON written by the extension host.
+// Cleared before each run to avoid accumulating stale data from prior runs.
+const v8CovDir = path.resolve(__dirname, '../../../coverage/v8-integration');
+
 async function main(): Promise<void> {
+  // Clear and recreate the V8 coverage directory before the extension host starts
+  // so stale data from previous runs does not pollute this run's report.
+  if (fs.existsSync(v8CovDir)) {
+    fs.rmSync(v8CovDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(v8CovDir, { recursive: true });
+
   // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
   // SSH / Putty / OpenSSH-disable options are not valid conf file entries in
   // this build and will cause gpg-agent --gpgconf-test to fail.
@@ -50,6 +62,9 @@ async function main(): Promise<void> {
       extensionTestsEnv: {
         VSCODE_INTEGRATION_TEST: '1',
         GNUPGHOME: gpg.gnupgHome,
+        // Instruct the extension host's Node process to write V8 coverage JSON here.
+        // c8 reads this directory after the run to produce lcov/json/text reports.
+        NODE_V8_COVERAGE: v8CovDir,
       },
     });
   } finally {

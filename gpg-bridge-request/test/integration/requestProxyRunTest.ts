@@ -139,8 +139,25 @@ const REMOTE_CONTAINER_URI = Buffer.from(
   }),
 ).toString('hex');
 const containerWorkspaceFolder = `/workspaces/${path.basename(workspaceRoot)}`;
+// Phase 2 clears this directory at startup so Phase 3's accumulated data starts clean.
+// Both phases write V8 JSON here via NODE_V8_COVERAGE in devcontainer.json remoteEnv;
+// gpgCliRunTest.ts (Phase 3, last runner) processes the combined data with c8.
+//
+// ⚠ ORDER DEPENDENCY: this runner (Phase 2) MUST execute before gpgCliRunTest.ts (Phase 3).
+// Enforcement: the parent script `test:integration` chains them with &&:
+//   "npm run test:integration:request-proxy && npm run test:integration:gpg-cli"
+// Running `test:integration:request-proxy` alone produces V8 JSON but no coverage report —
+// c8 only runs at the end of Phase 3. The JSON is left on disk and cleared on the next run.
+const v8CovDir = path.resolve(__dirname, '../../../coverage/v8-integration');
 
 async function main(): Promise<void> {
+  // Clear and recreate the V8 coverage directory before Phase 2 starts so that
+  // stale JSON from prior runs is removed and the directory exists for the container.
+  if (fs.existsSync(v8CovDir)) {
+    fs.rmSync(v8CovDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(v8CovDir, { recursive: true });
+
   // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
   gpgLocalHost.writeAgentConf(['disable-scdaemon']);
 

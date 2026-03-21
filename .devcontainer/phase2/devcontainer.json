@@ -25,7 +25,11 @@
   "remoteEnv": {
     "VSCODE_INTEGRATION_TEST": "1",
     "TEST_KEY_FINGERPRINT": "${localEnv:TEST_KEY_FINGERPRINT}",
-    "TEST_KEY_KEYGRIP": "${localEnv:TEST_KEY_KEYGRIP}"
+    "TEST_KEY_KEYGRIP": "${localEnv:TEST_KEY_KEYGRIP}",
+    // NODE_V8_COVERAGE causes the container's extension host Node process to write
+    // raw V8 coverage JSON to this path on exit. The path is inside the workspace
+    // bind mount so the JSON files are immediately accessible on the Windows host.
+    "NODE_V8_COVERAGE": "${containerWorkspaceFolder}/gpg-bridge-request/coverage/v8-integration"
   },
   // node_modules directories are shadowed by container-local Docker volumes so that
   // npm install inside the container creates Linux-native symlinks without touching the
@@ -66,10 +70,18 @@
   // at attach time and forwards any found agent socket + public keys into the container.
   // There is no setting to disable this behavior, so wiping the gpg homedir here
   // removes the pollution before extensions activate.
+  //
+  // waitFor: "postStartCommand" ensures VS Code does not attach (and therefore does not
+  // forward the Windows GPG socket) until after the homedir wipe completes. Without this,
+  // postStartCommand and extension activation race: the forwarded Windows socket is probe-
+  // detected as 'live' by RequestProxy.start(), causing activation to throw.
+  "waitFor": "postStartCommand",
   "postStartCommand": "echo '[postStartCommand] removing gpg homedir' && rm -rf \"$(gpgconf --list-dirs homedir)\"",
   "customizations": {
     "vscode": {
       "extensions": [
+        // ESLint extension writes V8 coverage files that crash c8's fileURLToPath() on Linux-style file URLs.
+        "-dbaeumer.vscode-eslint"
         // Both extensions are loaded as development extensions by the test runner;
         // no marketplace install is needed. Listed here for documentation.
         // "local.gpg-bridge-agent",   // loads on Windows (extensionKind: ui)
