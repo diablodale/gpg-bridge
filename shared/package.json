@@ -51,7 +51,7 @@
     "pretest": "npm run compile && npm run lint",
     "pretest:integration": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test --config vscode-test-cli.cjs --coverage --label \"Shared 1: unit tests\"",
+    "test": "vscode-test --config vscode-test-cli.cjs --coverage --coverage-output coverage/unit --label \"Shared 1: unit tests\"",
     "test:integration": "vscode-test --config vscode-test-cli.integration.cjs --label \"Shared 2: integration tests\" --coverage --coverage-output coverage/integration"
   },
   "dependencies": {

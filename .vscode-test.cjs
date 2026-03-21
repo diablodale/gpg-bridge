@@ -54,9 +54,10 @@ module.exports = defineConfig({
     // Patterns match absolute paths (c8's relativePath: false) so ** prefix is required.
     exclude: ['**/test/**'],
     // 'text' prints a per-file table to stdout (visible in CLI and CI logs).
-    // 'lcov' writes coverage/lcov.info for tooling (Codecov, VS Code extensions, etc.).
-    // 'json' writes coverage/coverage-final.json required by ms-vscode.extension-test-runner
+    // 'lcov' writes coverage/unit/lcov.info for tooling (Codecov, VS Code extensions, etc.).
+    // 'json' writes coverage/unit/coverage-final.json required by ms-vscode.extension-test-runner
     // for inline source-level coverage decorators in the VS Code editor.
     reporter: ['text', 'lcov', 'json'],
+    output: 'coverage/unit',
   },
 });

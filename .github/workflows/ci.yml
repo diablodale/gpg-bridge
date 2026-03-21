@@ -116,12 +116,12 @@ jobs:
       - name: Normalize coverage paths to repo-root-relative
         run: |
           # Strip leading ../ from cross-package refs in agent and request
-          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-agent/coverage/lcov.info
-          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-request/coverage/lcov.info
+          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-agent/coverage/unit/lcov.info
+          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-request/coverage/unit/lcov.info
           # Prefix package-local src/ paths with each package's directory name
-          sed -i 's|^SF:src/|SF:shared/src/|' shared/coverage/lcov.info
-          sed -i 's|^SF:src/|SF:gpg-bridge-agent/src/|' gpg-bridge-agent/coverage/lcov.info
-          sed -i 's|^SF:src/|SF:gpg-bridge-request/src/|' gpg-bridge-request/coverage/lcov.info
+          sed -i 's|^SF:src/|SF:shared/src/|' shared/coverage/unit/lcov.info
+          sed -i 's|^SF:src/|SF:gpg-bridge-agent/src/|' gpg-bridge-agent/coverage/unit/lcov.info
+          sed -i 's|^SF:src/|SF:gpg-bridge-request/src/|' gpg-bridge-request/coverage/unit/lcov.info
 
       # Upload lcov reports produced by the --coverage flag in each package's
       # test script.  Token is set for same-repo branches/PRs; fork PRs send
@@ -137,7 +137,7 @@ jobs:
           # (e.g. coverage-final.json) which would cause double-counting.  Only the
           # lcov.info files listed below are uploaded.
           disable_search: true
-          files: shared/coverage/lcov.info,gpg-bridge-agent/coverage/lcov.info,gpg-bridge-request/coverage/lcov.info
+          files: shared/coverage/unit/lcov.info,gpg-bridge-agent/coverage/unit/lcov.info,gpg-bridge-request/coverage/unit/lcov.info
           # Set a flag to filter for unit tests in Codecov reports.  This is helpful
           # because we also have end-to-end tests that report coverage, and we want to be
           # able to distinguish between them in Codecov's UI and PR comments.

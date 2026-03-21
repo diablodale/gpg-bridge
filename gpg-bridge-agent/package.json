@@ -117,8 +117,8 @@
     "pretest:integration": "npm run compile:integration && npm run lint:integration",
     "lint": "eslint src",
     "lint:integration": "eslint src",
-    "test": "vscode-test --config vscode-test-cli.cjs --coverage",
-    "test:integration": "node out/test/integration/runTest.js && c8 report --reporter=text --reporter=lcov --reporter=json --exclude \"**/test/**\" --temp-directory coverage/v8-integration --reports-dir coverage/integration",
+    "test": "vscode-test --config vscode-test-cli.cjs --coverage --coverage-output coverage/unit",
+    "test:integration": "node out/test/integration/runTest.js && c8 report --reporter=text --reporter=lcov --reporter=json --exclude \"**/test/**\" --temp-directory coverage/v8-integration --reports-dir coverage/integration && rimraf coverage/v8-integration",
     "vsix": "vsce package"
   },
   "devDependencies": {
@@ -139,6 +139,7 @@
     "eslint-config-prettier": "^10",
     "glob": "^13.0.1",
     "mocha": "^10.5.0",
+    "rimraf": "^6.1.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1"
   }

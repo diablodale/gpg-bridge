@@ -68,12 +68,12 @@ Runs unit tests for `shared`, `gpg-bridge-agent`, and `gpg-bridge-request` in se
 No VS Code runtime or real GPG agent required — all I/O is injected via mocks.
 
 Each package compiles before running and lints automatically via `pretest`. Coverage is
-collected on every `npm run test` using V8 and written to each package's `coverage/` folder:
+collected on every `npm run test` using V8 and written to each package's `coverage/unit/` folder:
 
-| File                           | Use                                                    |
-| ------------------------------ | ------------------------------------------------------ |
-| `coverage/lcov.info`           | Tooling (Codecov, coverage gutters VS Code extensions) |
-| `coverage/coverage-final.json` | VS Code Test Explorer inline source decorators         |
+| File                                | Use                                                    |
+| ----------------------------------- | ------------------------------------------------------ |
+| `coverage/unit/lcov.info`           | Tooling (Codecov, coverage gutters VS Code extensions) |
+| `coverage/unit/coverage-final.json` | VS Code Test Explorer inline source decorators         |
 
 A per-file coverage table is also printed to stdout at the end of each run.
 
@@ -95,19 +95,44 @@ Extension Test Runner's discovery glob (`**/.vscode-test.*`) and are used only b
 
 ### Integration tests
 
-Integration tests launch a real VS Code Extension Development Host and require the
-local host to have gpg installed and `gpg-agent` running.
+Integration tests launch real VS Code Extension Development Hosts against live processes.
+`gpg-bridge-agent` integration tests require GPG installed on the local Windows host.
+`gpg-bridge-request` integration tests additionally require Docker Desktop and the
+[Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+extension — tests run inside Linux dev containers with the two extensions split across
+the Windows local host and the container as they would be in real use.
 
 ```powershell
 npm run test:integration
 ```
 
-Or run per-extension:
+Or run per-package:
 
 ```powershell
+npm --prefix shared run test:integration
 npm --prefix gpg-bridge-agent run test:integration
 npm --prefix gpg-bridge-request run test:integration
 ```
+
+`gpg-bridge-request` integration tests are split into two phases chained by `&&`:
+
+- **Phase 2** (`test:integration:request-proxy`) — exercises the full proxy chain using
+  `AssuanSocketClient` as a test client in a Linux dev container.
+- **Phase 3** (`test:integration:gpg-cli`) — exercises the full proxy chain driven by
+  the real `gpg` binary inside a second container.
+
+Coverage is collected from the container-side extension host via `NODE_V8_COVERAGE` and
+written by both phases to a shared `coverage/v8-integration/` directory (workspace bind
+mount). After Phase 3 finishes, the runner post-processes the accumulated V8 JSON
+(remapping Linux container paths to Windows host paths, stripping vscode-server
+internals) and generates a merged report in each package's `coverage/integration/` folder:
+
+| File                                       | Use                                           |
+| ------------------------------------------ | --------------------------------------------- |
+| `coverage/integration/lcov.info`           | Tooling (Codecov, coverage gutter extensions) |
+| `coverage/integration/coverage-final.json` | Raw Istanbul JSON                             |
+
+A per-file coverage table is also printed to stdout at the end of the run.
 
 ## VSIX Packaging
 
