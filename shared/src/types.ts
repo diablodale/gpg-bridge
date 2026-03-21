@@ -77,6 +77,11 @@ export interface IFileSystem {
    * Delete a file.
    */
   unlinkSync(path: string): void;
+
+  /**
+   * Remove an empty directory. Throws if the directory is non-empty or does not exist.
+   */
+  rmdirSync(path: string): void;
 }
 
 /**

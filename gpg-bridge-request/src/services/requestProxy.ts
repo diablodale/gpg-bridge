@@ -694,6 +694,7 @@ export class RequestProxy {
       mkdirSync: fs.mkdirSync,
       chmodSync: fs.chmodSync,
       unlinkSync: fs.unlinkSync,
+      rmdirSync: fs.rmdirSync,
     };
     this.socketConnectFactory = deps?.socketConnectFactory ?? {
       createConnection: net.createConnection,
@@ -940,10 +941,20 @@ export class RequestProxy {
       // without explicit cleanup it would hang on any open client socket.
       server.close(() => {
         if (this._socketPath) {
+          const socketParentDir = path.dirname(this._socketPath);
           try {
             this.fileSystem.unlinkSync(this._socketPath);
           } catch (err) {
             // Ignore
+          }
+          // Remove the parent directory if it is now empty. This prevents VS Code
+          // DevContainers from re-forwarding the host GPG socket into this location
+          // on the next attach — forwarding requires the directory to already exist.
+          // Silently ignored if the directory is non-empty (e.g. production keyring files).
+          try {
+            this.fileSystem.rmdirSync(socketParentDir);
+          } catch {
+            // Ignore — directory not empty or other error
           }
         }
         log(this.config, 'Socket server stopped listening');

@@ -45,6 +45,11 @@ export class MockFileSystem implements IFileSystem {
     this.socketNodes.delete(path);
   }
 
+  rmdirSync(path: string): void {
+    this.callLog.push({ method: 'rmdirSync', args: [path] });
+    this.directories.delete(path);
+  }
+
   statSync(path: string): { isFile(): boolean; isSocket(): boolean } {
     this.callLog.push({ method: 'statSync', args: [path] });
     const isFile = this.files.has(path);

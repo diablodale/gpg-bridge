@@ -621,6 +621,7 @@ export class AgentProxy {
       mkdirSync: fs.mkdirSync,
       chmodSync: fs.chmodSync,
       unlinkSync: fs.unlinkSync,
+      rmdirSync: fs.rmdirSync,
     };
     this.gpgCliFactory = deps?.gpgCliFactory;
   }
