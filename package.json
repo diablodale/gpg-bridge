@@ -79,6 +79,7 @@
     "publish:dry-run": "node scripts/publish.js --dry-run"
   },
   "devDependencies": {
+    "@devcontainers/cli": "^0.84.1",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@commitlint/cli": "^19.8.0",

@@ -101,15 +101,22 @@ function findWorkspaceRoot(startDir: string): string {
 const workspaceRoot = findWorkspaceRoot(__dirname);
 
 // Container URI format: dev-container+<hex-encoded-JSON> (Unknown 4 — resolved).
-// JSON payload: {"hostPath": "<path>"}
+// JSON payload: {hostPath, configFile} — see inline comments on each field below.
 // The Dev Containers extension authority is parsed by io() / xk():
 //   - xk() routes to Wie() when ln(parsedAuthority) is true.
 //   - ln(e) checks e.hostPath !== undefined (NOT localFolder — that key is rejected).
 //   - Wie() uses originalCwd (from the VS Code workspace) as primary folder for
 //     container config lookup; hostPath is a secondary fallback for compose paths.
-// VS Code finds the config at .devcontainer/devcontainer.json (standard convention path).
-// Named sub-dirs (.devcontainer/phase2/, phase3/) are for the manual VS Code container picker.
 // PREREQUISITE: Docker running + Dev Containers extension in the @vscode/test-electron binary.
+//
+// Container identity labels:
+// The devcontainer CLI stamps two Docker labels on every container it creates:
+//   devcontainer.local_folder ← hostPath  (OS-native path, e.g. C:\njs\gpg-windows-relay)
+//   devcontainer.config_file  ← URI.revive(configFile).fsPath  (lowercase drive letter on Windows,
+//                               e.g. c:\njs\gpg-windows-relay\.devcontainer\phase2\devcontainer.json)
+// check-devcontainer.js removeExistingContainer() filters on these same label values.
+// Note: devcontainer.config_file uses a lowercase drive letter (VS Code URI.fsPath behaviour)
+// while path.resolve() produces uppercase. The script normalises to lowercase before filtering.
 //
 // Workspace folder inside the container:
 // devcontainer.json has no explicit workspaceMount, so the Dev Containers CLI default
@@ -118,13 +125,13 @@ const workspaceRoot = findWorkspaceRoot(__dirname);
 // from inside the Linux container, so we cannot pass workspaceRoot as a positional arg.
 const REMOTE_CONTAINER_URI = Buffer.from(
   JSON.stringify({
+    // hostPath becomes the devcontainer.local_folder Docker label on the container.
     hostPath: workspaceRoot,
-    // Explicitly select the phase2 devcontainer.json so automated tests are
-    // not affected if the root .devcontainer/devcontainer.json changes.
-    // configFile must be a serialized VS Code URI object (not a string) — the
-    // Dev Containers extension passes it through URI.revive(), which expects
-    // {$mid:1, scheme, authority, path, query, fragment}.  A plain string or
-    // bare Windows path causes UriError in VS Code's strict URI parser.
+    // configFile explicitly selects the phase2 devcontainer.json.
+    // Must be a serialized VS Code URI object — the Dev Containers extension passes it
+    // through URI.revive(), which expects {$mid:1, scheme, authority, path, query, fragment}.
+    // A plain string or bare Windows path causes UriError in VS Code's strict URI parser.
+    // URI.revive(configFile).fsPath is the OS-native path stored as devcontainer.config_file.
     configFile: {
       $mid: 1,
       scheme: 'file',

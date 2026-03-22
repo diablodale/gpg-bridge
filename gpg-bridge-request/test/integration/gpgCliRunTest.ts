@@ -72,11 +72,24 @@ function findWorkspaceRoot(startDir: string): string {
 }
 const workspaceRoot = findWorkspaceRoot(__dirname);
 
-// Container URI — same format as Phase 2 but points to phase3/devcontainer.json.
-// configFile must be a serialized VS Code URI object (not a string); see Phase 2
-// requestProxyRunTest.ts header comment for full explanation of the URI format.
+// Container URI format: dev-container+<hex-encoded-JSON>, same as Phase 2.
+// JSON payload: {hostPath, configFile} — same structure as requestProxyRunTest.ts.
+//
+// Container identity labels (set by devcontainer CLI on every container it creates):
+//   devcontainer.local_folder ← hostPath  (OS-native path, e.g. C:\njs\gpg-windows-relay)
+//   devcontainer.config_file  ← URI.revive(configFile).fsPath  (lowercase drive letter on Windows,
+//                               e.g. c:\njs\gpg-windows-relay\.devcontainer\phase3\devcontainer.json)
+// check-devcontainer.js removeExistingContainer() filters on these same label values.
+// Note: devcontainer.config_file uses a lowercase drive letter (VS Code URI.fsPath behaviour)
+// while path.resolve() produces uppercase. The script normalises to lowercase before filtering.
+//
+// configFile must be a serialized VS Code URI object (not a string) — the Dev Containers
+// extension passes it through URI.revive(), which expects {$mid:1, scheme, authority,
+// path, query, fragment}. A plain string or bare Windows path causes UriError.
+// URI.revive(configFile).fsPath is the OS-native path stored as devcontainer.config_file.
 const REMOTE_CONTAINER_URI = Buffer.from(
   JSON.stringify({
+    // hostPath becomes the devcontainer.local_folder Docker label on the container.
     hostPath: workspaceRoot,
     configFile: {
       $mid: 1,

@@ -15,6 +15,36 @@
         "kind": "build",
         "isDefault": true
       }
+    },
+    {
+      // Pulls the Phase 2 dev container base image and removes any existing
+      // Phase 2 container so the next `npm run test:integration:request-proxy`
+      // starts from a clean container. docker pull is idempotent — it only
+      // downloads layers when the remote image has changed.
+      "label": "Refresh Phase 2 dev container",
+      "type": "shell",
+      "command": "node scripts/check-devcontainer.js --config .devcontainer/phase2/devcontainer.json",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      // Pulls the Phase 3 dev container base image and removes any existing
+      // Phase 3 container so the next `npm run test:integration:gpg-cli`
+      // starts from a clean container. docker pull is idempotent — it only
+      // downloads layers when the remote image has changed.
+      "label": "Refresh Phase 3 dev container",
+      "type": "shell",
+      "command": "node scripts/check-devcontainer.js --config .devcontainer/phase3/devcontainer.json",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
     }
   ]
 }
