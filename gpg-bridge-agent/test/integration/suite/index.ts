@@ -17,6 +17,9 @@ export function run(): Promise<void> {
     ui: 'bdd',
     color: true,
     timeout: 60000, // 60 s — real gpg operations are slow
+    ...(process.env.JUNIT_OUTPUT_FILE && {
+      reporter: path.resolve(__dirname, '../../../../../shared/junit-spec.cjs'),
+    }),
   });
 
   // __dirname = out/test/integration/suite/ at runtime; go up one level to find test files.

@@ -17,10 +17,20 @@ import * as path from 'path';
 import Mocha = require('mocha');
 
 export function run(): Promise<void> {
+  // __dirname = out/test/integration/suite/ at runtime (inside container).
+  // Set JUNIT_OUTPUT_FILE here so junit-spec.cjs activates; extensionTestsEnv
+  // from @vscode/test-electron does not propagate into the remote extension host.
+  const repoRoot = path.resolve(__dirname, '../../../../..');
+  process.env.JUNIT_OUTPUT_FILE = path.join(
+    repoRoot,
+    'gpg-bridge-request/test-results/integration/gpgCli.xml',
+  );
+
   const mocha = new Mocha({
     ui: 'bdd',
     color: true,
     timeout: 120000, // 120 s — full chain crypto ops + 1 MB sign stress test
+    reporter: path.join(repoRoot, 'shared/junit-spec.cjs'),
   });
 
   // __dirname = out/test/integration/suite/ at runtime; go up one level to find test files.
