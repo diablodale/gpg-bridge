@@ -146,6 +146,15 @@ jobs:
           # issues or Codecov outages to block merges.
           fail_ci_if_error: false
 
+      # Rewrite JUnit XML file/line references from compiled JS (out/) back to
+      # TypeScript sources (src/) using source maps produced by tsc.  This is
+      # required for EnricoMi/publish-unit-test-result-action to render inline
+      # annotations alongside the correct TypeScript source lines in GitHub's
+      # PR diff and commit views.
+      - name: Rewrite test result paths to TypeScript sources
+        if: always()
+        run: node scripts/rewrite-junit-paths.cjs
+
       # Upload JUnit XML results so publish-test-results.yml can surface them
       # as a PR check, comment, and per-failure annotations.  if: always() ensures
       # the artifacts are uploaded even when the test step above fails — that is
