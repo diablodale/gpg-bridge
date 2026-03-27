@@ -482,151 +482,83 @@ Add two artifact upload steps at the **end of the `test` job, after the Codecov 
 `if: always()` ensures uploads happen even when tests fail — which is exactly when you most
 need to see the results.
 
-```yaml
-- name: Upload test result artifacts
-  uses: actions/upload-artifact@<SHA> # v4.x.x
-  if: always()
-  with:
-    name: test-results-unit
-    path: |
-      shared/test-results/unit/*.xml
-      gpg-bridge-agent/test-results/unit/*.xml
-      gpg-bridge-request/test-results/unit/*.xml
-    # Retain long enough for re-runs and the publish-test-results workflow; 7 days is sufficient.
-    retention-days: 7
-    # Error (not warn) if no XML files exist — e.g. CI cancelled before tests write output.
-    # This ensures the artifact is never created, the downstream download step fails,
-    # and the 'Unit test results' check is never posted as passing with 0 tests.
-    if-no-files-found: error
-
-- name: Upload GitHub event file
-  uses: actions/upload-artifact@<SHA> # v4.x.x
-  if: always()
-  with:
-    name: github-event
-    path: ${{ github.event_path }}
-    retention-days: 7
-```
-
-No permission changes are needed in the `test` job — `actions/upload-artifact` uses the
-Actions runner service credential, not `GITHUB_TOKEN`. The event file (`event.json`) is
-picked up by the `publish-test-results` workflow to identify the PR and commit.
+- Upload XML results (`test-results-unit`) with `if-no-files-found: error` — fails the step
+  if no XML was written (e.g. CI cancelled before tests ran), preventing a phantom passing
+  check from being posted downstream.
+- Upload the GitHub event file (`github-event`) — no `if-no-files-found` needed; the runner
+  always writes this file.
+- Both steps use `actions/upload-artifact@v7` pinned to a full commit SHA. No permission
+  changes needed — upload-artifact uses the runner service credential, not `GITHUB_TOKEN`.
 
 ---
 
 #### 2. `.github/workflows/publish-test-results.yml` — new workflow
 
-Create a new workflow file. It triggers via `workflow_run` on completion of the CI workflow
-and always runs with the target repo's token, so `checks: write` and `pull-requests: write`
-are always available — for both same-repo branches and fork PRs.
+A new `workflow_run`-triggered workflow with two jobs:
 
-`actions/download-artifact@v4` can download artifacts from a different workflow run using
-`run-id`, but requires `actions: read` to read another run's artifacts.
+**`publish-test-results` job** — fires after CI completes, always runs with the target repo's
+token regardless of whether the triggering push came from a fork:
 
-```yaml
-name: Publish test results
+- `permissions: actions: read, checks: write, pull-requests: write`
+- Downloads both artifacts (`test-results-unit`, `github-event`) from the triggering run
+  using `actions/download-artifact@v8` with `run-id` and `github-token`
+- Runs `EnricoMi/publish-unit-test-result-action@v2.23.0` with `id: publish`; passes
+  `commit`, `event_file`, and `event_name` to associate results with the originating PR/commit
+  rather than the default-branch commit that triggered `workflow_run`
+- `check_name: Unit test results`, `comment_mode: changes`
+- Exposes the action's `outputs.json` string as a job output for the badge job
 
-on:
-  workflow_run:
-    workflows: ['CI'] # must match the name: field in ci.yml exactly
-    types: [completed]
+**`update-badge` job** — see Badge section below.
 
-permissions: {}
+The workflow also has:
 
-jobs:
-  publish-test-results:
-    name: Publish test results
-    runs-on: ubuntu-latest
-    # Run for all conclusions except 'skipped'.
-    # 'cancelled': if CI was cancelled the artifact upload steps may not have completed,
-    # so the download step below will fail → the 'Unit test results' check registers as
-    # failed → PR is blocked. This is intentional: a cancelled run must not unblock a PR.
-    if: ${{ github.event.workflow_run.conclusion != 'skipped' }}
-    permissions:
-      actions: read # required to download artifacts from the triggering workflow run
-      checks: write
-      pull-requests: write
-    steps:
-      - name: Download test result artifacts
-        uses: actions/download-artifact@<SHA> # v4.x.x
-        with:
-          run-id: ${{ github.event.workflow_run.id }}
-          name: test-results-unit
-          path: test-results
-          github-token: ${{ github.token }}
-
-      - name: Download GitHub event file
-        uses: actions/download-artifact@<SHA> # v4.x.x
-        with:
-          run-id: ${{ github.event.workflow_run.id }}
-          name: github-event
-          path: github-event
-          github-token: ${{ github.token }}
-
-      - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@<SHA> # v2.x.x
-        with:
-          # These three fields associate results with the originating PR/commit,
-          # not the default-branch commit that triggered the workflow_run event.
-          commit: ${{ github.event.workflow_run.head_sha }}
-          event_file: github-event/event.json
-          event_name: ${{ github.event.workflow_run.event }}
-          files: test-results/**/*.xml
-          # Unique check name — required when the action runs more than once per workflow.
-          check_name: Unit test results
-          # Comment on PRs only when results change vs the base branch, to reduce noise
-          # on green runs. Set to 'always' if you prefer a comment on every run.
-          comment_mode: changes in failures
-```
+- `permissions: {}` at workflow level — each job adds only what it needs
+- `concurrency:` group keyed on `head_repository.full_name + head_branch` to cancel stale
+  publish runs when a newer push to the same PR supersedes them (`github.ref` cannot be used
+  here because in a `workflow_run` context it always resolves to the default branch)
 
 ---
 
 ### Action SHA Pinning
 
 Project convention requires all action references pinned to a full commit SHA (with the
-version tag as a comment), e.g.:
+version tag as a comment). SHAs resolved at implementation time:
 
-```yaml
-uses: EnricoMi/publish-unit-test-result-action@f3a4c8e3... # v2.23.0
-```
+| Action                                     | Version | SHA                                        |
+| ------------------------------------------ | ------- | ------------------------------------------ |
+| `actions/upload-artifact`                  | v7.0.0  | `bbbca2ddaa5d8feaa63e36b76fdaad77386f024f` |
+| `actions/download-artifact`                | v8.0.1  | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` |
+| `EnricoMi/publish-unit-test-result-action` | v2.23.0 | `c950f6fb443cb5af20a377fd0dfaa78838901040` |
 
-Obtain current SHAs at implementation time:
+The same `upload-artifact` SHA is used for both upload steps in `ci.yml`; the same
+`download-artifact` SHA is used for both download steps in `publish-test-results.yml`.
+
+To resolve a SHA for a future version update:
 
 ```bash
-# For EnricoMi/publish-unit-test-result-action v2 (latest tag):
-gh api repos/EnricoMi/publish-unit-test-result-action/git/refs/tags/v2.23.0 --jq '.object.sha'
-
-# For actions/upload-artifact v4 and actions/download-artifact v4:
-gh api repos/actions/upload-artifact/git/refs/tags/v4 --jq '.object.sha'
-gh api repos/actions/download-artifact/git/refs/tags/v4 --jq '.object.sha'
+gh api repos/<owner>/<repo>/git/refs/tags/<tag> --jq '{sha: .object.sha, type: .object.type}'
 ```
 
-Note: tag refs may point to a tag object (not a commit); follow the `.object.sha` through
-`/git/tags/<sha>` if the type is `"tag"` rather than `"commit"`.
-
-The same SHA is used for both `upload-artifact` steps in `ci.yml` and both `download-artifact`
-steps in `publish-test-results.yml`.
+If `type` is `"tag"` rather than `"commit"`, follow through `/git/tags/<sha>` to get the
+underlying commit SHA.
 
 ---
 
 ### Implementation Order
 
-1. Complete all of Phase 1.
-2. Obtain current SHAs for `EnricoMi/publish-unit-test-result-action@v2`,
-   `actions/upload-artifact@v4`, `actions/download-artifact@v4`.
-3. Add the two `upload-artifact` steps (XML + event file) to the `test` job in `ci.yml`.
-4. Create `.github/workflows/publish-test-results.yml` with the `workflow_run` trigger.
-5. Push to a branch and open a PR to verify: check appears in PR checks tab, comment is
-   posted, annotations appear on failing tests (if any). Let the full workflow run complete
-   so the `Unit test results` check name is registered in the repo.
-6. Add `Unit test results` to the existing branch protection rule for `main` (must be done
-   **after** step 5 so GitHub has seen the check name and offers it in the picker):
-   - **Settings → Branches → Branch protection rules → Edit** the rule for `main`
-   - Under **Require status checks to pass before merging**, search for and add:
-     `Unit test results`
-   - Save. (`Require branches to be up to date before merging` is already enabled — no change needed.)
-7. Open a PR from a fork (or simulate with a test fork) to verify the same surfaces appear
-   for fork contributors.
+1. ✅ Complete all of Phase 1.
+2. ✅ Resolve SHAs for `actions/upload-artifact@v7`, `actions/download-artifact@v8.0.1`,
+   and `EnricoMi/publish-unit-test-result-action@v2.23.0`.
+3. ✅ Add the two `upload-artifact` steps (XML + event file) to the `test` job in `ci.yml`.
+4. ✅ Create `.github/workflows/publish-test-results.yml` with `workflow_run` trigger,
+   concurrency, `publish-test-results` job, and `update-badge` job.
+5. ✅ Add unit test badge to `README.md`.
+6. Push to a branch and open a PR to verify: check appears in PR checks tab, comment is
+   posted, badge updates on merge to `main`.
+7. Add `Unit test results` to the branch protection rule for `main` (must be done **after**
+   step 6 so GitHub has seen the check name and offers it in the picker):
+   **Settings → Branches → Edit rule for `main` → Require status checks → add `Unit test results`**
+8. Open a PR from a fork to verify the same surfaces appear for fork contributors.
 
 ---
 
@@ -639,3 +571,94 @@ steps in `publish-test-results.yml`.
 | PR comment          | Pass/fail counts, delta vs base branch (`5 tests ±0`), links to failures          |
 | Commit annotations  | Per-failure annotation pointing at the test file line                             |
 | Actions job summary | Pass/fail table with test names, visible directly on the workflow run page        |
+
+---
+
+### Badge — Shields.io via orphan `badges` branch
+
+#### Goal
+
+Display a live Shields.io badge in `README.md` beside the Codecov coverage badge. Three colors
+driven by actual test results from the most recent `main` branch CI run:
+
+- 🟢 green — all tests passed
+- 🟡 yellow — tests passed but some were skipped
+- 🔴 red — one or more test failures
+
+#### Approach
+
+An orphan `badges` branch holds a single file, `unit-tests.json`, which is a
+[Shields.io endpoint JSON](https://shields.io/endpoint) object. `raw.githubusercontent.com`
+serves it publicly at a stable URL. The `publish-test-results.yml` workflow writes an updated
+JSON file and force-pushes to the `badges` branch after every successful main-branch CI run.
+
+Artifacts are not suitable for this — they require authentication, expire, and their URLs
+change per run.
+
+A GitHub Gist would work but requires an external PAT with `gist` scope. The orphan branch
+approach is entirely self-contained within the repo and requires only `contents: write` on the
+`update-badge` job, which is isolated from the higher-privilege `publish-test-results` job.
+
+#### Setup
+
+No manual setup is required. The `update-badge` job in `publish-test-results.yml`
+bootstraps the `badges` branch as an orphan automatically on the first run — if the branch
+does not exist, the workflow creates it.
+
+#### Badge JSON format
+
+The Shields.io endpoint schema:
+
+```json
+{
+  "schemaVersion": 1,
+  "label": "Unit tests",
+  "message": "42 passed",
+  "color": "brightgreen"
+}
+```
+
+Color mapping:
+
+| Condition                | `color`       |
+| ------------------------ | ------------- |
+| failures > 0             | `red`         |
+| skipped > 0, failed = 0  | `yellow`      |
+| all passed, none skipped | `brightgreen` |
+
+`message` is formatted as `N passed` or `N passed, M skipped` or `N failed` for clarity.
+
+#### File changes
+
+##### `publish-test-results.yml` — add `update-badge` job
+
+Split the single job into two:
+
+- The existing `publish-test-results` job gains an `outputs:` block exposing the full JSON
+  string from the EnricoMi step (`steps.publish.outputs.json`), and the EnricoMi step itself
+  gets `id: publish`.
+- A new `update-badge` job depends on `publish-test-results` with `contents: write` in
+  isolation. It receives the raw JSON string via an env var and parses `stats.tests_succ`,
+  `stats.tests_fail`, `stats.tests_skip` with `jq` to derive color and message.
+- The token is injected via `git config --global http.extraheader` rather than embedded in
+  the remote URL — this keeps the credential out of URLs and `.git/config`.
+- The bootstrap path (`git init -b badges` + `git remote add origin`) runs only on the
+  very first push; subsequent runs `git clone --depth 1 --branch badges` instead.
+- `git diff --cached --quiet && exit 0` skips the commit and push entirely when the badge
+  JSON is identical to the previous run (same counts on a re-run).
+
+##### `README.md` — add badge
+
+Add beside the existing Codecov badge, pointing to the `badges` branch raw URL and linking
+to the `publish-test-results.yml` workflow runs page.
+
+#### Security notes
+
+- `contents: write` is scoped to the `update-badge` job only. The `publish-test-results` job
+  (which processes fork-supplied test output) never receives write access to repo contents.
+- The badge JSON is constructed entirely from the EnricoMi action's numeric outputs
+  (`tests_succ`, `tests_fail`, `tests_skip`), not from any test names or messages. No
+  fork-supplied content reaches the badge — the test output injection risk documented above
+  does not apply here.
+- `github.token` is passed via `env:` (masked in logs by the runner) and set as an HTTP
+  `Authorization` header on the git config, never stored in a remote URL.

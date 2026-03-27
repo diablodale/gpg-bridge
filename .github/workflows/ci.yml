@@ -145,3 +145,32 @@ jobs:
           # Don't fail the job if the upload fails — we don't want flaky network
           # issues or Codecov outages to block merges.
           fail_ci_if_error: false
+
+      # Upload JUnit XML results so publish-test-results.yml can surface them
+      # as a PR check, comment, and per-failure annotations.  if: always() ensures
+      # the artifacts are uploaded even when the test step above fails — that is
+      # exactly when you most need to inspect the results.
+      # if-no-files-found: error ensures the artifact is never silently empty so
+      # the downstream download fails loudly rather than publishing 0 tests as ✓.
+      - name: Upload test result artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: always()
+        with:
+          name: test-results-unit
+          path: |
+            shared/test-results/unit/*.xml
+            gpg-bridge-agent/test-results/unit/*.xml
+            gpg-bridge-request/test-results/unit/*.xml
+          retention-days: 7
+          if-no-files-found: error
+
+      # Upload the GitHub event JSON so publish-test-results.yml can associate
+      # results with the correct PR and commit SHA (needed for fork PRs where
+      # the triggering workflow_run event references the default branch, not the fork).
+      - name: Upload GitHub event file
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: always()
+        with:
+          name: github-event
+          path: ${{ github.event_path }}
+          retention-days: 7
