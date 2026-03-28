@@ -125,7 +125,8 @@ jobs:
 
           # Inject the token as an HTTP Authorization header — keeps the token
           # out of URLs and out of .git/config on the ephemeral runner.
-          git config --global http.extraheader "AUTHORIZATION: Bearer ${GH_TOKEN}"
+          # Git-over-HTTPS uses Basic auth; Bearer is rejected by git endpoints.
+          git config --global http.extraheader "AUTHORIZATION: Basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
 
           # Clone the badges branch. If it does not exist yet, bootstrap it as an
           # orphan — no manual one-time setup is needed.
