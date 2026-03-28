@@ -69,11 +69,7 @@ jobs:
           event_name: ${{ github.event.workflow_run.event }}
           files: test-results/**/*.xml
           check_name: Unit test results
-          # Comment when test results or counts change vs the base branch — surfaces
-          # new passing tests as well as new failures.  Set to 'always' if a comment
-          # on every run is preferred, or 'changes in failures' to suppress comments
-          # on green count-only changes.
-          comment_mode: changes
+          comment_mode: always
 
   publish-integration-results:
     name: Publish integration test results
@@ -111,7 +107,7 @@ jobs:
           event_name: ${{ github.event.workflow_run.event }}
           files: test-results/**/*.xml
           check_name: Integration test results
-          comment_mode: changes
+          comment_mode: always
 
   update-badges:
     name: Update test result badges
