@@ -206,3 +206,69 @@ jobs:
           name: github-event
           path: ${{ github.event_path }}
           retention-days: 7
+
+  # ── Job 3: integration tests (shared + agent) ─────────────────────────────────
+  # Runs integration tests for shared and agent packages against real gpg/gpg-agent
+  # binaries (pre-installed on ubuntu-latest) and the VS Code extension host
+  # (Electron — requires xvfb, which is also pre-installed).
+  # gpg-bridge-request integration tests are excluded: they require devcontainer
+  # networking (phase2/phase3) that is not available in the standard CI environment.
+  integration-test:
+    name: Integration tests
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      # Reuse the same weekly cache key as the unit-test job so a warm cache
+      # from an earlier job in the same week avoids re-downloading VS Code.
+      - name: Get week number for cache key
+        id: date
+        run: echo "week=$(date +%Y%W)" >> "$GITHUB_OUTPUT"
+      - name: Cache VS Code test binaries
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            shared/.vscode-test/vscode-*
+            gpg-bridge-agent/.vscode-test/vscode-*
+          key: vscode-test-${{ runner.os }}-${{ steps.date.outputs.week }}
+          restore-keys: vscode-test-${{ runner.os }}-
+
+      # Each pretest:integration hook compiles its package's integration test
+      # files before running — no separate compile step needed here.
+      - name: Shared integration tests
+        run: xvfb-run -a npm --prefix shared run test:integration
+
+      - name: Agent integration tests
+        run: xvfb-run -a npm --prefix gpg-bridge-agent run test:integration
+
+      # Rewrite JUnit XML file/line references from compiled JS (out/) back to
+      # TypeScript sources (src/) — same rewriter used for unit tests.
+      - name: Rewrite integration test result paths to TypeScript sources
+        if: always()
+        run: node scripts/rewrite-junit-paths.cjs
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: always()
+        with:
+          name: test-results-integration
+          path: |
+            shared/test-results/integration/*.xml
+            gpg-bridge-agent/test-results/integration/*.xml
+          retention-days: 7
+          if-no-files-found: error

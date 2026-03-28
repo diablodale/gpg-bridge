@@ -193,18 +193,20 @@ function processFile(xmlPath) {
   console.log('Rewritten:', path.relative(WORKSPACE, xmlPath));
 }
 
-// Discover all JUnit XML files under */test-results/unit/*.xml
-const glob = require('node:fs');
+// Discover all JUnit XML files under */test-results/{unit,integration}/*.xml
 const PACKAGES = ['shared', 'gpg-bridge-agent', 'gpg-bridge-request'];
+const RESULT_SUBDIRS = ['unit', 'integration'];
 for (const pkg of PACKAGES) {
-  const dir = path.join(WORKSPACE, pkg, 'test-results', 'unit');
-  if (!fs.existsSync(dir)) continue;
-  for (const entry of fs.readdirSync(dir)) {
-    if (!entry.endsWith('.xml')) continue;
-    try {
-      processFile(path.join(dir, entry));
-    } catch (err) {
-      console.error('Error processing', entry, ':', err.message);
+  for (const subdir of RESULT_SUBDIRS) {
+    const dir = path.join(WORKSPACE, pkg, 'test-results', subdir);
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir)) {
+      if (!entry.endsWith('.xml')) continue;
+      try {
+        processFile(path.join(dir, entry));
+      } catch (err) {
+        console.error('Error processing', entry, ':', err.message);
+      }
     }
   }
 }
