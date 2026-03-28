@@ -256,6 +256,24 @@ jobs:
       - name: Agent integration tests
         run: xvfb-run -a npm --prefix gpg-bridge-agent run test:integration
 
+      # Normalize lcov paths to repo-root-relative — same logic as unit tests.
+      - name: Normalize integration coverage paths to repo-root-relative
+        run: |
+          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-agent/coverage/integration/lcov.info
+          sed -i 's|^SF:src/|SF:shared/src/|' shared/coverage/integration/lcov.info
+          sed -i 's|^SF:src/|SF:gpg-bridge-agent/src/|' gpg-bridge-agent/coverage/integration/lcov.info
+
+      - name: Upload integration coverage to Codecov
+        uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad #v5.5.3
+        with:
+          name: integrationtests
+          # CODECOV_TOKEN only authorises coverage uploads; exposure risk does not warrant a dedicated environment.
+          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          disable_search: true
+          files: shared/coverage/integration/lcov.info,gpg-bridge-agent/coverage/integration/lcov.info
+          flags: integrationtests
+          fail_ci_if_error: false
+
       # Rewrite JUnit XML file/line references from compiled JS (out/) back to
       # TypeScript sources (src/) — same rewriter used for unit tests.
       - name: Rewrite integration test result paths to TypeScript sources
