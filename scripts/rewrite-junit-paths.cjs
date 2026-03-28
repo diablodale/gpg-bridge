@@ -186,7 +186,9 @@ function processFile(xmlPath) {
   if (!changed) return;
 
   const builder = new XMLBuilder(BUILDER_OPTS);
-  const rewritten = '<?xml version="1.0" encoding="UTF-8"?>\n' + builder.build(doc);
+  // preserveOrder:true preserves the <?xml?> declaration as a node; XMLBuilder
+  // re-emits it, so no manual prepend — that would produce a double declaration.
+  const rewritten = builder.build(doc);
   fs.writeFileSync(xmlPath, rewritten, 'utf8');
   console.log('Rewritten:', path.relative(WORKSPACE, xmlPath));
 }
