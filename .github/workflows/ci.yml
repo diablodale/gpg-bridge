@@ -24,11 +24,34 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read # required to list PR commits for signature verification
     env:
       # Tell prek where to store its downloaded hook environments so that the
       # actions/cache step can persist them across runs.
       PREK_HOME: ~/.cache/prek
     steps:
+      # Verify every commit in the PR is GPG/SSH signed and that GitHub has
+      # verified the signature against the author's registered keys.  Runs
+      # first — gh CLI and github.token are available immediately without
+      # checkout or Node.  Skipped on push and workflow_dispatch.
+      - name: Verify all PR commits are signed
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          FAILED=0
+          while IFS= read -r SHA; do
+            VERIFIED=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}" \
+              --jq '.commit.verification.verified')
+            if [ "$VERIFIED" != "true" ]; then
+              echo "::error::Commit ${SHA} is not signed or has an unverified signature"
+              FAILED=1
+            fi
+          done < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/commits" \
+                     --paginate --jq '.[].sha')
+          [ $FAILED -eq 0 ] || exit 1
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -145,3 +168,41 @@ jobs:
           # Don't fail the job if the upload fails — we don't want flaky network
           # issues or Codecov outages to block merges.
           fail_ci_if_error: false
+
+      # Rewrite JUnit XML file/line references from compiled JS (out/) back to
+      # TypeScript sources (src/) using source maps produced by tsc.  This is
+      # required for EnricoMi/publish-unit-test-result-action to render inline
+      # annotations alongside the correct TypeScript source lines in GitHub's
+      # PR diff and commit views.
+      - name: Rewrite test result paths to TypeScript sources
+        if: always()
+        run: node scripts/rewrite-junit-paths.cjs
+
+      # Upload JUnit XML results so publish-test-results.yml can surface them
+      # as a PR check, comment, and per-failure annotations.  if: always() ensures
+      # the artifacts are uploaded even when the test step above fails — that is
+      # exactly when you most need to inspect the results.
+      # if-no-files-found: error ensures the artifact is never silently empty so
+      # the downstream download fails loudly rather than publishing 0 tests as ✓.
+      - name: Upload test result artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: always()
+        with:
+          name: test-results-unit
+          path: |
+            shared/test-results/unit/*.xml
+            gpg-bridge-agent/test-results/unit/*.xml
+            gpg-bridge-request/test-results/unit/*.xml
+          retention-days: 7
+          if-no-files-found: error
+
+      # Upload the GitHub event JSON so publish-test-results.yml can associate
+      # results with the correct PR and commit SHA (needed for fork PRs where
+      # the triggering workflow_run event references the default branch, not the fork).
+      - name: Upload GitHub event file
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: always()
+        with:
+          name: github-event
+          path: ${{ github.event_path }}
+          retention-days: 7

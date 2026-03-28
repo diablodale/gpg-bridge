@@ -65,6 +65,7 @@ async function main(): Promise<void> {
         // Instruct the extension host's Node process to write V8 coverage JSON here.
         // c8 reads this directory after the run to produce lcov/json/text reports.
         NODE_V8_COVERAGE: v8CovDir,
+        JUNIT_OUTPUT_FILE: path.resolve(__dirname, '../../../test-results/integration/results.xml'),
       },
     });
   } finally {

@@ -110,7 +110,7 @@
   "scripts": {
     "vscode:prepublish": "npm run check-types && node esbuild.js --production",
     "compile": "tsc --build",
-    "compile:integration": "tsc --build tsconfig.test.json",
+    "compile:integration": "tsc --build tsconfig.json tsconfig.test.json",
     "check-types": "tsc --noEmit",
     "watch": "tsc --build --watch",
     "pretest": "npm run compile && npm run lint",
@@ -138,7 +138,7 @@
     "eslint": "^10.0.0",
     "eslint-config-prettier": "^10",
     "glob": "^13.0.1",
-    "mocha": "^10.5.0",
+    "mocha": "^11",
     "rimraf": "^6.1.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1"

@@ -3,6 +3,7 @@
 <img src="assets/icon.png" alt="GPG Bridge icon" width="96" align="right" />
 
 [![Unit test coverage](https://img.shields.io/codecov/c/gh/diablodale/gpg-bridge?token=61T3LCANGO&flag=unittests&logo=codecov&label=Unit%20test%20coverage)](https://codecov.io/gh/diablodale/gpg-bridge)
+[![Unit tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/diablodale/gpg-bridge/badges/unit-tests.json)](https://github.com/diablodale/gpg-bridge/actions/workflows/publish-test-results.yml)
 
 Bridge GPG operations from Linux remotes (WSL, Dev Containers, SSH) to the GPG agent
 on your local host running [GnuPG](https://gnupg.org/) 2.1+. Sign commits,

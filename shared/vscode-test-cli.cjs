@@ -5,6 +5,9 @@
 // Runner does not discover it (its workspace.findFiles pattern only matches .vscode-test.*).
 // The root-level .vscode-test.cjs is the single source of truth for the Test Explorer UI.
 
+const path = require('path');
+process.env.JUNIT_OUTPUT_FILE = path.resolve(__dirname, 'test-results/unit/results.xml');
+
 const { defineConfig } = require('@vscode/test-cli');
 
 module.exports = defineConfig({
@@ -20,6 +23,7 @@ module.exports = defineConfig({
       mocha: {
         ui: 'bdd',
         timeout: 10000,
+        reporter: require.resolve('./junit-spec.cjs'),
       },
       launchArgs: [
         // Prevent other extensions from activating during tests.
