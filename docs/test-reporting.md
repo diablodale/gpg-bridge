@@ -355,18 +355,18 @@ shared/
 
 ### Implementation Order
 
-1. Upgrade `mocha` from `^10.5.0` to `^11` in `gpg-bridge-agent/package.json`,
+1. ✅ Upgrade `mocha` from `^10.5.0` to `^11` in `gpg-bridge-agent/package.json`,
    `gpg-bridge-request/package.json`, and `shared/package.json`. Also add
    `mocha-junit-reporter: "^2.2.1"` to `shared/package.json` devDependencies. Run
    `npm install` from repo root.
-2. Create `shared/junit-spec.cjs`.
-3. Update `.gitignore`.
-4. Update the four `vscode-test-cli*.cjs` config files (no TypeScript compilation needed).
-5. Update `gpg-bridge-agent` integration runner and suite (`runTest.ts`, `suite/index.ts`).
-6. Update `gpg-bridge-request` integration runners and suites (both `runTest` files, both suite index files).
-7. Optionally update root `clean` script.
-8. Run `npm run compile` then `npm test` to verify unit tests produce XML and keep color output.
-9. Run each integration suite manually to verify XML output.
+2. ✅ Create `shared/junit-spec.cjs`.
+3. ✅ Update `.gitignore`.
+4. ✅ Update the four `vscode-test-cli*.cjs` config files (no TypeScript compilation needed).
+5. ✅ Update `gpg-bridge-agent` integration runner and suite (`runTest.ts`, `suite/index.ts`).
+6. ✅ Update `gpg-bridge-request` integration runners and suites (both `runTest` files, both suite index files).
+7. ✅ Optionally update root `clean` script.
+8. ✅ Run `npm run compile` then `npm test` to verify unit tests produce XML and keep color output.
+9. ✅ Run each integration suite manually to verify XML output.
 
 ---
 
@@ -553,9 +553,9 @@ underlying commit SHA.
 4. ✅ Create `.github/workflows/publish-test-results.yml` with `workflow_run` trigger,
    concurrency, `publish-test-results` job, and `update-badge` job.
 5. ✅ Add unit test badge to `README.md`.
-6. Push to a branch and open a PR to verify: check appears in PR checks tab, comment is
+6. ✅ Push to a branch and open a PR to verify: check appears in PR checks tab, comment is
    posted, badge updates on merge to `main`.
-7. Add `Unit test results` to the branch protection rule for `main` (must be done **after**
+7. ✅ Add `Unit test results` to the branch protection rule for `main` (must be done **after**
    step 6 so GitHub has seen the check name and offers it in the picker):
    **Settings → Branches → Edit rule for `main` → Require status checks → add `Unit test results`**
 8. Open a PR from a fork to verify the same surfaces appear for fork contributors.
@@ -662,3 +662,339 @@ to the `publish-test-results.yml` workflow runs page.
   does not apply here.
 - `github.token` is passed via `env:` (masked in logs by the runner) and set as an HTTP
   `Authorization` header on the git config, never stored in a remote URL.
+
+---
+
+## Phase 3 — Request Integration Tests in GitHub Actions CI
+
+### Goal
+
+Run `gpg-bridge-request` Phase 2 (request proxy chain: `requestProxyIntegration`) and Phase 3
+(gpg CLI: `gpgCliIntegration`) integration tests in GitHub Actions CI — the same tests already
+runnable locally via `npm --prefix gpg-bridge-request run test:integration`. Surface results
+folded into the existing "Integration test results" check, same `integrationtests` Codecov flag,
+same badge. No new reporting infrastructure required beyond a second artifact download step.
+
+---
+
+### Architecture differences from shared and agent integration tests
+
+The request integration tests use a fundamentally different execution model:
+
+- `@vscode/test-electron` launches VS Code with a `dev-container+` remote authority. The Dev
+  Containers extension spins up a Docker container for the workspace extension host; the local
+  extension host (gpg-bridge-agent) stays on the CI runner.
+- Two runner files execute sequentially: `requestProxyRunTest.ts` → `gpgCliRunTest.ts`, chained
+  by `&&` in the `test:integration` script.
+- V8 JSON coverage data accumulates in `gpg-bridge-request/coverage/v8-integration/` on the
+  host (bind-mounted from the container). `gpgCliRunTest.ts` (Phase 3, last runner) post-processes
+  both phases' V8 JSON via c8, writing `gpg-bridge-request/coverage/integration/lcov.info` and
+  `coverage-final.json`. The lcov path is `--reports-dir coverage/integration` relative to the
+  request package root — `gpg-bridge-request/coverage/integration/lcov.info`.
+- Docker must be available on the runner. ubuntu-latest has Docker pre-installed.
+
+---
+
+### Linux host compatibility analysis
+
+The runners were written and tested on Windows. On ubuntu-latest every relevant transform is
+either a no-op or produces the correct Linux result:
+
+| Concern                            | Windows result                                              | Linux result                                      | Verdict |
+| ---------------------------------- | ----------------------------------------------------------- | ------------------------------------------------- | ------- |
+| `path.join().replace(/\\/g, '/')`  | Converts backslashes                                        | No-op (already POSIX)                             | ✓       |
+| `.replace(/^([A-Za-z]):/, '/$1:')` | `C:\…` → `/C:/…`                                            | No-op (starts with `/`)                           | ✓       |
+| `pathToFileURL(workspaceRoot)`     | `file:///C:/path/`                                          | `file:///home/runner/work/gpg-bridge/gpg-bridge/` | ✓       |
+| Container → host path remap        | Substitutes `file:///workspaces/gpg-bridge/` → Windows path | Substitutes to Linux host path                    | ✓       |
+| `source-map-cache` deletion        | Required (Windows rejects Linux `file://` URLs)             | Harmless — code comments confirm this explicitly  | ✓       |
+
+No source changes to the runners are required.
+
+**One required wrapping**: the `test:integration` npm script does not include `xvfb-run`. VS Code
+Electron requires a display server on Linux. The CI job step must be:
+
+```
+xvfb-run -a npm --prefix gpg-bridge-request run test:integration
+```
+
+This is the same pattern used by the existing `integration-test` job for shared and agent.
+
+---
+
+### Container image caching via ghcr.io
+
+**Problem**: `check-devcontainer.js` has no refresh cycle or staleness sentinel — every
+invocation unconditionally runs `docker pull mcr.microsoft.com/devcontainers/javascript-node:22-trixie`.
+On CI this downloads ~500 MB per phase. Two phases = up to ~1 GB of MCR pulls per run.
+Additionally, `updateContentCommand` runs a full `npm install` inside each container on each
+run — ~30–60 s per container with no npm cache.
+
+**Solution: custom Dockerfile baking npm packages into the image**
+
+A new `.devcontainer/Dockerfile` extends the MCR base image and pre-installs all npm packages
+into `/opt/gpg-bridge-deps/` at image build time. Both phase 2 and phase 3 use the same
+Dockerfile (same base image, same packages):
+
+```dockerfile
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-trixie
+
+WORKDIR /opt/gpg-bridge-deps
+# Root package.json/package-lock.json are copied so npm understands the workspace structure
+# when resolving the "file:../shared" dependency in gpg-bridge-request. The root
+# devDependencies (@vscode/test-electron, @devcontainers/cli, etc.) run on the host,
+# not inside the container, so the root packages are never installed here.
+COPY package.json package-lock.json ./
+COPY shared/package.json shared/package-lock.json ./shared/
+COPY gpg-bridge-request/package.json gpg-bridge-request/package-lock.json ./gpg-bridge-request/
+
+RUN cd shared && npm install && \
+    cd ../gpg-bridge-request && npm install
+```
+
+Both `devcontainer.json` files switch from `"image":` to `"build":` with the Dockerfile
+path, repo root as build context, and a `cacheFrom` pointing to the phase-specific ghcr.io tag:
+
+```json
+"build": {
+  "dockerfile": "../Dockerfile",
+  "context": "../..",
+  "cacheFrom": "ghcr.io/diablodale/gpg-bridge/devcontainer-request:phaseN"
+}
+```
+
+(Phase 2 uses `:phase2`; phase 3 uses `:phase3`. Same image today; independently versionable
+if they diverge.)
+
+**Local development**: `cacheFrom` is advisory — if the ghcr.io image is not present in the
+local Docker daemon, Docker silently ignores it and builds from the `FROM mcr.microsoft.com/...`
+base image as normal, pulling from MCR once and caching locally. No ghcr.io login or explicit
+pull is required. Optionally, a developer can `docker pull ghcr.io/.../devcontainer-request:phase2`
+once to seed the cache and skip even the npm layer on subsequent rebuilds.
+
+**CI**: authenticate to ghcr.io; pull both phase-specific tags — VS Code Dev Containers then
+runs `docker build` with `cacheFrom` pointing at the already-pulled image → 100% layer cache
+hit → no rebuild, no network install.
+
+In the `request-integration-test` CI job, before the test script runs:
+
+1. Authenticate to ghcr.io using `docker/login-action`:
+   ```yaml
+   - name: Authenticate to ghcr.io
+     uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+     with:
+       registry: ghcr.io
+       username: ${{ github.actor }}
+       password: ${{ github.token }}
+   ```
+2. Pull pre-built images:
+   ```
+   docker pull ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase2
+   docker pull ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase3
+   ```
+   No retag step needed — `devcontainer.json` references ghcr.io directly via `cacheFrom`.
+
+Modify `scripts/check-devcontainer.js`: the `pullImage()` function reads the `image` field
+from `devcontainer.json`. With the switch to `build:`, there is no `image` field —
+`pullImage()` must gracefully skip when no `image` field is present. This covers both local
+and CI cases; no separate `CI=true` guard is needed.
+
+---
+
+### node_modules inside the container
+
+The custom Dockerfile bakes npm packages for `shared` and `gpg-bridge-request`
+into `/opt/gpg-bridge-deps/` at image build time. `updateContentCommand` replaces the full
+`npm install` with a fast `cp -a` that seeds the named volumes from the baked image layers:
+
+```bash
+sudo chown node:node \
+  ${containerWorkspaceFolder}/node_modules \
+  ${containerWorkspaceFolder}/shared/node_modules \
+  ${containerWorkspaceFolder}/gpg-bridge-request/node_modules \
+  ${containerWorkspaceFolder}/gpg-bridge-agent/node_modules && \
+cp -a /opt/gpg-bridge-deps/shared/node_modules/. \
+  ${containerWorkspaceFolder}/shared/node_modules/ && \
+cp -a /opt/gpg-bridge-deps/gpg-bridge-request/node_modules/. \
+  ${containerWorkspaceFolder}/gpg-bridge-request/node_modules/
+```
+
+The agent volume is left empty — it exists only to shadow the Windows host's junction-point
+`node_modules` from the container. No agent code runs in the container.
+
+The `@gpg-bridge/shared` symlink baked at
+`/opt/gpg-bridge-deps/gpg-bridge-request/node_modules/@gpg-bridge/shared → ../../../shared`
+resolves after `cp -a` to `/workspaces/gpg-bridge/shared` via the workspace bind mount. ✓
+
+Named volumes remain necessary — they shadow the Windows host's `node_modules` directories,
+which contain NTFS junction points that the Linux container cannot follow as POSIX symlinks.
+
+---
+
+### New CI job: `request-integration-test` (Job 4)
+
+Location: `ci.yml`, after Job 3. `needs: [test]` — runs in parallel with `integration-test`.
+Parallel is correct: no shared lcov files, no shared artifacts, no shared coverage data.
+
+```
+checks → test → integration-test         (shared + agent)
+              → request-integration-test  (request phase 2 + phase 3)
+```
+
+Both integration jobs must complete before `publish-test-results.yml` surfaces results, which is
+guaranteed because `workflow_run` fires only after the entire CI workflow finishes.
+
+Steps:
+
+1. Checkout (`persist-credentials: false`)
+2. Node 22, npm cache
+3. `npm install`
+4. `npm run compile` — runner TypeScript files must be compiled before the pretest hooks invoke them
+5. Authenticate to ghcr.io; pull phase 2 and phase 3 pre-built images (see above) — `docker build`
+   in Dev Containers then hits 100% layer cache from the pulled images
+6. Get week number; cache VS Code test binaries — same weekly key as Jobs 2 and 3, extends
+   the path list with `gpg-bridge-request/.vscode-test/vscode-*`
+7. `xvfb-run -a npm --prefix gpg-bridge-request run test:integration` (both phases via `&&`)
+8. Normalize lcov paths to repo-root-relative:
+   ```
+   sed -i 's|^SF:\.\./|SF:|' gpg-bridge-request/coverage/integration/lcov.info
+   sed -i 's|^SF:src/|SF:gpg-bridge-request/src/|' gpg-bridge-request/coverage/integration/lcov.info
+   ```
+9. Upload to Codecov: `flags: integrationtests`, `name: integrationtests-request`,
+   `files: gpg-bridge-request/coverage/integration/lcov.info`, `fail_ci_if_error: false`
+10. `node scripts/rewrite-junit-paths.cjs` (`if: always()`)
+11. Upload artifact `test-results-integration-request`:
+    `gpg-bridge-request/test-results/integration/*.xml`, `if: always()`,
+    `if-no-files-found: error`
+
+A separate artifact name (`test-results-integration-request`) is used instead of sharing
+`test-results-integration` with Job 3. upload-artifact v4+ supports merging concurrent uploads
+to the same artifact name, but parallel jobs racing on the same artifact introduces avoidable
+risk. Separate artifact names are simpler and allow independent failure diagnosis.
+
+---
+
+### Changes to `publish-test-results.yml`
+
+`publish-integration-results` downloads `test-results-integration` today. One additional
+download step is needed for `test-results-integration-request`. Both artifact sets are passed to
+the same EnricoMi action invocation so all request, shared, and agent results appear in a single
+"Integration test results" check, single PR comment, and unified count. No new job, no new check
+name, no new badge.
+
+The `update-badges` job is unchanged — the integration badge reflects the EnricoMi check totals,
+which automatically include the request results once the download step is added.
+
+---
+
+### New workflow: `cache-devcontainer-images.yml`
+
+| Field       | Value                                                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trigger     | `push` to `main` paths `.devcontainer/**`, `package*.json` (repo root), `shared/package*.json`, `gpg-bridge-request/package*.json`; `workflow_dispatch` |
+| Permissions | `packages: write`, `contents: read`                                                                                                                     |
+| Runs-on     | `ubuntu-latest`                                                                                                                                         |
+
+Steps:
+
+1. Checkout — required so the Dockerfile and `package*.json` files are available as build context
+2. Authenticate to ghcr.io using `docker/login-action`:
+   ```yaml
+   - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+     with:
+       registry: ghcr.io
+       username: ${{ github.actor }}
+       password: ${{ github.token }}
+   ```
+3. Build and push both phase tags using `docker/build-push-action` with inline cache metadata
+   embedded into the pushed layers (`cache-to: type=inline`). Both tags point to the same
+   image; independently versionable if phases diverge:
+   ```yaml
+   - uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+     with:
+       context: .
+       file: .devcontainer/Dockerfile
+       push: true
+       tags: |
+         ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase2
+         ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase3
+       cache-from: type=registry,ref=ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase2
+       cache-to: type=inline
+   ```
+   `cache-to: type=inline` embeds BuildKit layer metadata directly into the image manifest.
+   On subsequent runs the `cache-from` registry pull gives a full layer cache hit with no
+   rebuild. `max` mode requires a separate cache ref; `min` (inline) is sufficient here since
+   the Dockerfile has no multi-stage layers.
+
+`docker/setup-buildx-action` is intentionally omitted: ubuntu-latest runners
+pre-install Docker-Buildx (≥0.32) and the default docker driver supports
+cache-to: type=inline without a docker-container driver. setup-buildx-action
+is only needed for multi-platform builds or external cache exporters.
+
+First-time setup: trigger manually via `workflow_dispatch` to populate ghcr.io before any CI
+run or local developer needs the cached image.
+
+---
+
+### Action SHA pinning
+
+| Action                     | Version | SHA                                        |
+| -------------------------- | ------- | ------------------------------------------ |
+| `docker/login-action`      | v4.0.0  | `b45d80f862d83dbcd57f89517bcf500b2ab88fb2` |
+| `docker/build-push-action` | v7.0.0  | `d08e5c354a6adb9ed34480a06d141179aa583294` |
+
+These SHAs are used in both `cache-devcontainer-images.yml` and the `request-integration-test`
+job in `ci.yml`. Resolve updated SHAs with:
+
+```bash
+gh api repos/docker/<action>/git/refs/tags/<tag> --jq '{sha: .object.sha, type: .object.type}'
+```
+
+---
+
+### File changes summary
+
+| File                                              | Change                                                                                                                 |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `.devcontainer/Dockerfile`                        | New: extends MCR base image, bakes npm packages into `/opt/gpg-bridge-deps/`                                           |
+| `.devcontainer/phase2/devcontainer.json`          | Switch `image:` → `build:` with `cacheFrom: .../devcontainer-request:phase2`; update `updateContentCommand` to `cp -a` |
+| `.devcontainer/phase3/devcontainer.json`          | Same as phase 2; uses `:phase3` tag                                                                                    |
+| `.github/workflows/ci.yml`                        | Add `request-integration-test` job (Job 4, `needs: [test]`)                                                            |
+| `.github/workflows/cache-devcontainer-images.yml` | New: build custom Dockerfile and push phase2/phase3 tags to ghcr.io                                                    |
+| `.github/workflows/publish-test-results.yml`      | Add download step for `test-results-integration-request` in `publish-integration-results`                              |
+| `scripts/check-devcontainer.js`                   | Skip `pullImage()` gracefully when no `image:` field present (i.e. `build:` is used)                                   |
+| `scripts/rewrite-junit-paths.cjs`                 | No change — already iterates all packages and `integration/` subdir                                                    |
+| `README.md`                                       | No change — existing integration badge covers all packages                                                             |
+
+---
+
+### Implementation order
+
+1. ✅ Phase 1 and Phase 2 of this plan complete.
+2. Create `.devcontainer/Dockerfile`. Update both `devcontainer.json` files to use `build:` with
+   `cacheFrom` and replace `updateContentCommand` with `cp -a`. Create `cache-devcontainer-images.yml`.
+   Trigger via `workflow_dispatch` to populate ghcr.io before any CI run or local rebuild.
+3. Modify `scripts/check-devcontainer.js` to skip `pullImage()` when no `image:` field is
+   present and when `CI=true`.
+4. Add `request-integration-test` job to `ci.yml` with ghcr.io pull steps (no retag needed).
+5. Update `publish-integration-results` in `publish-test-results.yml` to download both artifacts.
+6. Push to a CI branch; verify both devcontainer phases start and run to completion.
+7. Verify all request integration results appear in the "Integration test results" PR check
+   alongside shared and agent results.
+8. Verify Codecov receives request integration lcov under `integrationtests` flag and merges
+   into the union coverage.
+9. After first passing CI run on `main`, verify the integration badge reflects the combined totals.
+
+---
+
+### Risks and mitigations
+
+| Risk                                                                        | Mitigation                                                                                                                                     |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux host compat: runners never tested on Linux host                       | Analysis confirms all transforms are no-ops or correct on Linux; verify at step 6                                                              |
+| Container startup time: two `devcontainer up` calls per run (~30–90 s each) | ghcr.io pre-pull eliminates ~500 MB MCR download; container creation time is unaffected                                                        |
+| node_modules install per container per run                                  | Baked into image at `/opt/gpg-bridge-deps/`; `updateContentCommand` uses `cp -a` to seed named volumes — no network install at container start |
+| Phase 2 V8 JSON cleared by `requestProxyRunTest` on every run               | Correct by design — ensures no stale data from prior runs                                                                                      |
+| Phase 3 c8 skipped if Phase 2 exits abnormally (no V8 JSON files)           | lcov absent → normalize step is no-op; Codecov has `fail_ci_if_error: false`; JUnit XML still uploaded if tests ran before crash               |
+| Parallel Codecov uploads with same `flags: integrationtests`                | Codecov merges multiple per-commit per-flag uploads — this is the intended use                                                                 |
+| ghcr.io cache stale after MCR releases a new image                          | `cache-devcontainer-images.yml` has `workflow_dispatch`; adding a weekly schedule cron is a simple future addition                             |
+| Dev Containers extension install requires network on every run              | ~5 s; no mitigation; always fresh install into test profile                                                                                    |

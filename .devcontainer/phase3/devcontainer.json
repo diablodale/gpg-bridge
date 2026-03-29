@@ -65,11 +65,10 @@
     }
   ],
   // gnupg2 is pre-installed in the base image.
-  // Only install shared and gpg-bridge-request npm packages — gpg-bridge-agent has "os": ["win32"] and
-  // npm install would fail with EBADPLATFORM on Linux, aborting the whole chain.
   // updateContentCommand runs before VS Code connects (waitFor defaults to updateContentCommand),
   // so mocha and all npm packages are installed before the extension host loads.
   // postCreateCommand runs AFTER the tool connects — wrong place for npm install.
+  // TODO: replace npm install with cp -a from /opt/gpg-bridge-deps/ once Dockerfile image is built.
   "updateContentCommand": "sudo chown node:node ${containerWorkspaceFolder}/node_modules ${containerWorkspaceFolder}/shared/node_modules ${containerWorkspaceFolder}/gpg-bridge-request/node_modules ${containerWorkspaceFolder}/gpg-bridge-agent/node_modules && cd ${containerWorkspaceFolder}/shared && npm install && cd ${containerWorkspaceFolder}/gpg-bridge-request && npm install",
   // VS Code Dev Containers unconditionally probes the Windows host for GPG configuration
   // at attach time and forwards any found agent socket + public keys into the container.
