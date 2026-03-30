@@ -1,5 +1,17 @@
 # Codecov configuration — https://docs.codecov.com/docs/codecovyml-reference
 
+codecov:
+  notify:
+    # Wait for all 3 uploads (unit, shared+agent integration, request integration)
+    # before computing coverage stats and posting status checks/emails.
+    # Without this, Codecov notifies after the first upload and may mark the
+    # commit as failed before the later uploads arrive.
+    after_n_builds: 3
+    # Also wait for all other CI checks to reach a terminal state before posting
+    # Codecov status checks or sending emails.  Prevents notification during an
+    # in-progress pipeline.  Codecov never waits for its own checks.
+    wait_for_ci: true
+
 coverage:
   status:
     project:
