@@ -154,8 +154,10 @@
     "test:integration": "npm run test:integration:request-proxy && npm run test:integration:gpg-cli",
     "pretest:integration:request-proxy": "node ../scripts/check-devcontainer.js --config .devcontainer/phase2/devcontainer.json",
     "test:integration:request-proxy": "node out/test/integration/requestProxyRunTest.js",
+    "posttest:integration:request-proxy": "node ../scripts/check-devcontainer.js --config .devcontainer/phase2/devcontainer.json",
     "pretest:integration:gpg-cli": "node ../scripts/check-devcontainer.js --config .devcontainer/phase3/devcontainer.json",
     "test:integration:gpg-cli": "node out/test/integration/gpgCliRunTest.js",
+    "posttest:integration:gpg-cli": "node ../scripts/check-devcontainer.js --config .devcontainer/phase3/devcontainer.json",
     "vsix": "vsce package"
   },
   "devDependencies": {

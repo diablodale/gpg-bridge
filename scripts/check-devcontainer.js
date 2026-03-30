@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // check-devcontainer.js — Pulls the dev container base image and removes any
 // existing container so the test runner's `devcontainer up` always starts fresh.
+// Also used as a posttest teardown to force-remove the container after tests complete,
+// because the VS Code server inside the container may not exit on its own (e.g. when
+// the devcontainer image tag is stolen by a sibling phase build, leaving the container
+// untracked by the Dev Containers extension).
 //
 // Steps:
 //   1. Read the "image" field from the devcontainer.json config file.
