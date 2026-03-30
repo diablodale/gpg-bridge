@@ -13,7 +13,16 @@
   //
   // See docs/integration-test-plan.md for details.
   "name": "request-phase-2-integration-tests",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-trixie",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "../../",
+    // cacheFrom is advisory: Docker silently ignores it if the ghcr.io image is not
+    // present locally. Local dev falls back to building from the MCR base image.
+    // CI builds this image inline (docker/build-push-action) before running this
+    // script so devcontainer up gets a full layer cache hit — no MCR download, no
+    // npm install at container start.
+    "cacheFrom": "ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase2"
+  },
   // remoteEnv is evaluated at attach time, not container creation.
   // ${localEnv:VAR} reads from the local VS Code process env — which is the
   // @vscode/test-electron-spawned VS Code process whose env = Object.assign({},
@@ -32,11 +41,10 @@
     "NODE_V8_COVERAGE": "${containerWorkspaceFolder}/gpg-bridge-request/coverage/v8-integration"
   },
   // node_modules directories are shadowed by container-local Docker volumes so that
-  // npm install inside the container creates Linux-native symlinks without touching the
-  // Windows-host node_modules (which use Windows junction paths). The workspace source
-  // files and compiled out/ directories come from the normal workspace bind mount.
-  // postCreateCommand runs npm install so @gpg-bridge/shared symlinks resolve to
-  // /workspaces/gpg-bridge/shared, which exists via the workspace bind mount.
+  // Linux-native symlinks (created by cp -a inside the container) do not touch the
+  // Windows-host node_modules (which use NTFS junction points the Linux container
+  // cannot follow). The workspace source files and compiled out/ directories come
+  // from the normal workspace bind mount.
   "mounts": [
     {
       "source": "gpg-bridge-root-node-modules",
@@ -60,10 +68,10 @@
     }
   ],
   // updateContentCommand runs before VS Code connects (waitFor defaults to updateContentCommand),
-  // so mocha and all npm packages are installed before the extension host loads.
-  // postCreateCommand runs AFTER the tool connects — wrong place for npm install.
-  // TODO: replace npm install with cp -a from /opt/gpg-bridge-deps/ once Dockerfile image is built.
-  "updateContentCommand": "sudo chown node:node ${containerWorkspaceFolder}/node_modules ${containerWorkspaceFolder}/shared/node_modules ${containerWorkspaceFolder}/gpg-bridge-request/node_modules ${containerWorkspaceFolder}/gpg-bridge-agent/node_modules && cd ${containerWorkspaceFolder}/shared && npm install && cd ${containerWorkspaceFolder}/gpg-bridge-request && npm install",
+  // so all npm packages are available before the extension host loads.
+  // cp -a seeds each named volume from packages baked into the image at /opt/gpg-bridge-deps/.
+  // The agent volume is empty (shadow only) — no agent packages run in the container.
+  "updateContentCommand": "sudo chown node:node ${containerWorkspaceFolder}/node_modules ${containerWorkspaceFolder}/shared/node_modules ${containerWorkspaceFolder}/gpg-bridge-request/node_modules ${containerWorkspaceFolder}/gpg-bridge-agent/node_modules && cp -a /opt/gpg-bridge-deps/shared/node_modules/. ${containerWorkspaceFolder}/shared/node_modules/ && cp -a /opt/gpg-bridge-deps/gpg-bridge-request/node_modules/. ${containerWorkspaceFolder}/gpg-bridge-request/node_modules/",
   // VS Code Dev Containers unconditionally probes the Windows host for GPG configuration
   // at attach time and forwards any found agent socket + public keys into the container.
   // There is no setting to disable this behavior, so wiping the gpg homedir here

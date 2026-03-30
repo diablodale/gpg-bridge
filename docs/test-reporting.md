@@ -846,23 +846,42 @@ guaranteed because `workflow_run` fires only after the entire CI workflow finish
 Steps:
 
 1. Checkout (`persist-credentials: false`)
-2. Node 22, npm cache
+2. Node 22, **conditional npm cache** — `cache:` and `package-manager-cache:` are both gated on
+   `github.ref != 'refs/heads/main'`. On `main` this job pushes to ghcr.io via
+   `docker/build-push-action`: a poisoned npm cache entry (Cacheract-style pre-poisoning on the
+   new `package-lock.json` hash) could run lifecycle scripts before the Docker push, corrupting
+   the shared registry image. On PR branches the blast radius is limited to the ephemeral runner
+   (no registry push), so caching is safe and avoids ~30–60 s extra install time on every PR.
+   `package-manager-cache:` is the newer explicit control that supersedes the implicit caching
+   behaviour; both inputs are set together for defence in depth.
+   zizmor flags `setup-node` as a `cache-poisoning` finding because it cannot evaluate the
+   conditional expression statically — a `# zizmor: ignore[cache-poisoning]` annotation is added
+   to the `uses:` line with the runtime enforcement provided by the conditional values.
 3. `npm install`
 4. `npm run compile` — runner TypeScript files must be compiled before the pretest hooks invoke them
-5. Authenticate to ghcr.io; pull phase 2 and phase 3 pre-built images (see above) — `docker build`
-   in Dev Containers then hits 100% layer cache from the pulled images
-6. Get week number; cache VS Code test binaries — same weekly key as Jobs 2 and 3, extends
-   the path list with `gpg-bridge-request/.vscode-test/vscode-*`
-7. `xvfb-run -a npm --prefix gpg-bridge-request run test:integration` (both phases via `&&`)
-8. Normalize lcov paths to repo-root-relative:
-   ```
-   sed -i 's|^SF:\.\./|SF:|' gpg-bridge-request/coverage/integration/lcov.info
-   sed -i 's|^SF:src/|SF:gpg-bridge-request/src/|' gpg-bridge-request/coverage/integration/lcov.info
-   ```
-9. Upload to Codecov: `flags: integrationtests`, `name: integrationtests-request`,
-   `files: gpg-bridge-request/coverage/integration/lcov.info`, `fail_ci_if_error: false`
-10. `node scripts/rewrite-junit-paths.cjs` (`if: always()`)
-11. Upload artifact `test-results-integration-request`:
+5. Authenticate to ghcr.io
+6. Extract image metadata via `docker/metadata-action` (OCI labels, annotations, phase2/phase3 tags)
+7. Build devcontainer image via `docker/build-push-action`:
+   - `push: ${{ github.ref == 'refs/heads/main' }}` — pushes to ghcr.io on main only
+   - `load: ${{ github.ref != 'refs/heads/main' }}` — loads into local daemon on PR branches
+   - `cache-from: type=registry,ref=.../devcontainer-request:phase2` — layer cache from previous push
+   - `cache-to: type=inline` — embeds cache metadata into the pushed manifest
+   - On a full cache hit (no Dockerfile or package changes): ~10–30 s, no MCR download, no npm install
+   - On a cache miss: affected layers rebuild; image is always correct for the current commit
+8. Get week number + cache VS Code test binaries — both steps have `if: github.ref != 'refs/heads/main'`
+   so they are skipped entirely on main. zizmor flags `actions/cache` after a publisher step regardless
+   of `if:` conditions (static analysis); a `# zizmor: ignore[cache-poisoning]` annotation is added
+   with the `if:` providing the actual runtime enforcement.
+9. `xvfb-run -a npm --prefix gpg-bridge-request run test:integration` (both phases via `&&`)
+10. Normalize lcov paths to repo-root-relative:
+    ```
+    sed -i 's|^SF:\.\./|SF:|' gpg-bridge-request/coverage/integration/lcov.info
+    sed -i 's|^SF:src/|SF:gpg-bridge-request/src/|' gpg-bridge-request/coverage/integration/lcov.info
+    ```
+11. Upload to Codecov: `flags: integrationtests`, `name: integrationtests-request`,
+    `files: gpg-bridge-request/coverage/integration/lcov.info`, `fail_ci_if_error: false`
+12. `node scripts/rewrite-junit-paths.cjs` (`if: always()`)
+13. Upload artifact `test-results-integration-request`:
     `gpg-bridge-request/test-results/integration/*.xml`, `if: always()`,
     `if-no-files-found: error`
 
@@ -886,64 +905,33 @@ which automatically include the request results once the download step is added.
 
 ---
 
-### New workflow: `cache-devcontainer-images.yml`
+### Workflow
 
-| Field       | Value                                                                                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Trigger     | `push` to `main` paths `.devcontainer/**`, `package*.json` (repo root), `shared/package*.json`, `gpg-bridge-request/package*.json`; `workflow_dispatch` |
-| Permissions | `packages: write`, `contents: read`                                                                                                                     |
-| Runs-on     | `ubuntu-latest`                                                                                                                                         |
+This workflow was originally planned as a separate `push`-triggered workflow to build and
+push the devcontainer image to ghcr.io. It was rejected in favour of building the image
+inline in the `request-integration-test` job (see Job 4 above).
 
-Steps:
+The rejected separate workflow running in parallel with CI suffers an N-1 false-pass
+risk — if a package change in commit N regresses container-side tests, CI runs against N-1
+packages and false-passes. Building inline in Job 4 eliminates this: the image is always
+built from the current commit before tests run.
 
-1. Checkout — required so the Dockerfile and `package*.json` files are available as build context
-2. Authenticate to ghcr.io using `docker/login-action`:
-   ```yaml
-   - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
-     with:
-       registry: ghcr.io
-       username: ${{ github.actor }}
-       password: ${{ github.token }}
-   ```
-3. Build and push both phase tags using `docker/build-push-action` with inline cache metadata
-   embedded into the pushed layers (`cache-to: type=inline`). Both tags point to the same
-   image; independently versionable if phases diverge:
-   ```yaml
-   - uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
-     with:
-       context: .
-       file: .devcontainer/Dockerfile
-       push: true
-       tags: |
-         ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase2
-         ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase3
-       cache-from: type=registry,ref=ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase2
-       cache-to: type=inline
-   ```
-   `cache-to: type=inline` embeds BuildKit layer metadata directly into the image manifest.
-   On subsequent runs the `cache-from` registry pull gives a full layer cache hit with no
-   rebuild. `max` mode requires a separate cache ref; `min` (inline) is sufficient here since
-   the Dockerfile has no multi-stage layers.
-
-`docker/setup-buildx-action` is intentionally omitted: ubuntu-latest runners
-pre-install Docker-Buildx (≥0.32) and the default docker driver supports
-cache-to: type=inline without a docker-container driver. setup-buildx-action
-is only needed for multi-platform builds or external cache exporters.
-
-First-time setup: trigger manually via `workflow_dispatch` to populate ghcr.io before any CI
-run or local developer needs the cached image.
+`docker/metadata-action` was previously used only in this workflow; it is now used in Job 4.
 
 ---
 
 ### Action SHA pinning
 
+All action references are pinned to a full commit SHA (with the version tag as a comment).
+SHAs resolved at implementation time:
+
 | Action                     | Version | SHA                                        |
 | -------------------------- | ------- | ------------------------------------------ |
 | `docker/login-action`      | v4.0.0  | `b45d80f862d83dbcd57f89517bcf500b2ab88fb2` |
+| `docker/metadata-action`   | v6.0.0  | `030e881283bb7a6894de51c315a6bfe6a94e05cf` |
 | `docker/build-push-action` | v7.0.0  | `d08e5c354a6adb9ed34480a06d141179aa583294` |
 
-These SHAs are used in both `cache-devcontainer-images.yml` and the `request-integration-test`
-job in `ci.yml`. Resolve updated SHAs with:
+All three are used in `ci.yml` Job 4. Resolve updated SHAs with:
 
 ```bash
 gh api repos/docker/<action>/git/refs/tags/<tag> --jq '{sha: .object.sha, type: .object.type}'
@@ -953,17 +941,16 @@ gh api repos/docker/<action>/git/refs/tags/<tag> --jq '{sha: .object.sha, type: 
 
 ### File changes summary
 
-| File                                              | Change                                                                                                                 |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `.devcontainer/Dockerfile`                        | New: extends MCR base image, bakes npm packages into `/opt/gpg-bridge-deps/`                                           |
-| `.devcontainer/phase2/devcontainer.json`          | Switch `image:` → `build:` with `cacheFrom: .../devcontainer-request:phase2`; update `updateContentCommand` to `cp -a` |
-| `.devcontainer/phase3/devcontainer.json`          | Same as phase 2; uses `:phase3` tag                                                                                    |
-| `.github/workflows/ci.yml`                        | Add `request-integration-test` job (Job 4, `needs: [test]`)                                                            |
-| `.github/workflows/cache-devcontainer-images.yml` | New: build custom Dockerfile and push phase2/phase3 tags to ghcr.io                                                    |
-| `.github/workflows/publish-test-results.yml`      | Add download step for `test-results-integration-request` in `publish-integration-results`                              |
-| `scripts/check-devcontainer.js`                   | Skip `pullImage()` gracefully when no `image:` field present (i.e. `build:` is used)                                   |
-| `scripts/rewrite-junit-paths.cjs`                 | No change — already iterates all packages and `integration/` subdir                                                    |
-| `README.md`                                       | No change — existing integration badge covers all packages                                                             |
+| File                                         | Change                                                                                                                 |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `.devcontainer/Dockerfile`                   | New: extends MCR base image, bakes npm packages into `/opt/gpg-bridge-deps/`                                           |
+| `.devcontainer/phase2/devcontainer.json`     | Switch `image:` → `build:` with `cacheFrom: .../devcontainer-request:phase2`; update `updateContentCommand` to `cp -a` |
+| `.devcontainer/phase3/devcontainer.json`     | Same as phase 2; uses `:phase3` tag                                                                                    |
+| `.github/workflows/ci.yml`                   | Add `request-integration-test` job (Job 4, `needs: [test]`) with inline image build+push                               |
+| `.github/workflows/publish-test-results.yml` | Add download step for `test-results-integration-request` in `publish-integration-results`                              |
+| `scripts/check-devcontainer.js`              | Skip `pullImage()` gracefully when no `image:` field present (i.e. `build:` is used)                                   |
+| `scripts/rewrite-junit-paths.cjs`            | No change — already iterates all packages and `integration/` subdir                                                    |
+| `README.md`                                  | No change — existing integration badge covers all packages                                                             |
 
 ---
 
@@ -971,12 +958,11 @@ gh api repos/docker/<action>/git/refs/tags/<tag> --jq '{sha: .object.sha, type: 
 
 1. ✅ Phase 1 and Phase 2 of this plan complete.
 2. Create `.devcontainer/Dockerfile`. Update both `devcontainer.json` files to use `build:` with
-   `cacheFrom` and replace `updateContentCommand` with `cp -a`. Create `cache-devcontainer-images.yml`.
-   Trigger via `workflow_dispatch` to populate ghcr.io before any CI run or local rebuild.
-3. Modify `scripts/check-devcontainer.js` to skip `pullImage()` when no `image:` field is
-   present and when `CI=true`.
-4. Add `request-integration-test` job to `ci.yml` with ghcr.io pull steps (no retag needed).
-5. Update `publish-integration-results` in `publish-test-results.yml` to download both artifacts.
+   `cacheFrom` and replace `updateContentCommand` with `cp -a`.
+3. ✅ Modify `scripts/check-devcontainer.js` to skip `pullImage()` gracefully when no `image:`
+   field is present (`build:` configs skip pull; `removeExistingContainer()` still runs).
+4. ✅ Add `request-integration-test` job to `ci.yml` with inline image build steps.
+5. ✅ Update `publish-integration-results` in `publish-test-results.yml` to download both artifacts.
 6. Push to a CI branch; verify both devcontainer phases start and run to completion.
 7. Verify all request integration results appear in the "Integration test results" PR check
    alongside shared and agent results.
@@ -989,12 +975,13 @@ gh api repos/docker/<action>/git/refs/tags/<tag> --jq '{sha: .object.sha, type: 
 ### Risks and mitigations
 
 | Risk                                                                        | Mitigation                                                                                                                                     |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------------------------------------------------- | --------------------------------------------------------- |
 | Linux host compat: runners never tested on Linux host                       | Analysis confirms all transforms are no-ops or correct on Linux; verify at step 6                                                              |
-| Container startup time: two `devcontainer up` calls per run (~30–90 s each) | ghcr.io pre-pull eliminates ~500 MB MCR download; container creation time is unaffected                                                        |
+| Container startup time: two `devcontainer up` calls per run (~30–90 s each) | ghcr.io layer cache eliminates ~500 MB MCR download; container creation time is unaffected                                                     |
 | node_modules install per container per run                                  | Baked into image at `/opt/gpg-bridge-deps/`; `updateContentCommand` uses `cp -a` to seed named volumes — no network install at container start |
-| Phase 2 V8 JSON cleared by `requestProxyRunTest` on every run               | Correct by design — ensures no stale data from prior runs                                                                                      |
+| docker build overhead on every CI run                                       | Full layer cache hit when nothing changed: ~10–30 s. Acceptable vs. the alternative of N-1 false-pass risk from a separate workflow            |
+| PR branch poisoning ghcr.io shared cache image                              | `push:` gated on `refs/heads/main`; PRs use `load:` only. Fork PRs additionally have `packages: write` stripped by GitHub at the API level     |     | npm cache poisoning via Cacheract-style pre-poisoning | `cache:` and `package-manager-cache:` both gated on `github.ref != refs/heads/main` in `setup-node`. VS Code binary cache (`actions/cache`) also skipped on main via `if:`. PR branches use all caches safely — blast radius is the ephemeral runner only, not ghcr.io. Cost on `main`: ~30–60 s extra npm install + ~167 MB VS Code download per run |     | Phase 2 V8 JSON cleared by `requestProxyRunTest` on every run | Correct by design — ensures no stale data from prior runs |
 | Phase 3 c8 skipped if Phase 2 exits abnormally (no V8 JSON files)           | lcov absent → normalize step is no-op; Codecov has `fail_ci_if_error: false`; JUnit XML still uploaded if tests ran before crash               |
 | Parallel Codecov uploads with same `flags: integrationtests`                | Codecov merges multiple per-commit per-flag uploads — this is the intended use                                                                 |
-| ghcr.io cache stale after MCR releases a new image                          | `cache-devcontainer-images.yml` has `workflow_dispatch`; adding a weekly schedule cron is a simple future addition                             |
+| ghcr.io cache stale after MCR releases a new image                          | `workflow_dispatch` on Job 4 (or any push to main) will rebuild with updated base; adding a weekly schedule cron is a simple future addition   |
 | Dev Containers extension install requires network on every run              | ~5 s; no mitigation; always fresh install into test profile                                                                                    |
