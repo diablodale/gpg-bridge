@@ -11,6 +11,7 @@
  */
 
 import * as path from 'path';
+import * as v8 from 'v8';
 import Mocha = require('mocha');
 
 export function run(): Promise<void> {
@@ -37,6 +38,11 @@ export function run(): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       mocha.run((failures: number) => {
+        // Flush V8 coverage before the process begins teardown — same rationale as gpgCliIndex.ts.
+        if (process.env.NODE_V8_COVERAGE) {
+          v8.takeCoverage();
+          v8.stopCoverage();
+        }
         if (failures > 0) {
           reject(new Error(`${failures} integration test(s) failed.`));
         } else {

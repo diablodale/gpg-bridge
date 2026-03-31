@@ -407,9 +407,8 @@ jobs:
           key: vscode-test-${{ runner.os }}-${{ steps.date.outputs.week }}
           restore-keys: vscode-test-${{ runner.os }}-
 
-      # Both Phase 2 (request proxy chain) and Phase 3 (gpg CLI) run sequentially
-      # via the test:integration script (requestProxyRunTest && gpgCliRunTest).
       # VS Code Electron requires a display server on Linux; xvfb is pre-installed.
+      # pretest:integration runs compile:integration automatically before test:integration.
       - name: Request integration tests
         run: xvfb-run -a npm --prefix gpg-bridge-request run test:integration
 

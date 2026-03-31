@@ -164,6 +164,12 @@ async function main(): Promise<void> {
     fs.rmSync(v8CovDir, { recursive: true, force: true });
   }
   fs.mkdirSync(v8CovDir, { recursive: true });
+  // chmod 777: on CI Linux the runner user (UID ~1001) owns this directory, but the
+  // container's extension host runs as the 'node' user (UID ~1000). A default 755
+  // directory is not writable by 'others', so the extension host silently fails to
+  // write V8 coverage JSON. 777 allows any uid to write.
+  // Harmless on Windows (Docker Desktop bind mounts ignore Unix permissions).
+  fs.chmodSync(v8CovDir, 0o777);
 
   // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
   gpgLocalHost.writeAgentConf(['disable-scdaemon']);

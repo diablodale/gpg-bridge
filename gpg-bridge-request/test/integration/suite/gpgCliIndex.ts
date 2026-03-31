@@ -14,6 +14,7 @@
  */
 
 import * as path from 'path';
+import * as v8 from 'v8';
 import Mocha = require('mocha');
 
 export function run(): Promise<void> {
@@ -40,6 +41,16 @@ export function run(): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       mocha.run((failures: number) => {
+        // Flush V8 coverage to NODE_V8_COVERAGE immediately, before this process
+        // begins tearing down. takeCoverage() writes synchronously so the file is
+        // guaranteed to exist on the bind-mount host path before VS Code's IPC layer
+        // sends the 'tests done' notification — eliminating the race between process
+        // exit and the host runner scanning the coverage directory. stopCoverage()
+        // prevents V8 from writing a second redundant file on process exit.
+        if (process.env.NODE_V8_COVERAGE) {
+          v8.takeCoverage();
+          v8.stopCoverage();
+        }
         if (failures > 0) {
           reject(new Error(`${failures} integration test(s) failed.`));
         } else {

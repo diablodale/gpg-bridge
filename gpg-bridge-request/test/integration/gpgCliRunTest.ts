@@ -177,10 +177,17 @@ async function main(): Promise<void> {
     // Generate coverage report from accumulated Phase 2 + Phase 3 V8 JSON data.
     // V8 JSON from the container uses Linux paths; remap them to Windows paths
     // so c8 can locate the compiled JS files (and follow source maps to .ts).
-    if (fs.existsSync(v8CovDir) && fs.readdirSync(v8CovDir).some((f) => f.endsWith('.json'))) {
+    const v8JsonFiles = fs.existsSync(v8CovDir)
+      ? fs.readdirSync(v8CovDir).filter((f) => f.endsWith('.json'))
+      : [];
+    process.stdout.write(`\n[coverage] v8CovDir: ${v8CovDir}\n`);
+    process.stdout.write(`[coverage] JSON files found: ${v8JsonFiles.length}\n`);
+    if (v8JsonFiles.length > 0) {
       const containerPrefix = `file://${containerWorkspaceFolder}/`;
       // pathToFileURL produces a correct file:// URL on any host OS (Windows or Linux).
       const hostPrefix = pathToFileURL(workspaceRoot).href.replace(/\/?$/, '/');
+      process.stdout.write(`[coverage] containerPrefix: ${containerPrefix}\n`);
+      process.stdout.write(`[coverage] hostPrefix:      ${hostPrefix}\n`);
 
       // Write filtered copies to a separate directory so that late-exiting container
       // processes (e.g. ESLint server) cannot write new files into v8CovDir after
@@ -189,10 +196,7 @@ async function main(): Promise<void> {
       fs.rmSync(v8FilteredDir, { recursive: true, force: true });
       fs.mkdirSync(v8FilteredDir, { recursive: true });
 
-      for (const f of fs.readdirSync(v8CovDir)) {
-        if (!f.endsWith('.json')) {
-          continue;
-        }
+      for (const f of v8JsonFiles) {
         const raw = fs.readFileSync(path.join(v8CovDir, f), 'utf8');
         // Remap container workspace paths to host paths, then drop every script
         // entry whose URL was NOT remapped (VS Code server internals, Node.js
@@ -205,6 +209,7 @@ async function main(): Promise<void> {
           'source-map-cache'?: unknown;
         };
         data.result = data.result.filter((entry) => entry.url.startsWith(hostPrefix));
+        process.stdout.write(`[coverage] ${f}: ${data.result.length} entries after filter\n`);
         // Remove source-map-cache entirely.
         //
         // source-map-cache is a perf shortcut: it carries inline source-map data so c8
@@ -237,20 +242,29 @@ async function main(): Promise<void> {
 
       // Double-quote the glob so the host shell (sh on Linux, cmd on Windows) does not
       // expand it before c8 receives it.
-      // Use stdio: 'pipe' so the coverage table is captured and printed after VS Code's
-      // shutdown log noise, instead of being interleaved with it on inherited stdout.
+      // Use spawnSync (not execSync) to capture both stdout AND stderr independently.
+      // execSync(stdio:'pipe') silently discards stderr when the process exits 0 — so
+      // any c8 warnings (e.g. unresolvable source maps, ENOENT) would be swallowed on
+      // CI Linux, hiding the true cause of "All files 0%".
+      // Pass the full command as a single string with shell:true so the double-quoted
+      // glob (**/test/**) is not expanded by the shell before c8 receives it.
       // FORCE_COLOR restores chalk's ANSI color output: piped stdio is not a TTY,
       // so chalk auto-disables color; FORCE_COLOR overrides that detection.
-      const c8Result = cp.execSync(
+      const c8Proc = cp.spawnSync(
         'npx c8 report --reporter=text --reporter=lcov --reporter=json --exclude "**/test/**" --temp-directory coverage/v8-filtered --reports-dir coverage/integration',
+        [],
         {
           cwd: path.resolve(__dirname, '../../../'),
-          stdio: 'pipe',
+          shell: true,
           encoding: 'utf8',
           env: { ...process.env, FORCE_COLOR: '2' },
         },
       );
-      process.stdout.write('\n' + c8Result);
+      if (c8Proc.stdout) process.stdout.write('\n' + c8Proc.stdout);
+      if (c8Proc.stderr) process.stdout.write('[c8 stderr]\n' + c8Proc.stderr + '\n');
+      if (c8Proc.status !== 0) {
+        throw new Error(`c8 exited with status ${c8Proc.status}`);
+      }
       // Raw V8 JSON has been consumed; remove both temp dirs so stale data cannot
       // pollute a future run that skips Phase 2 (which would otherwise re-process it).
       fs.rmSync(v8CovDir, { recursive: true, force: true });

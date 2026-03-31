@@ -34,10 +34,18 @@
   "remoteEnv": {
     "VSCODE_INTEGRATION_TEST": "1",
     "TEST_KEY_FINGERPRINT": "${localEnv:TEST_KEY_FINGERPRINT}",
-    "TEST_KEY_KEYGRIP": "${localEnv:TEST_KEY_KEYGRIP}",
-    // NODE_V8_COVERAGE causes the container's extension host Node process to write
-    // raw V8 coverage JSON to this path on exit. The path is inside the workspace
-    // bind mount so the JSON files are immediately accessible on the Windows host.
+    "TEST_KEY_KEYGRIP": "${localEnv:TEST_KEY_KEYGRIP}"
+    // NODE_V8_COVERAGE is in containerEnv (not here) — see comment there for why.
+  },
+  // containerEnv is applied at `docker create` time so the variable is in the actual
+  // OS-level process environment when the container starts. This is critical for
+  // NODE_V8_COVERAGE: V8 reads this env var at Node.js startup to decide whether to
+  // enable precise coverage instrumentation. VS Code's remoteEnv is injected into
+  // process.env *after* Node initializes (via VS Code's IPC protocol), which is too
+  // late for V8 to act on it — resulting in zero coverage files written on Linux CI.
+  // containerEnv guarantees the var is present in every process's environment from
+  // container startup, including the extension host subprocess spawned by VS Code server.
+  "containerEnv": {
     "NODE_V8_COVERAGE": "${containerWorkspaceFolder}/gpg-bridge-request/coverage/v8-integration"
   },
   // node_modules directories are shadowed by container-local Docker volumes so that
