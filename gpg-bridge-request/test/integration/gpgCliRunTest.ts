@@ -38,7 +38,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as cp from 'child_process';
-import { pathToFileURL } from 'url';
 import {
   runTests,
   downloadAndUnzipVSCode,
@@ -64,7 +63,7 @@ function findWorkspaceRoot(startDir: string): string {
     const parent = path.dirname(dir);
     if (parent === dir) {
       throw new Error(
-        `Could not locate workspace root: AGENTS.md not found in any ` + `ancestor of ${startDir}`,
+        `Could not locate workspace root: AGENTS.md not found in any ancestor of ${startDir}`,
       );
     }
     dir = parent;
@@ -105,10 +104,6 @@ const REMOTE_CONTAINER_URI = Buffer.from(
   }),
 ).toString('hex');
 const containerWorkspaceFolder = `/workspaces/${path.basename(workspaceRoot)}`;
-
-// V8 coverage JSON files from Phase 2 and Phase 3 accumulate here (created/cleared by Phase 2).
-// This runner (Phase 3) processes the combined data with c8 after cleanup.
-const v8CovDir = path.resolve(__dirname, '../../../coverage/v8-integration');
 
 async function main(): Promise<void> {
   // disable-scdaemon is the only confirmed-valid conf option in GPG 2.4.x.
@@ -174,88 +169,6 @@ async function main(): Promise<void> {
   } finally {
     // Kill agent and remove the isolated keyring whether tests passed or failed.
     await gpgLocalHost.cleanup();
-    // Generate coverage report from accumulated Phase 2 + Phase 3 V8 JSON data.
-    // V8 JSON from the container uses Linux paths; remap them to Windows paths
-    // so c8 can locate the compiled JS files (and follow source maps to .ts).
-    if (fs.existsSync(v8CovDir) && fs.readdirSync(v8CovDir).some((f) => f.endsWith('.json'))) {
-      const containerPrefix = `file://${containerWorkspaceFolder}/`;
-      // pathToFileURL produces a correct file:// URL on any host OS (Windows or Linux).
-      const hostPrefix = pathToFileURL(workspaceRoot).href.replace(/\/?$/, '/');
-
-      // Write filtered copies to a separate directory so that late-exiting container
-      // processes (e.g. ESLint server) cannot write new files into v8CovDir after
-      // the filter loop finishes but before c8 reads the directory.
-      const v8FilteredDir = path.resolve(__dirname, '../../../coverage/v8-filtered');
-      fs.rmSync(v8FilteredDir, { recursive: true, force: true });
-      fs.mkdirSync(v8FilteredDir, { recursive: true });
-
-      for (const f of fs.readdirSync(v8CovDir)) {
-        if (!f.endsWith('.json')) {
-          continue;
-        }
-        const raw = fs.readFileSync(path.join(v8CovDir, f), 'utf8');
-        // Remap container workspace paths to host paths, then drop every script
-        // entry whose URL was NOT remapped (VS Code server internals, Node.js
-        // built-ins, etc.). If left in, c8 calls fileURLToPath() on Linux-style
-        // file:// URLs (e.g. file:///home/node/.vscode-server/...) which throws
-        // ERR_INVALID_FILE_URL_PATH on Windows because those paths have no drive letter.
-        const remapped = raw.split(containerPrefix).join(hostPrefix);
-        const data = JSON.parse(remapped) as {
-          result: Array<{ url: string }>;
-          'source-map-cache'?: unknown;
-        };
-        data.result = data.result.filter((entry) => entry.url.startsWith(hostPrefix));
-        // Remove source-map-cache entirely.
-        //
-        // source-map-cache is a perf shortcut: it carries inline source-map data so c8
-        // does not need to re-read each .map file from disk. Its keys are file:// URLs for
-        // every script the container process loaded — including vscode-server internals
-        // (e.g. file:///vscode/vscode-server/.../bootstrap-fork.js) that are
-        // NOT remapped by the containerPrefix→hostPrefix substitution above.
-        //
-        // On Windows: fileURLToPath() rejects any file:// URL whose path does not start
-        // with a drive letter. A Linux absolute path like /vscode/... has no drive letter,
-        // so c8's _normalizeSourceMapCache throws ERR_INVALID_FILE_URL_PATH.
-        //
-        // On Linux/macOS: fileURLToPath() accepts those paths without crashing (they are
-        // valid Unix absolute paths), but the files do not exist on the host machine, so
-        // c8 would silently skip them. Deleting source-map-cache is therefore harmless on
-        // every platform.
-        //
-        // Coverage mapping is unaffected: after deletion c8 falls back to reading the
-        // `# sourceMappingURL=` comment from each compiled JS file in result[] and loads
-        // the corresponding .map file from disk, which tsc already wrote to out/.
-        // tsc emits only relative paths: sourceMappingURL is a bare filename
-        // (e.g. `requestProxy.js.map`, same directory as the .js file) and the
-        // `sources` array inside the .map is also relative (e.g. `../../src/services/requestProxy.ts`).
-        // No absolute paths appear anywhere in the source-map chain, so c8 resolves
-        // them correctly on Windows, Linux, and macOS without drive-letter or
-        // Unix-only-path issues.
-        delete data['source-map-cache'];
-        fs.writeFileSync(path.join(v8FilteredDir, f), JSON.stringify(data));
-      }
-
-      // Double-quote the glob so the host shell (sh on Linux, cmd on Windows) does not
-      // expand it before c8 receives it.
-      // Use stdio: 'pipe' so the coverage table is captured and printed after VS Code's
-      // shutdown log noise, instead of being interleaved with it on inherited stdout.
-      // FORCE_COLOR restores chalk's ANSI color output: piped stdio is not a TTY,
-      // so chalk auto-disables color; FORCE_COLOR overrides that detection.
-      const c8Result = cp.execSync(
-        'npx c8 report --reporter=text --reporter=lcov --reporter=json --exclude "**/test/**" --temp-directory coverage/v8-filtered --reports-dir coverage/integration',
-        {
-          cwd: path.resolve(__dirname, '../../../'),
-          stdio: 'pipe',
-          encoding: 'utf8',
-          env: { ...process.env, FORCE_COLOR: '2' },
-        },
-      );
-      process.stdout.write('\n' + c8Result);
-      // Raw V8 JSON has been consumed; remove both temp dirs so stale data cannot
-      // pollute a future run that skips Phase 2 (which would otherwise re-process it).
-      fs.rmSync(v8CovDir, { recursive: true, force: true });
-      fs.rmSync(v8FilteredDir, { recursive: true, force: true });
-    }
   }
 }
 

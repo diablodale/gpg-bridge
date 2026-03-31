@@ -214,7 +214,7 @@ jobs:
   # gpg-bridge-request integration tests are excluded: they require devcontainer
   # networking (phase2/phase3) that is not available in the standard CI environment.
   integration-test:
-    name: Integration tests
+    name: Integration tests (shared, agent)
     needs: [test]
     runs-on: ubuntu-latest
     permissions:
@@ -288,5 +288,157 @@ jobs:
           path: |
             shared/test-results/integration/*.xml
             gpg-bridge-agent/test-results/integration/*.xml
+          retention-days: 7
+          if-no-files-found: error
+
+  # ── Job 4: request integration tests ──────────────────────────────────────────
+  # Runs gpg-bridge-request integration tests (Phase 2: request proxy chain;
+  # Phase 3: gpg CLI) inside a Dev Containers devcontainer.  Parallel with Job 3:
+  # no shared lcov files, artifacts, or coverage data between the two jobs.
+  # Docker is pre-installed on ubuntu-latest; xvfb is also pre-installed.
+  #
+  # The devcontainer image is built from .devcontainer/Dockerfile on every run using
+  # docker/build-push-action with registry layer cache (cache-from: type=registry).
+  # On a full cache hit the build step completes in ~10-30 s with no network install.
+  # Tests always run against the image from the current commit — no N-1 false-pass risk.
+  # push: true only on refs/heads/main — PRs load locally only; no PR can poison ghcr.io.
+  request-integration-test:
+    name: Integration tests (request)
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push devcontainer image to ghcr.io on main; GitHub strips this for fork PR tokens
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0 # zizmor: ignore[cache-poisoning]
+        with:
+          node-version: 22
+          # npm cache is disabled on main (where push: true) to prevent Cacheract-style
+          # pre-poisoning: a malicious fork PR could plant a poisoned node_modules cache
+          # entry that lifecycle scripts run before docker/build-push-action pushes to
+          # ghcr.io. On PR branches (push: false / load: true) the blast radius is
+          # limited to the ephemeral runner — no registry image can be corrupted — so
+          # caching is safe and avoids the ~30-60 s extra install time on every PR run.
+          cache: ${{ github.ref != 'refs/heads/main' && 'npm' || '' }}
+          package-manager-cache: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Install dependencies
+        run: npm install
+
+      # Runner TypeScript files (requestProxyRunTest.ts, gpgCliRunTest.ts) must be
+      # compiled before the pretest:integration hook invokes them via @vscode/test-electron.
+      - name: Compile
+        run: npm run compile
+
+      - name: Authenticate to ghcr.io
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # docker/setup-buildx-action is intentionally omitted: ubuntu-latest runners
+      # pre-install Docker BuildKit and buildx, and the default docker driver supports
+      # cache-to: type=inline without a docker-container driver.
+      - name: Extract devcontainer image metadata
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ghcr.io/diablodale/gpg-bridge/devcontainer-request
+          # Fixed environment tag names — not version/event-derived.
+          tags: |
+            type=raw,value=phase2
+            type=raw,value=phase3
+          # Suppress the auto-generated :latest tag.
+          flavor: |
+            latest=false
+          labels: |
+            org.opencontainers.image.title=gpg-bridge devcontainer
+            org.opencontainers.image.description=Dev container image for gpg-bridge-request integration tests (Phase 2 and Phase 3)
+
+      # Build the devcontainer image from .devcontainer/Dockerfile. cache-from pulls
+      # previously pushed layers from ghcr.io so only changed layers are rebuilt; on a
+      # full cache hit (no Dockerfile or package changes) the step completes in ~10-30 s
+      # with no MCR download and no npm install inside the build.
+      # push: only on refs/heads/main — PRs load the image into the local Docker daemon
+      # without pushing to ghcr.io, preventing a malicious PR from poisoning the shared
+      # cache image. GitHub also strips packages: write from fork PR tokens at the API level.
+      - name: Build devcontainer image
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          # load makes the built image available in the local Docker daemon so devcontainer up
+          # can use it via cacheFrom. Required on PR branches where push is false; mutually
+          # exclusive with push on the default docker driver, so only one is true at a time.
+          push: ${{ github.ref == 'refs/heads/main' }}
+          load: ${{ github.ref != 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          # OCI labels are embedded in the image config layer.
+          labels: ${{ steps.meta.outputs.labels }}
+          # OCI annotations are embedded in the manifest — read by ghcr.io to
+          # populate the package UI (description, source link, etc.).
+          annotations: ${{ steps.meta.outputs.annotations }}
+          # Pull the previously pushed image as a layer cache source so only
+          # changed layers are rebuilt (e.g. updated package-lock.json).
+          cache-from: type=registry,ref=ghcr.io/diablodale/gpg-bridge/devcontainer-request:phase2
+          # Embed BuildKit layer cache metadata into the pushed image manifest.
+          # min mode is sufficient for this single-stage Dockerfile.
+          cache-to: type=inline
+
+      # Reuse the same weekly cache key as Jobs 2 and 3 — a warm cache from an
+      # earlier job in the same week avoids re-downloading VS Code.
+      # Skipped on main (same as npm cache) — no caching steps before the docker push.
+      - name: Get week number for cache key
+        if: github.ref != 'refs/heads/main'
+        id: date
+        run: echo "week=$(date +%Y%W)" >> "$GITHUB_OUTPUT"
+      - name: Cache VS Code test binaries
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3 # zizmor: ignore[cache-poisoning]
+        with:
+          path: gpg-bridge-request/.vscode-test/vscode-*
+          key: vscode-test-${{ runner.os }}-${{ steps.date.outputs.week }}
+          restore-keys: vscode-test-${{ runner.os }}-
+
+      # VS Code Electron requires a display server on Linux; xvfb is pre-installed.
+      # pretest:integration runs compile:integration automatically before test:integration.
+      - name: Request integration tests
+        run: xvfb-run -a npm --prefix gpg-bridge-request run test:integration
+
+      # Normalize lcov paths to repo-root-relative — same logic as unit tests.
+      - name: Normalize request integration coverage paths to repo-root-relative
+        run: |
+          sed -i 's|^SF:\.\./|SF:|' gpg-bridge-request/coverage/integration/lcov.info
+          sed -i 's|^SF:src/|SF:gpg-bridge-request/src/|' gpg-bridge-request/coverage/integration/lcov.info
+
+      - name: Upload request integration coverage to Codecov
+        uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad #v5.5.3
+        with:
+          name: integrationtests-request
+          # CODECOV_TOKEN only authorises coverage uploads; exposure risk does not warrant a dedicated environment.
+          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          disable_search: true
+          files: gpg-bridge-request/coverage/integration/lcov.info
+          # Same flag as Job 3 — Codecov merges multiple per-commit per-flag uploads.
+          flags: integrationtests
+          fail_ci_if_error: false
+
+      - name: Rewrite request integration test result paths to TypeScript sources
+        if: always()
+        run: node scripts/rewrite-junit-paths.cjs
+
+      - name: Upload request integration test results
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: always()
+        with:
+          name: test-results-integration-request
+          path: gpg-bridge-request/test-results/integration/*.xml
           retention-days: 7
           if-no-files-found: error

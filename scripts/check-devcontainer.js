@@ -1,28 +1,34 @@
 #!/usr/bin/env node
 // check-devcontainer.js — Pulls the dev container base image and removes any
 // existing container so the test runner's `devcontainer up` always starts fresh.
+// Also used as a posttest teardown to force-remove the container after tests complete,
+// because the VS Code server inside the container may not exit on its own (e.g. when
+// the devcontainer image tag is stolen by a sibling phase build, leaving the container
+// untracked by the Dev Containers extension).
 //
 // Steps:
 //   1. Read the "image" field from the devcontainer.json config file.
-//   2. docker pull <image> — idempotent; no-op when already current. Ensures
-//      the image is available on CI where no local images exist yet.
+//      Returns null when the config uses "build:" (custom Dockerfile) — the CI
+//      job pulls the pre-built image directly before this script runs.
+//   2. docker pull <image> — idempotent; no-op when already current. Skipped
+//      when no "image" field is present (build: configs).
 //   3. removeExistingContainer() — removes any container the devcontainer CLI
 //      previously created for this workspace+config pair, so `devcontainer up`
 //      always creates a clean container.
 //
-// Why no build step or hash sentinel:
-//   Both devcontainer.json files use "image" (not "build": {dockerfile}). When
+// Why no hash sentinel:
+//   When devcontainer.json files use "image" (not "build": {dockerfile}) then
 //   devcontainer up runs on a pure "image" config it synthesizes the container
 //   directly from the MCR base image — it never uses a pre-built named image
 //   (e.g. gpg-bridge-phase2:latest) as an ancestor. A devcontainer build step
 //   produces a separate tagged image that is never the container's ancestor, so
 //   any hash label on that image has no effect on container freshness.
 //
-//   More critically, devcontainer up has no staleness detection of its own.
-//   Source-confirmed in devContainersSpecCLI.js (uG function): when it finds an
-//   existing container it calls vV(), which only starts the container if stopped.
-//   No config comparison, no hash check — blind reuse. The only reliable
-//   mechanism to force a fresh container is to remove the existing one first.
+//   Further, devcontainer up has no staleness detection of its own. Source-confirmed in
+//   devContainersSpecCLI.js (uG function): when it finds an existing container
+//   it calls vV(), which only starts the container if stopped. No config
+//   comparison, no hash check — blind reuse. The only reliable mechanism to
+//   force a fresh container is to remove the existing one first.
 //
 // devcontainer CLI label invariant (source-confirmed in devContainersSpecCLI.js,
 // constants mI and yI):
@@ -92,14 +98,14 @@ function log(msg) {
  * Read the "image" field value from the devcontainer.json config file.
  * devcontainer.json is JSONC (permits // comments); the field is extracted via
  * regex rather than a JSONC parser to avoid an extra dependency.
- * @returns {string}
+ * @returns {string|null} null when the config uses "build:" instead of "image:"
  */
 function readImageFromConfig() {
   const raw = readFileSync(resolvedConfig, 'utf8');
   const match = raw.match(/"image"\s*:\s*"([^"]+)"/);
   if (!match) {
-    console.error(`No "image" field found in ${configFile}`);
-    process.exit(1);
+    log('No "image" field in config — skipping pull (build: config uses custom Dockerfile)');
+    return null;
   }
   const image = match[1];
   if (!SAFE_IMAGE_NAME.test(image)) {
@@ -195,7 +201,9 @@ function removeExistingContainer() {
 (function main() {
   const imageName = readImageFromConfig();
   log(`Config: ${configFile}`);
-  log(`Image:  ${imageName}`);
-  pullImage(imageName);
+  if (imageName !== null) {
+    log(`Image:  ${imageName}`);
+    pullImage(imageName);
+  }
   removeExistingContainer();
 })();
