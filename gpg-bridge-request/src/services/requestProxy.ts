@@ -37,7 +37,7 @@ import type {
   ISessionManager,
   IGpgCliFactory,
 } from '@gpg-bridge/shared';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { VSCodeCommandExecutor } from './commandExecutor';
 
 // ============================================================================
@@ -825,7 +825,7 @@ export class RequestProxy {
       }
 
       // Mint UUID now so both extensions log the same identifier for this session
-      const sessionId = uuidv4();
+      const sessionId = randomUUID();
       const session = new RequestSessionManager(fullConfig, clientSocket, sessionId);
       this.sessions.set(sessionId, session);
 

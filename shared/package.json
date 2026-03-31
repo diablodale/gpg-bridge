@@ -55,7 +55,7 @@
     "test:integration": "vscode-test --config vscode-test-cli.integration.cjs --label \"Shared 2: integration tests\" --coverage --coverage-output coverage/integration"
   },
   "dependencies": {
-    "which": "^5.0.0"
+    "which": "^6.0.1"
   },
   "devDependencies": {
     "@types/chai": "^4.3.20",
