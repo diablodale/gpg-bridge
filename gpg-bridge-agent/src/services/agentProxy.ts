@@ -11,7 +11,7 @@
 import * as net from 'net';
 import * as fs from 'fs';
 import { EventEmitter } from 'events';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import {
   log,
   encodeProtocolData,
@@ -753,7 +753,7 @@ export class AgentProxy {
    * console.log(`Connected with session ${sessionId}: ${greeting}`);
    */
   public async connectAgent(
-    sessionId: string = uuidv4(),
+    sessionId: string = randomUUID(),
   ): Promise<{ sessionId: string; greeting: string }> {
     log(this.config, `[${sessionId}] Create session to gpg-agent...`);
 

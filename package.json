@@ -79,15 +79,15 @@
     "publish:dry-run": "node scripts/publish.js --dry-run"
   },
   "devDependencies": {
-    "@devcontainers/cli": "^0.84.1",
+    "@devcontainers/cli": "^0.85.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@commitlint/cli": "^19.8.0",
     "@commitlint/config-conventional": "^19.8.0",
-    "@j178/prek": "^0.3.3",
+    "@j178/prek": "^0.3.8",
     "@mermaid-js/mermaid-cli": "^11.12.0",
     "@resvg/resvg-js": "^2.6.2",
-    "commit-and-tag-version": "^12.6.1",
+    "commit-and-tag-version": "^12.7.1",
     "prettier": "^3",
     "rimraf": "^6.1.3"
   },
