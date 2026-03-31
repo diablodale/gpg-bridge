@@ -152,6 +152,7 @@
     "lint:integration": "eslint src",
     "test": "vscode-test --config vscode-test-cli.cjs --coverage --coverage-output coverage/unit",
     "test:integration": "npm run test:integration:request-proxy && npm run test:integration:gpg-cli",
+    "posttest:integration": "node out/test/integration/remapV8Coverage.js",
     "pretest:integration:request-proxy": "node ../scripts/check-devcontainer.js --config .devcontainer/phase2/devcontainer.json",
     "test:integration:request-proxy": "node out/test/integration/requestProxyRunTest.js",
     "posttest:integration:request-proxy": "node ../scripts/check-devcontainer.js --config .devcontainer/phase2/devcontainer.json",

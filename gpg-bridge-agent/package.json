@@ -118,7 +118,7 @@
     "lint": "eslint src",
     "lint:integration": "eslint src",
     "test": "vscode-test --config vscode-test-cli.cjs --coverage --coverage-output coverage/unit",
-    "test:integration": "node out/test/integration/runTest.js && c8 report --reporter=text --reporter=lcov --reporter=json --exclude \"**/test/**\" --temp-directory coverage/v8-integration --reports-dir coverage/integration && rimraf coverage/v8-integration",
+    "test:integration": "node out/test/integration/runTest.js && c8 report --reporter=text --reporter=lcov --reporter=json --exclude \"**/test/**\" --allowExternal --temp-directory coverage/v8-integration --reports-dir coverage/integration && rimraf coverage/v8-integration",
     "vsix": "vsce package"
   },
   "devDependencies": {
