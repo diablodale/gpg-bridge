@@ -31,7 +31,7 @@ module.exports = class JunitSpec extends Spec {
     super(runner, options); // Spec receives the real runner → color flag preserved
     const outFile = process.env.JUNIT_OUTPUT_FILE;
     if (outFile) {
-      new JUnit(runner, { reporterOptions: { mochaFile: outFile } }); // second listener on same runner
+      new JUnit(runner, { reporterOptions: { mochaFile: outFile, includePending: true } }); // second listener on same runner
     }
   }
 };
