@@ -15,6 +15,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as os from 'os';
 import * as crypto from 'crypto';
 import { expect } from 'chai';
 import { GpgTestHelper } from '@gpg-bridge/shared/test/integration';
@@ -586,6 +587,127 @@ describe('Phase 5 — checkVersion command', function () {
     expect(result.match, 'different dev version should not match').to.be.false;
     expect(result.agentVersion).to.equal(agentVersion);
     expect(result.requestVersion).to.equal(fabricated);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Extension UI commands: showStatus, debugLogging
+// ---------------------------------------------------------------------------
+
+describe('Phase 6 — Extension UI commands', function () {
+  this.timeout(20000);
+
+  beforeEach(async function () {
+    await vscode.commands.executeCommand('gpg-bridge-agent.stop');
+  });
+
+  afterEach(async function () {
+    await vscode.commands.executeCommand('gpg-bridge-agent.stop');
+  });
+
+  // -----------------------------------------------------------------------
+  // 1. showStatus when proxy is running
+  // -----------------------------------------------------------------------
+  it('1. showStatus when proxy is running invokes showInformationMessage with Active state', async function () {
+    await vscode.commands.executeCommand('gpg-bridge-agent.start');
+
+    // Open a session so showStatus reaches the 'Active' branch (sessionCount > 0).
+    const { sessionId } = await vscode.commands.executeCommand<ConnectResult>(
+      '_gpg-bridge-agent.connectAgent',
+    );
+
+    // In the VS Code test host the DialogService refuses modal dialogs by throwing.
+    // Awaiting the command propagates that rejection — which proves showInformationMessage
+    // was called. The error message contains the full dialog content, so we can assert
+    // on both the refusal marker and the state that was passed to the dialog.
+    let caughtErr: unknown;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-agent.showStatus');
+    } catch (err) {
+      caughtErr = err;
+    }
+    const msg = (caughtErr as Error).message;
+    expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+      Error,
+    );
+    expect(msg, 'error must be the DialogService test refusal').to.include(
+      'DialogService: refused to show dialog in tests',
+    );
+    expect(msg, 'dialog header').to.include('GPG Bridge Agent Status');
+    expect(msg, 'state must be Active with 1 session').to.include('State: Active (1 session)');
+    expect(msg, 'version must be a semver').to.match(/Version: \d+\.\d+\.\d+/);
+    expect(msg, `OS must be ${os.platform()}`).to.include(`OS: ${os.platform()} `);
+    expect(msg, 'GPG version must be a real version number').to.match(/GPG version: \d+\.\d+/);
+    expect(msg, 'GPG bin dir must be an absolute path').to.match(/GPG bin dir: ([A-Za-z]:\\|\/|~)/);
+    expect(msg, 'GPG socket must be an absolute path').to.match(/GPG socket: ([A-Za-z]:\\|\/|~)/);
+
+    // showStatus must not have disrupted the open session — disconnecting must succeed.
+    await vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', sessionId);
+  });
+
+  // -----------------------------------------------------------------------
+  // 2. showStatus when proxy is stopped (Inactive state)
+  // -----------------------------------------------------------------------
+  it('2. showStatus when proxy is stopped invokes showInformationMessage with Inactive state', async function () {
+    // agentProxyService is null; all getters fall back to '(unknown)' strings.
+    let caughtErr: unknown;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-agent.showStatus');
+    } catch (err) {
+      caughtErr = err;
+    }
+    const msg = (caughtErr as Error).message;
+    expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+      Error,
+    );
+    expect(msg, 'error must be the DialogService test refusal').to.include(
+      'DialogService: refused to show dialog in tests',
+    );
+    expect(msg, 'dialog header').to.include('GPG Bridge Agent Status');
+    expect(msg, 'state must be Inactive').to.include('State: Inactive');
+    expect(msg, 'version must be a semver').to.match(/Version: \d+\.\d+\.\d+/);
+    expect(msg, `OS must be ${os.platform()}`).to.include(`OS: ${os.platform()} `);
+    expect(msg, 'GPG version must be unknown when proxy is stopped').to.include(
+      'GPG version: (unknown)',
+    );
+    expect(msg, 'GPG bin dir must be unknown when proxy is stopped').to.include(
+      'GPG bin dir: (unknown)',
+    );
+    expect(msg, 'GPG socket must be unknown when proxy is stopped').to.include(
+      'GPG socket: (unknown)',
+    );
+
+    // showStatus must not have accidentally started the proxy — connectAgent must still reject.
+    let connectThrew = false;
+    try {
+      await vscode.commands.executeCommand<ConnectResult>('_gpg-bridge-agent.connectAgent');
+    } catch {
+      connectThrew = true;
+    }
+    expect(connectThrew, 'connectAgent must still reject after showStatus with stopped proxy').to.be
+      .true;
+  });
+
+  // -----------------------------------------------------------------------
+  // 3. proxy operates normally when debugLogging=true
+  // -----------------------------------------------------------------------
+  it('3. proxy starts and connect/disconnect succeeds when debugLogging=true', async function () {
+    const config = vscode.workspace.getConfiguration('gpgBridgeAgent');
+    await config.update('debugLogging', true, vscode.ConfigurationTarget.Global);
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-agent.start');
+
+      // A connect + disconnect round-trip exercises the logCallback code path.
+      // OutputChannel contents are not readable via VS Code test API, so invocation
+      // of logCallback itself cannot be directly asserted from integration test code.
+      const { sessionId } = await vscode.commands.executeCommand<{
+        sessionId: string;
+        greeting: string;
+      }>('_gpg-bridge-agent.connectAgent');
+      await vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', sessionId);
+    } finally {
+      await config.update('debugLogging', undefined, vscode.ConfigurationTarget.Global);
+    }
   });
 });
 

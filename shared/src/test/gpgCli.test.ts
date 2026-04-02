@@ -16,6 +16,7 @@ import {
   type GpgCliDeps,
   type ExecFileFn,
   type SpawnForStdinFn,
+  type GpgExecResult,
 } from '../gpgCli';
 
 // ============================================================================
@@ -150,6 +151,19 @@ describe('GpgCli', () => {
       expect(() => new GpgCli({}, { existsSync: () => false, whichSync: () => null })).to.throw(
         /GnuPG not found/,
       );
+    });
+
+    it('detects GnuPG via well-known Gpg4win installation path when PATH misses (Windows only)', function () {
+      // process.platform === 'win32' is a runtime constant — cannot be mocked.
+      // This branch executes only on Windows; skip on all other platforms.
+      if (process.platform !== 'win32') {
+        this.skip();
+      }
+      // PATH probe misses; first well-known path has gpgconf.exe present
+      const win32Dir = 'C:\\Program Files\\GnuPG\\bin';
+      const gpgconfExe = path.join(win32Dir, 'gpgconf.exe');
+      const cli = new GpgCli({}, { existsSync: existsAt(gpgconfExe), whichSync: whichMiss });
+      expect(cli.getBinDir()).to.equal(win32Dir);
     });
 
     it('throws when gnupgHome is a relative path', () => {
@@ -995,5 +1009,128 @@ describe('parseImportResult()', () => {
 
   it('returns zeros when output is empty', () => {
     expect(parseImportResult('')).to.deep.equal({ imported: 0, unchanged: 0, errors: 0 });
+  });
+});
+
+// ============================================================================
+// GpgCli.cleanup() — no-op base-class method
+// ============================================================================
+
+describe('GpgCli.cleanup()', () => {
+  it('resolves without error', async () => {
+    const cli = makeCli(execReturns(''));
+    await cli.cleanup(); // must not throw
+  });
+});
+
+// ============================================================================
+// GpgCli.gpgconfListDirs() — empty-output error path
+// ============================================================================
+
+describe('GpgCli.gpgconfListDirs()', () => {
+  it('throws when stdout is empty (trimmed)', async () => {
+    const cli = makeCli(execReturns('   \n'));
+    try {
+      await cli.gpgconfListDirs('homedir');
+      expect.fail('Expected gpgconfListDirs to throw on empty stdout');
+    } catch (err: unknown) {
+      expect((err as Error).message).to.match(/gpgconf --list-dirs homedir returned empty output/);
+    }
+  });
+});
+
+// ============================================================================
+// GpgCli.runRaw() — catch-block paths
+// ============================================================================
+
+describe('GpgCli.runRaw()', () => {
+  it('returns exitCode from ExecFileError on non-zero exit', async () => {
+    // Simulate what defaultExecFileAsync throws on non-zero exit: an ExecFileError shape
+    const execErr = { code: 2, stdout: 'out', stderr: 'err' };
+    const cli = makeCli(() => Promise.reject(execErr));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (cli as any).runRaw(FAKE_GPG_EXE, []);
+    expect(result).to.deep.equal({ exitCode: 2, stdout: 'out', stderr: 'err' });
+  });
+
+  it('returns empty stderr string when ExecFileError.stderr is undefined', async () => {
+    const execErr = { code: 3, stdout: 'out' }; // no stderr field
+    const cli = makeCli(() => Promise.reject(execErr));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (cli as any).runRaw(FAKE_GPG_EXE, []);
+    expect(result).to.deep.equal({ exitCode: 3, stdout: 'out', stderr: '' });
+  });
+
+  it('rethrows non-ExecFileError (e.g. spawn ENOENT where code is a string)', async () => {
+    // spawn errors have string codes like 'ENOENT', not numbers → must rethrow
+    const spawnErr = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+    const cli = makeCli(() => Promise.reject(spawnErr));
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (cli as any).runRaw(FAKE_GPG_EXE, []);
+      expect.fail('Expected runRaw to rethrow spawn errors');
+    } catch (err: unknown) {
+      expect(err).to.equal(spawnErr);
+    }
+  });
+});
+
+// ============================================================================
+// spawnProcess via production defaults (uses Node.js as the real binary)
+//
+// These tests do NOT inject execFileAsync or spawnForStdin, so they exercise
+// the real spawnProcess function (lines 147-220) and the defaultExecFileAsync /
+// defaultSpawnForStdin wrappers. Node.js is always present in the test host.
+// ============================================================================
+
+/** GpgCli with production defaults wired in (no execFileAsync/spawnForStdin injection). */
+function makeRealCli(): GpgCli {
+  // gpgBinDir = node binary directory. existsSync is mocked so the constructor
+  // accepts the path without requiring gpgconf to actually be present there.
+  return new GpgCli({ gpgBinDir: path.dirname(process.execPath) }, { existsSync: () => true });
+}
+
+describe('spawnProcess via production defaults (real subprocess)', () => {
+  it('resolves with stdout when process exits 0 (node --version)', async () => {
+    const cli = makeRealCli();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (cli as any).run(process.execPath, ['--version'], 'utf8');
+    expect(result.stdout).to.match(/^v\d+\.\d+\.\d+/);
+    expect(result.exitCode).to.equal(0);
+  });
+
+  it('rejects with spawn error when binary does not exist (ENOENT)', async () => {
+    const cli = makeRealCli();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (cli as any).run('/nonexistent/gpg-bridge-test-binary-xyz', []);
+      expect.fail('Expected run to throw on ENOENT');
+    } catch (err: unknown) {
+      expect((err as Error).message).to.match(/spawn/i);
+    }
+  });
+
+  it('rejects with ExecFileError shape when process exits non-zero (node -e process.exit(2))', async () => {
+    const cli = makeRealCli();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (cli as any).run(process.execPath, ['-e', 'process.exit(2)']);
+      expect.fail('Expected run to throw on non-zero exit');
+    } catch (err: unknown) {
+      expect((err as { code: number }).code).to.equal(2);
+    }
+  });
+
+  it('writes stdin bytes before ENOENT fires (stdin write path in spawnProcess)', async () => {
+    // importPublicKeys uses defaultSpawnForStdin which passes stdin to spawnProcess.
+    // The gpgBin path (node-dir/gpg[.exe]) does not exist → ENOENT.
+    // spawnProcess still executes child.stdin.write() synchronously before the error fires.
+    const cli = makeRealCli();
+    try {
+      await cli.importPublicKeys('-----BEGIN PGP PUBLIC KEY BLOCK-----\n');
+      expect.fail('Expected importPublicKeys to throw on ENOENT');
+    } catch (err: unknown) {
+      expect((err as Error).message).to.match(/spawn/i);
+    }
   });
 });
