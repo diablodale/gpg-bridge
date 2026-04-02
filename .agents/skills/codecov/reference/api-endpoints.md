@@ -18,7 +18,7 @@ Query params: `branch`, `sha`, `path` (prefix filter), `flag`, `component_id`
 
 Returns `totals` + `files[]` array. Each file has `totals` and `line_coverage`.
 
-`line_coverage`: array of `[lineNumber, hitCount]` pairs — hit=0, miss=1, partial=2. Filter `hitCount == 0` for uncovered lines.
+`line_coverage`: array of `[lineNumber, status]` pairs — status codes: 0=hit (covered), 1=miss (uncovered), 2=partial. Filter `status == 1` for uncovered lines.
 
 Query params: `branch`, `sha`, `path` (prefix filter), `flag`, `component_id`
 

@@ -29,7 +29,7 @@ Fetches and analyzes code coverage data from the Codecov API for a given reposit
    Refer to `reference/api-endpoints.md` for the base URL, required headers, and query parameter names.
 
 4. Parse the JSON response. Extract only the fields relevant to the task.
-   - For missed lines: filter `line_coverage` entries where `hitCount == 0`.
+   - For missed lines: filter `line_coverage` entries where `status == 1` (miss; 0=hit, 1=miss, 2=partial).
    - For file rankings: sort by `totals.coverage` ascending.
 
 5. Present findings concisely, prioritizing actionable information.
