@@ -409,6 +409,86 @@ describe('Phase 3 — AgentProxy start/stop lifecycle', function () {
     expect(greeting, 'proxy should still be operational after redundant start').to.match(/^OK/);
     await vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', sessionId);
   });
+
+  // -----------------------------------------------------------------------
+  // 3. exportPublicKeys throws "not initialized" when proxy is stopped
+  // -----------------------------------------------------------------------
+  it('3. exportPublicKeys() throws "not initialized" when proxy is stopped', async function () {
+    // beforeEach already stopped the proxy — agentProxyService is null.
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand<string | undefined>(
+        '_gpg-bridge-agent.exportPublicKeys',
+      );
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'exportPublicKeys() should reject when proxy is stopped').to.be.true;
+    expect(errorMsg, 'error must mention not initialized').to.match(/not initialized/i);
+  });
+
+  // -----------------------------------------------------------------------
+  // 4. sendCommands throws "not initialized" when proxy is stopped
+  // -----------------------------------------------------------------------
+  it('4. sendCommands() throws "not initialized" when proxy is stopped', async function () {
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand<SendResult>(
+        '_gpg-bridge-agent.sendCommands',
+        'any-session-id',
+        'GETINFO version\n',
+      );
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'sendCommands() should reject when proxy is stopped').to.be.true;
+    expect(errorMsg, 'error must mention not initialized').to.match(/not initialized/i);
+  });
+
+  // -----------------------------------------------------------------------
+  // 5. disconnectAgent throws "not initialized" when proxy is stopped
+  // -----------------------------------------------------------------------
+  it('5. disconnectAgent() throws "not initialized" when proxy is stopped', async function () {
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', 'any-session-id');
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'disconnectAgent() should reject when proxy is stopped').to.be.true;
+    expect(errorMsg, 'error must mention not initialized').to.match(/not initialized/i);
+  });
+
+  // -----------------------------------------------------------------------
+  // 6. connectAgent rejects invalid sessionId and error propagates through extension catch block
+  // -----------------------------------------------------------------------
+  it('6. connectAgent() rejects invalid sessionId and logs the error', async function () {
+    // Proxy must be running so the call reaches AgentProxy.connectAgent()
+    // rather than the "not initialized" guard.
+    await vscode.commands.executeCommand('gpg-bridge-agent.start');
+
+    let threw = false;
+    let errorMsg = '';
+    try {
+      await vscode.commands.executeCommand<ConnectResult>(
+        '_gpg-bridge-agent.connectAgent',
+        'not-a-uuid',
+      );
+    } catch (err) {
+      threw = true;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
+    expect(threw, 'connectAgent() should reject for an invalid sessionId').to.be.true;
+    expect(errorMsg, 'error must mention invalid sessionId format').to.match(
+      /Invalid sessionId format/i,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -707,6 +787,67 @@ describe('Phase 6 — Extension UI commands', function () {
       await vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', sessionId);
     } finally {
       await config.update('debugLogging', undefined, vscode.ConfigurationTarget.Global);
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // 4. showStatus when proxy running with no active sessions shows Ready state
+  // -----------------------------------------------------------------------
+  it('4. showStatus when proxy running with no sessions invokes showInformationMessage with Ready state', async function () {
+    await vscode.commands.executeCommand('gpg-bridge-agent.start');
+
+    // No session opened — sessionCount is 0 → state must be 'Ready'.
+    let caughtErr: unknown;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-agent.showStatus');
+    } catch (err) {
+      caughtErr = err;
+    }
+    const msg = (caughtErr as Error).message;
+    expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+      Error,
+    );
+    expect(msg, 'error must be the DialogService test refusal').to.include(
+      'DialogService: refused to show dialog in tests',
+    );
+    expect(msg, 'dialog header').to.include('GPG Bridge Agent Status');
+    expect(msg, 'state must be Ready (proxy running, 0 sessions)').to.include('State: Ready');
+    expect(msg, 'version must be a semver').to.match(/Version: \d+\.\d+\.\d+/);
+    expect(msg, 'GPG version must be a real version number').to.match(/GPG version: \d+\.\d+/);
+    expect(msg, 'GPG bin dir must be an absolute path').to.match(/GPG bin dir: ([A-Za-z]:\\|\/|~)/);
+    expect(msg, 'GPG socket must be an absolute path').to.match(/GPG socket: ([A-Za-z]:\\|\/|~)/);
+  });
+
+  // -----------------------------------------------------------------------
+  // 5. showStatus with 2 active sessions shows plural "sessions"
+  // -----------------------------------------------------------------------
+  it('5. showStatus with 2 active sessions uses plural "sessions" in state', async function () {
+    await vscode.commands.executeCommand('gpg-bridge-agent.start');
+
+    const [r1, r2] = await Promise.all([
+      vscode.commands.executeCommand<ConnectResult>('_gpg-bridge-agent.connectAgent'),
+      vscode.commands.executeCommand<ConnectResult>('_gpg-bridge-agent.connectAgent'),
+    ]);
+
+    try {
+      let caughtErr: unknown;
+      try {
+        await vscode.commands.executeCommand('gpg-bridge-agent.showStatus');
+      } catch (err) {
+        caughtErr = err;
+      }
+      const msg = (caughtErr as Error).message;
+      expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+        Error,
+      );
+      expect(msg, 'state must be Active with 2 sessions (plural)').to.include(
+        'State: Active (2 sessions)',
+      );
+    } finally {
+      await Promise.all([
+        vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', r1.sessionId),
+        vscode.commands.executeCommand('_gpg-bridge-agent.disconnectAgent', r2.sessionId),
+      ]);
     }
   });
 });

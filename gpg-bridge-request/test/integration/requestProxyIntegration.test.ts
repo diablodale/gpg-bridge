@@ -1103,6 +1103,127 @@ describe('Phase 9 — Extension UI commands', function () {
       // Ignore — already stopped is fine.
     }
   });
+
+  // -----------------------------------------------------------------------
+  // 6. start command when proxy already running returns without error
+  // -----------------------------------------------------------------------
+  it('6. start command when proxy already running logs and returns without error', async function () {
+    // Proxy is already running from before()/afterEach.
+    let threw = false;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.start');
+    } catch {
+      threw = true;
+    }
+    expect(threw, 'start should not throw when proxy is already running').to.be.false;
+  });
+
+  // -----------------------------------------------------------------------
+  // 7. stop command when proxy not running logs and returns without error
+  // -----------------------------------------------------------------------
+  it('7. stop command when proxy not running logs and returns without error', async function () {
+    // First stop — proxy was running.
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    // Second stop — requestProxyService is null; logs "not running" and returns cleanly.
+    let threw = false;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.stop');
+    } catch {
+      threw = true;
+    }
+    expect(threw, 'stop should not throw when proxy is already stopped').to.be.false;
+  });
+
+  // -----------------------------------------------------------------------
+  // 8. syncPublicKeys command executes without error
+  // -----------------------------------------------------------------------
+  it('8. syncPublicKeys command executes without error when proxy is running', async function () {
+    // The registered lambda is: async (filter?: KeyFilter) => { await publicKeySyncService?.syncPublicKeys(filter); }
+    // publicKeySyncService is null if auto-sync hasn't set it, or non-null after activate().
+    // The ?. makes the call a safe no-op when null. Either way: must not throw.
+    let threw = false;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.syncPublicKeys', 'all');
+    } catch {
+      threw = true;
+    }
+    expect(threw, 'syncPublicKeys command must not throw').to.be.false;
+  });
+
+  // -----------------------------------------------------------------------
+  // 9. bad gpgBinDir causes start to reject; restoring config recovers proxy
+  // -----------------------------------------------------------------------
+  it('9. bad gpgBinDir causes start to reject; restoring config allows recovery', async function () {
+    // Stop the proxy so requestProxyService is null and startRequestProxy() runs
+    // the full initialization path when `gpg-bridge-request.start` is called.
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    const config = vscode.workspace.getConfiguration('gpgBridgeRequest');
+    await config.update(
+      'gpgBinDir',
+      '/nonexistent-gpg-bin-path',
+      vscode.ConfigurationTarget.Global,
+    );
+
+    try {
+      // start should reject because gpgconf is not found at the configured path.
+      let startThrew = false;
+      let startError = '';
+      try {
+        await vscode.commands.executeCommand('gpg-bridge-request.start');
+      } catch (err) {
+        startThrew = true;
+        startError = err instanceof Error ? err.message : String(err);
+      }
+      expect(startThrew, 'start should reject when GnuPG bin is not found').to.be.true;
+      expect(startError, 'error should mention GnuPG or path').to.match(/gnupg|not found|gpgconf/i);
+
+      // Proxy must remain stopped — getSocketPath returns null.
+      const socketPath = await vscode.commands.executeCommand<string | null>(
+        '_gpg-bridge-request.test.getSocketPath',
+      );
+      expect(socketPath, 'socket path must be null after failed start').to.be.null;
+    } finally {
+      // Restore config so afterEach can restart cleanly.
+      await config.update('gpgBinDir', undefined, vscode.ConfigurationTarget.Global);
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // 10. showStatus with an active socket session shows Active state
+  // -----------------------------------------------------------------------
+  it('10. showStatus when proxy has active sessions invokes showInformationMessage with Active state', async function () {
+    // Open a socket connection so sessionCount > 0 when showStatus is called.
+    const socketPath = await vscode.commands.executeCommand<string | null>(
+      '_gpg-bridge-request.test.getSocketPath',
+    );
+    if (!socketPath) {
+      this.skip();
+      return;
+    }
+
+    const client = new AssuanSocketClient();
+    try {
+      await client.connect(socketPath);
+
+      let caughtErr: unknown;
+      try {
+        await vscode.commands.executeCommand('gpg-bridge-request.showStatus');
+      } catch (err) {
+        caughtErr = err;
+      }
+      const msg = (caughtErr as Error).message;
+      expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+        Error,
+      );
+      expect(msg).to.include('DialogService: refused to show dialog in tests');
+      expect(msg).to.include('GPG Bridge Request Status');
+      expect(msg).to.include('State: Active');
+    } finally {
+      client.close();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
