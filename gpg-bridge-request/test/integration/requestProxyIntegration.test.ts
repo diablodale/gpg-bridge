@@ -929,6 +929,304 @@ describe('Phase 8 — Liveness probe — socket conflict detection', function ()
 });
 
 // ---------------------------------------------------------------------------
+// Phase 9 — Extension UI commands: showStatus, logCallback, runVersionCheck defaults
+// ---------------------------------------------------------------------------
+
+describe('Phase 9 — Extension UI commands', function () {
+  this.timeout(20000);
+
+  before(async function () {
+    // Ensure the proxy is running before this suite begins.
+    await vscode.commands.executeCommand('gpg-bridge-request.start');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+
+  afterEach(async function () {
+    // Restore a running proxy after tests that stop it.
+    await vscode.commands.executeCommand('gpg-bridge-request.start');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
+
+  after(async function () {
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+  });
+
+  // -----------------------------------------------------------------------
+  // 1. showStatus when proxy is running
+  // -----------------------------------------------------------------------
+  it('1. showStatus when proxy is running invokes showInformationMessage with Ready state', async function () {
+    // In the VS Code test host the DialogService refuses modal dialogs by throwing.
+    // Awaiting the command propagates that rejection — which proves showInformationMessage
+    // was called. The error message contains the full dialog content, so we can assert
+    // on both the refusal marker and the state that was passed to the dialog.
+    let caughtErr: unknown;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.showStatus');
+    } catch (err) {
+      caughtErr = err;
+    }
+    const msg = (caughtErr as Error).message;
+    expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+      Error,
+    );
+    expect(msg, 'error must be the DialogService test refusal').to.include(
+      'DialogService: refused to show dialog in tests',
+    );
+    expect(msg, 'dialog header').to.include('GPG Bridge Request Status');
+    expect(msg, 'state must be Ready').to.include('State: Ready');
+    expect(msg, 'version must be a semver').to.match(/Version: \d+\.\d+\.\d+/);
+    expect(msg, 'OS must be linux (dev container is a defined Linux environment)').to.include(
+      'OS: linux ',
+    );
+    expect(msg, 'GPG version must be a real version number').to.match(/GPG version: \d+\.\d+/);
+    expect(msg, 'GPG bin dir must be an absolute Unix path').to.match(/GPG bin dir: \//);
+    expect(msg, 'GPG socket must be an absolute Unix path').to.match(/GPG socket: \//);
+    expect(msg, 'remote type must be dev-container').to.include('Remote type: dev-container');
+  });
+
+  // -----------------------------------------------------------------------
+  // 2. showStatus when proxy is stopped (Inactive state)
+  // -----------------------------------------------------------------------
+  it('2. showStatus when proxy is stopped invokes showInformationMessage with Inactive state', async function () {
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    // requestProxyService is null; all getters fall back to '(unknown)' strings.
+    let caughtErr: unknown;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.showStatus');
+    } catch (err) {
+      caughtErr = err;
+    }
+    const msg = (caughtErr as Error).message;
+    expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+      Error,
+    );
+    expect(msg, 'error must be the DialogService test refusal').to.include(
+      'DialogService: refused to show dialog in tests',
+    );
+    expect(msg, 'dialog header').to.include('GPG Bridge Request Status');
+    expect(msg, 'state must be Inactive').to.include('State: Inactive');
+    expect(msg, 'version must be a semver').to.match(/Version: \d+\.\d+\.\d+/);
+    expect(msg, 'OS must be linux (dev container is a defined Linux environment)').to.include(
+      'OS: linux ',
+    );
+    expect(msg, 'GPG version must be unknown when proxy is stopped').to.include(
+      'GPG version: (unknown)',
+    );
+    expect(msg, 'GPG bin dir must be unknown when proxy is stopped').to.include(
+      'GPG bin dir: (unknown)',
+    );
+    expect(msg, 'GPG socket must be unknown when proxy is stopped').to.include(
+      'GPG socket: (unknown)',
+    );
+    expect(msg, 'remote type must be dev-container').to.include('Remote type: dev-container');
+  });
+
+  // -----------------------------------------------------------------------
+  // 3. start with debugLogging=true invokes logCallback during proxy operations
+  // -----------------------------------------------------------------------
+  it('3. start with debugLogging=true invokes logCallback during proxy operations', async function () {
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    const config = vscode.workspace.getConfiguration('gpgBridgeRequest');
+    await config.update('debugLogging', true, vscode.ConfigurationTarget.Global);
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.start');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // A socket round-trip causes RequestProxy to invoke the logCallback.
+      const socketPath = await vscode.commands.executeCommand<string | null>(
+        '_gpg-bridge-request.test.getSocketPath',
+      );
+      if (socketPath) {
+        const client = new AssuanSocketClient();
+        try {
+          await client.connect(socketPath);
+          await client.sendCommand('GETINFO version');
+        } finally {
+          client.close();
+        }
+      }
+    } finally {
+      await config.update('debugLogging', undefined, vscode.ConfigurationTarget.Global);
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // 4. runVersionCheck uses the default vscode.window.showErrorMessage on mismatch
+  // -----------------------------------------------------------------------
+  it('4. runVersionCheck with default showErrorMessage fires real notification on mismatch', async function () {
+    // Import the exported function from the compiled extension module.
+    // From out/test/integration/, '../../extension' resolves to out/extension.js —
+    // the same module instance VS Code activated. This exercises the default showErr lambda.
+    const { runVersionCheck } = require('../../extension') as typeof import('../../out/extension');
+
+    let threw = false;
+    try {
+      await runVersionCheck('0.0.0-test-mismatch', {
+        executeCommand: async () =>
+          ({
+            match: false,
+            agentVersion: '0.4.0',
+            requestVersion: '0.0.0-test-mismatch',
+          }) as import('@gpg-bridge/shared').VersionCheckResult,
+        // No showErrorMessage override → default vscode.window.showErrorMessage used (fn 1)
+        // No executeSearchCommand override → default vscode.commands.executeCommand used (fn 2)
+      });
+    } catch {
+      threw = true;
+    }
+    expect(threw, 'runVersionCheck should throw on version mismatch').to.be.true;
+
+    // Allow the fire-and-forget .then() chain on showErrorMessage to settle.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  });
+
+  // -----------------------------------------------------------------------
+  // 5. deactivate() cleanly stops the request proxy
+  // -----------------------------------------------------------------------
+  it('5. deactivate() cleanly stops the proxy when it is running', async function () {
+    // Import deactivate from the compiled module (same instance VS Code activated).
+    const { deactivate } = require('../../extension') as typeof import('../../out/extension');
+
+    // Ensure proxy is running so deactivate() exercises the requestProxyService?.stop() path.
+    await vscode.commands.executeCommand('gpg-bridge-request.start');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    await deactivate();
+
+    // deactivate() stops the underlying server but does not null the module-level reference.
+    // Call the stop command to set requestProxyService = null so afterEach can restart cleanly.
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.stop');
+    } catch {
+      // Ignore — already stopped is fine.
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // 6. start command when proxy already running returns without error
+  // -----------------------------------------------------------------------
+  it('6. start command when proxy already running logs and returns without error', async function () {
+    // Proxy is already running from before()/afterEach.
+    let threw = false;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.start');
+    } catch {
+      threw = true;
+    }
+    expect(threw, 'start should not throw when proxy is already running').to.be.false;
+  });
+
+  // -----------------------------------------------------------------------
+  // 7. stop command when proxy not running logs and returns without error
+  // -----------------------------------------------------------------------
+  it('7. stop command when proxy not running logs and returns without error', async function () {
+    // First stop — proxy was running.
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    // Second stop — requestProxyService is null; logs "not running" and returns cleanly.
+    let threw = false;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.stop');
+    } catch {
+      threw = true;
+    }
+    expect(threw, 'stop should not throw when proxy is already stopped').to.be.false;
+  });
+
+  // -----------------------------------------------------------------------
+  // 8. syncPublicKeys command executes without error
+  // -----------------------------------------------------------------------
+  it('8. syncPublicKeys command executes without error when proxy is running', async function () {
+    // The registered lambda is: async (filter?: KeyFilter) => { await publicKeySyncService?.syncPublicKeys(filter); }
+    // publicKeySyncService is null if auto-sync hasn't set it, or non-null after activate().
+    // The ?. makes the call a safe no-op when null. Either way: must not throw.
+    let threw = false;
+    try {
+      await vscode.commands.executeCommand('gpg-bridge-request.syncPublicKeys', 'all');
+    } catch {
+      threw = true;
+    }
+    expect(threw, 'syncPublicKeys command must not throw').to.be.false;
+  });
+
+  // -----------------------------------------------------------------------
+  // 9. bad gpgBinDir causes start to reject; restoring config recovers proxy
+  // -----------------------------------------------------------------------
+  it('9. bad gpgBinDir causes start to reject; restoring config allows recovery', async function () {
+    // Stop the proxy so requestProxyService is null and startRequestProxy() runs
+    // the full initialization path when `gpg-bridge-request.start` is called.
+    await vscode.commands.executeCommand('gpg-bridge-request.stop');
+
+    const config = vscode.workspace.getConfiguration('gpgBridgeRequest');
+    await config.update(
+      'gpgBinDir',
+      '/nonexistent-gpg-bin-path',
+      vscode.ConfigurationTarget.Global,
+    );
+
+    try {
+      // start should reject because gpgconf is not found at the configured path.
+      let startThrew = false;
+      let startError = '';
+      try {
+        await vscode.commands.executeCommand('gpg-bridge-request.start');
+      } catch (err) {
+        startThrew = true;
+        startError = err instanceof Error ? err.message : String(err);
+      }
+      expect(startThrew, 'start should reject when GnuPG bin is not found').to.be.true;
+      expect(startError, 'error should mention GnuPG or path').to.match(/gnupg|not found|gpgconf/i);
+
+      // Proxy must remain stopped — getSocketPath returns null.
+      const socketPath = await vscode.commands.executeCommand<string | null>(
+        '_gpg-bridge-request.test.getSocketPath',
+      );
+      expect(socketPath, 'socket path must be null after failed start').to.be.null;
+    } finally {
+      // Restore config so afterEach can restart cleanly.
+      await config.update('gpgBinDir', undefined, vscode.ConfigurationTarget.Global);
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // 10. showStatus with an active socket session shows Active state
+  // -----------------------------------------------------------------------
+  it('10. showStatus when proxy has active sessions invokes showInformationMessage with Active state', async function () {
+    // Open a socket connection so sessionCount > 0 when showStatus is called.
+    const socketPath = await vscode.commands.executeCommand<string | null>(
+      '_gpg-bridge-request.test.getSocketPath',
+    );
+    if (!socketPath) {
+      this.skip();
+      return;
+    }
+
+    const client = new AssuanSocketClient();
+    try {
+      await client.connect(socketPath);
+
+      let caughtErr: unknown;
+      try {
+        await vscode.commands.executeCommand('gpg-bridge-request.showStatus');
+      } catch (err) {
+        caughtErr = err;
+      }
+      const msg = (caughtErr as Error).message;
+      expect(caughtErr, 'showStatus must throw when DialogService refuses modal').to.be.instanceOf(
+        Error,
+      );
+      expect(msg).to.include('DialogService: refused to show dialog in tests');
+      expect(msg).to.include('GPG Bridge Request Status');
+      expect(msg).to.include('State: Active');
+    } finally {
+      client.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

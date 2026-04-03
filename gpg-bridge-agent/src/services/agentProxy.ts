@@ -755,6 +755,9 @@ export class AgentProxy {
   public async connectAgent(
     sessionId: string = randomUUID(),
   ): Promise<{ sessionId: string; greeting: string }> {
+    if (!UUID_RE.test(sessionId)) {
+      return Promise.reject(new Error(`Invalid sessionId format: ${sessionId}`));
+    }
     log(this.config, `[${sessionId}] Create session to gpg-agent...`);
 
     if (!this.gpgAgentSocketPath) {
