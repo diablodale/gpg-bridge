@@ -133,6 +133,7 @@ jobs:
         env:
           UNIT_JSON: ${{ needs.publish-test-results.outputs.json }}
           INTEGRATION_JSON: ${{ needs.publish-integration-results.outputs.json }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           # Build a badge JSON string from a RESULTS_JSON env var name, label, and output var name.
@@ -153,16 +154,41 @@ jobs:
             [ "$failed"  -gt 0 ] && msg="${msg}, ${failed} failed"
             [ "$skipped" -gt 0 ] && msg="${msg}, ${skipped} skipped"
 
-            # Set badge color: red if any failures, yellow if no failures but some skipped, green otherwise.
-            if   [ "$failed"  -gt 0 ]; then color="red"
-            elif [ "$skipped" -gt 0 ]; then color="yellow"
-            else                            color="brightgreen"
+            # Set badge color: red if any failures, green otherwise.
+            # Skipped tests are platform-conditional by design and do not indicate a problem.
+            if [ "$failed" -gt 0 ]; then color="red"
+            else                         color="brightgreen"
             fi
             printf -v "$outvar" '{"schemaVersion":1,"label":"%s","message":"%s","color":"%s"}' "$label" "$msg" "$color"
           }
 
           make_badge UNIT_JSON        "Unit tests"        UNIT_BADGE
           make_badge INTEGRATION_JSON "Integration tests" INTEGRATION_BADGE
+
+          # Get coverage % from Codecov for this commit. Retry up to 3 times with
+          # 15-second gaps to allow Codecov time to finish processing the uploads.
+          COVERAGE_BADGE=""
+          COV_RAW=""
+          for attempt in 1 2 3; do
+            COV_JSON=$(curl -sf \
+              -H "Accept: application/json" \
+              "https://api.codecov.io/api/v2/github/diablodale/repos/gpg-bridge/totals/?sha=${HEAD_SHA}" \
+              || echo '{}')
+            COV_RAW=$(echo "$COV_JSON" | jq -r '.totals.coverage // empty')
+            [[ "$COV_RAW" =~ ^[0-9]+(\.[0-9]+)?$ ]] && break
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+          if [[ "$COV_RAW" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            COV_INT=$(printf '%.0f' "$COV_RAW")
+            [[ "$COV_INT" =~ ^[0-9]+$ ]] || { echo "::error::unexpected coverage value: $COV_INT"; exit 1; }
+            if   [ "$COV_INT" -ge 80 ]; then COV_COLOR="brightgreen"
+            elif [ "$COV_INT" -ge 60 ]; then COV_COLOR="yellow"
+            else                              COV_COLOR="red"
+            fi
+            COVERAGE_BADGE=$(printf '{"schemaVersion":1,"label":"Coverage","message":"%s%%","color":"%s"}' "$COV_INT" "$COV_COLOR")
+          else
+            echo "::warning::could not get coverage from Codecov after 3 attempts; skipping coverage badge"
+          fi
 
           # Use the pre-set GITHUB_REPOSITORY env var rather than a template
           # expression to avoid template injection into the shell script.
@@ -189,6 +215,10 @@ jobs:
           printf '%s\n' "$UNIT_BADGE"        > unit-tests.json
           printf '%s\n' "$INTEGRATION_BADGE" > integration-tests.json
           git add unit-tests.json integration-tests.json
+          if [ -n "$COVERAGE_BADGE" ]; then
+            printf '%s\n' "$COVERAGE_BADGE" > coverage.json
+            git add coverage.json
+          fi
           # Nothing changed (e.g. same counts on a re-run) — skip commit and push.
           git diff --cached --quiet && exit 0
           git commit -m "chore: update test badges"

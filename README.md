@@ -2,7 +2,7 @@
 
 <img src="assets/icon.png" alt="GPG Bridge icon" width="96" align="right" />
 
-[![Coverage](https://img.shields.io/codecov/c/gh/diablodale/gpg-bridge?token=61T3LCANGO&logo=codecov&label=Coverage)](https://codecov.io/gh/diablodale/gpg-bridge)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/diablodale/gpg-bridge/badges/coverage.json)](https://codecov.io/gh/diablodale/gpg-bridge)
 [![Unit tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/diablodale/gpg-bridge/badges/unit-tests.json)](https://github.com/diablodale/gpg-bridge/actions/workflows/publish-test-results.yml)
 [![Integration tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/diablodale/gpg-bridge/badges/integration-tests.json)](https://github.com/diablodale/gpg-bridge/actions/workflows/publish-test-results.yml)
 
